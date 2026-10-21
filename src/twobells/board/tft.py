@@ -72,10 +72,10 @@ class TftPainter(Painter):
         self.draw.rectangle((0, bottom, self.width - 1, bottom + s - 1), fill=self.p.accent)
 
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
-            where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
+            strip_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         """A row in white with its time in the accent, and its status in a
         pill. A cancelled row isn't reversed out: its red pill says it."""
-        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, where_x, stop_room)
+        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room)
         self.row_text(row, layout, y, train, self.ink, self.paper, self.p.accent, time_ink=self.p.accent)
         self.status(row, layout, y)
 

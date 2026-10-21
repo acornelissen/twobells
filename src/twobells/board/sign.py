@@ -29,7 +29,7 @@ from .panel import (
     STRIP_COLUMN_MIN_WIDTH,
     Panel,
 )
-from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, note_text
+from .render import HEIGHT, WIDTH, Palette, apply_preview, fit_text, note_text, share_out
 from .route import RouteView
 from .scroll import Frame, Scroll, frame_of
 from .view import BoardView, Row, Section, Style, destination_text
@@ -84,45 +84,36 @@ def item_size(item: Item) -> tuple[int, int]:
     return (font.getlength(item.text) if item.box is None else item.box), height
 
 
-# On a screen wide enough, where each train or bus is: the words, then a
-# little line of its stops.
+# On a screen wide enough, where each train or bus is: after the destination,
+# a little line of its stops, then the words, which run on to the section's
+# next column (platform, leave time or status).
 STRIP_WIDTH = 42  # eight stops, five or six dots apart
-# Twice the usual gap after the destination, so it and the where words don't
-# run together into one name.
+# Twice the usual gap after the destination, so it and the little line don't
+# run together.
 _WHERE_GAP = 2 * _COL_GAP
-# The where words' column: at least "3 stops away", at most eighteen letters
-# ("Left Glossop 07:08"), which is as long as they are meant to be.
+# A row's room between its lead (ordinal and time, or route and stop) and its
+# section's next column is shared out by a ladder (share_out), in turn: the
+# where words "3 stops away"; a bus's stop names "Henry St A"; the
+# destination its target, a train's (or tram's) "Manchester Piccadilly", a
+# bus's "Ashton-under-Lyne"; the stop names the longest whole; the
+# destination "Heathrow Terminals 2 & 3"; the where words "Left Manchester
+# Oxford Road"; the destination the rest.
 _WHERE_LEAST = _FONT.getlength("3 stops away")
-_WHERE_MOST = _FONT.getlength("Left Glossop 07:08")
-# What the rest of a full row needs beside the where words: ordinal and time,
-# "Manchester Piccadilly" whole and the little line, then a bus's leave time
-# and status, or (where trains get a leave column) a train's platform, leave
-# time and status, whichever is wider.
-_ROW_START = (
-    MARGIN + _FONT.getlength("4th") + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
-    + _FONT.getlength("Manchester Piccadilly") + _WHERE_GAP + _COL_GAP + STRIP_WIDTH + _COL_GAP
-)
-_REST_OF_BUS_ROW = _ROW_START + _FONT.getlength("Leave in 00 min") + _COL_GAP + _FONT.getlength("Exp 00:00") + MARGIN
-_REST_OF_TRAIN_ROW = (
-    _ROW_START + _FONT.getlength("Plat 1") + 2 * _COL_GAP + _FONT.getlength("Leave in 00 min") + _COL_GAP
-    + _FONT.getlength("Cancelled") + MARGIN
-)
+_WHERE_MOST = _FONT.getlength("Left Manchester Oxford Road")
+_DEST_TARGET = {"train": _FONT.getlength("Manchester Piccadilly"), "bus": _FONT.getlength("Ashton-under-Lyne")}
+_DEST_MOST = _FONT.getlength("Heathrow Terminals 2 & 3")
+# Where a train row's destination starts.
+_TRAIN_DEST_X = MARGIN + _FONT.getlength(_ORDINAL_W) + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
+# Where a bus row's stop starts, after its route.
+_STOP_X = MARGIN + _FONT.getlength("000") + _COL_GAP - 1
 
 
 # On a screen wide enough, a bus row's stop by its name: a column as wide as
-# the longest of your stops' names, at most sixteen letters; a longer name
-# scrolls in it. Twice the usual gap after it, so it and the destination
-# don't read as one name.
-STOP_NAME_MOST = _FONT.getlength("Norfolk Square W")
+# the longest of your stops' names, as far as the ladder gives it room, and
+# never narrower than "Henry St A"; a longer name scrolls in it. Twice the
+# usual gap after it, so it and the destination don't read as one name.
+STOP_NAME_LEAST = _FONT.getlength("Henry St A")
 _STOP_GAP = 2 * _COL_GAP
-
-
-def where_width(width: int) -> int:
-    """How wide the where words' column is on a board `width` dots across: the
-    room a full row leaves, from "3 stops away" to eighteen letters. It is
-    worked out from the width alone, so it stays put as the words change."""
-    rest = max(_REST_OF_BUS_ROW, _REST_OF_TRAIN_ROW) if width >= LEAVE_COLUMN_MIN_WIDTH else _REST_OF_BUS_ROW
-    return max(_WHERE_LEAST, min(_WHERE_MOST, width - rest))
 
 
 @dataclass(frozen=True)
@@ -219,36 +210,78 @@ def _columns(section: Section, width: int, most: int) -> _Columns:
     return _train_columns(section, width, most) if section.kind == "train" else _bus_columns(section, width)
 
 
-def _where_column(view: BoardView, columns: list[_Columns], width: int) -> float | None:
-    """Where the where words start, with the little lines after them: one
-    column down the board, clear of both sections' other columns. Only on a
-    screen wide enough: a strip changes every few seconds, so e-paper, which
-    redraws slowly and only on change, never shows one. It has a fixed width,
-    so it stays put as the words change."""
-    if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH or not columns:
-        return None
-    return min(c.end for c in columns) - _COL_GAP - STRIP_WIDTH - _COL_GAP - where_width(width)
-
-
-def _add_strip(layout: SignLayout, row: Row, where_x: float, y: int, width: int, train: bool, inverted: bool) -> None:
-    # A row without one leaves the space blank.
-    if row.strip is None:
-        return
-    words_w = where_width(width)
-    if row.strip.where:
-        layout.fit(where_x, y, row.strip.where, words_w, inverted)
-    layout.strips.append(StripMark(where_x + words_w + _COL_GAP, y, row.strip, train, inverted))
-
-
-def _stop_column(section: Section, width: int, live: bool) -> int | None:
-    """How wide the bus rows' stop names are drawn, or None where they show
-    their labels: e-paper, a board too narrow, no names known. From all your
-    stops' names, not the rows shown, so the destinations stay put; a row
-    whose stop has no name shows its label there."""
+def _names_wanted(section: Section, width: int, live: bool) -> float | None:
+    """How wide the bus rows' stop names want to be, the longest whole, or
+    None where they show their labels: e-paper, a board too narrow, no names
+    known. From all your stops' names, not the rows shown, so the
+    destinations stay put; a row whose stop has no name shows its label there."""
     if not live or width < STOP_NAME_MIN_WIDTH or not section.stop_names:
         return None
     labels = [r.stop for r in section.rows if r.stop and not r.stop_name]
-    return min(STOP_NAME_MOST, max(map(_w, [*section.stop_names, *labels])))
+    return max(map(_w, [*section.stop_names, *labels]))
+
+
+def _bus_lead(section: Section, width: int, live: bool, dest_end: float) -> tuple[float, float | None, float]:
+    """(stop_x, names_w, dest_x) for a bus section whose destinations end at
+    `dest_end`: the names as wide as they want, as far as the bus
+    destination's target leaves room, and at least STOP_NAME_LEAST; None
+    for names_w where the rows show their labels."""
+    stop_x = _STOP_X
+    wanted = _names_wanted(section, width, live)
+    if wanted is None:
+        stops = [r.stop for r in section.rows if r.stop]
+        # Room for the widest stop label, and at least a "W" so one-letter stops line up.
+        return stop_x, None, stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
+    room = dest_end - _DEST_TARGET["bus"] - _STOP_GAP - stop_x
+    names_w = min(wanted, max(STOP_NAME_LEAST, room))
+    return stop_x, names_w, stop_x + names_w + _STOP_GAP
+
+
+def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
+    """Where a section's little lines start against its own columns: after
+    what the ladder gives its destinations (and a bus's stop names) of the
+    row's room, the where words having their share before the next column."""
+    words_end = columns.end - _COL_GAP
+    wanted = _names_wanted(section, width, True) if section.kind == "bus" else None
+    if section.kind == "train":
+        lead = _TRAIN_DEST_X
+        steps = [("words", _WHERE_LEAST), ("destination", _DEST_TARGET["train"])]
+    elif wanted is None:
+        lead = _bus_lead(section, width, True, 0)[2]
+        steps = [("words", _WHERE_LEAST), ("destination", _DEST_TARGET["bus"])]
+    else:
+        lead = _STOP_X + _STOP_GAP
+        steps = [("words", _WHERE_LEAST), ("names", min(wanted, STOP_NAME_LEAST)),
+                 ("destination", _DEST_TARGET["bus"]), ("names", wanted)]
+    steps += [("destination", _DEST_MOST), ("words", _WHERE_MOST)]
+    room = words_end - (_WHERE_GAP + STRIP_WIDTH + _COL_GAP) - lead
+    got = share_out(room, steps)
+    return lead + got["names"] + got["destination"] + _WHERE_GAP
+
+
+def _strip_columns(view: BoardView, columns: list[_Columns], width: int, counts: list[int]) -> list[float | None]:
+    """Where each section's little lines start, its first `counts` rows as
+    drawn, None for a section without one among them. Only on a screen wide
+    enough: a strip changes every few seconds, so e-paper, which redraws
+    slowly and only on change, never shows one. Each against its own
+    section's columns."""
+    sections = view.sections
+    if view.clock is None or width < STRIP_COLUMN_MIN_WIDTH:
+        return [None] * len(sections)
+    return [_own_strip_x(s, c, width) if any(r.strip for r in s.rows[:count]) else None
+            for s, c, count in zip(sections, columns, counts, strict=True)]
+
+
+def _add_strip(layout: SignLayout, row: Row, strip_x: float, y: int, end: float, train: bool,
+               inverted: bool) -> None:
+    """The row's little line at `strip_x`, then its where words, up to the
+    section's next column at `end`. A row without one leaves the space blank."""
+    if row.strip is None:
+        return
+    layout.strips.append(StripMark(strip_x, y, row.strip, train, inverted))
+    words_x = strip_x + STRIP_WIDTH + _COL_GAP
+    if row.strip.where:
+        layout.fit(words_x, y, row.strip.where, end - _COL_GAP - words_x, inverted)
 
 
 def calling_line(section: Section, live: bool) -> str | None:
@@ -260,7 +293,7 @@ def calling_line(section: Section, live: bool) -> str | None:
 
 
 def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _Columns,
-            where_x: float | None, most: int = _MAX_TRAINS, bottom: int | None = None,
+            strip_x: float | None, most: int = _MAX_TRAINS, bottom: int | None = None,
             calling: bool = True) -> int:
     """A train section's rows from `y`, the first `most`, while they fit
     above `bottom`; with `calling`, the first one's "Calling at" line under
@@ -273,8 +306,6 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
-    if not any(r.strip for r in rows):
-        where_x = None  # no room kept for strips that none of them has
     leave_for = section.leave_for or 0
     # The lines under a row: a screen's subtitles, e-paper's full size.
     sub = layout.live
@@ -285,8 +316,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
             break
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
-        if where_x is not None:
-            dest_end = where_x - _WHERE_GAP
+        if strip_x is not None:
+            dest_end = strip_x - _WHERE_GAP
         elif columns.leave_x is not None or columns.platform_x is not None:
             dest_end = columns.end - _COL_GAP
         else:
@@ -295,8 +326,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
         layout.add(time_x, y, row.left, inverted)
         destination = destination_text(row, columns.platform_x is not None, width >= PLATFORM_COLUMN_MIN_WIDTH)
         layout.fit(dest_x, y, destination, dest_end - dest_x, inverted)
-        if where_x is not None:
-            _add_strip(layout, row, where_x, y, width, True, inverted)
+        if strip_x is not None:
+            _add_strip(layout, row, strip_x, y, columns.end, True, inverted)
         if columns.platform_x is not None and row.platform:
             layout.add(columns.platform_x, y, row.platform, inverted)
         if columns.leave_x is not None and section.leave and index == leave_for:
@@ -317,28 +348,20 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
 
 
 def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int, columns: _Columns,
-           where_x: float | None, most: int | None = None) -> int:
+           strip_x: float | None, most: int | None = None) -> int:
     rows = list(section.rows[:most])
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
         return y + _LINE
-    if not any(r.strip for r in rows):
-        where_x = None
-    stop_x = MARGIN + _w("000") + _COL_GAP - 1
-    names_w = _stop_column(section, width, layout.live)
-    if names_w is not None:
-        dest_x = stop_x + names_w + _STOP_GAP
-    else:
-        stops = [r.stop for r in rows if r.stop]
-        # Room for the widest stop label, and at least a "W" so one-letter stops line up.
-        dest_x = stop_x + (max(map(_w, [*stops, "W"])) + _COL_GAP - 1 if stops else 0)
+    lead_end = strip_x - _WHERE_GAP if strip_x is not None else columns.end - _COL_GAP
+    stop_x, names_w, dest_x = _bus_lead(section, width, layout.live, lead_end)
     for row in rows:
         if y + GLYPH_H > bottom:
             break
         inverted = row.style is Style.INVERTED
         status_x = _right(row.right, width)
-        if where_x is not None:
-            dest_end = where_x - _WHERE_GAP
+        if strip_x is not None:
+            dest_end = strip_x - _WHERE_GAP
         else:
             dest_end = (status_x if columns.leave_x is None else columns.leave_x) - _COL_GAP
         layout.fit(MARGIN, y, row.left, stop_x - MARGIN - 2, inverted)
@@ -348,8 +371,8 @@ def _buses(layout: SignLayout, section: Section, y: int, bottom: int, width: int
         elif row.stop:
             layout.add(stop_x, y, row.stop, inverted)
         layout.fit(dest_x, y, row.middle, dest_end - dest_x, inverted)
-        if where_x is not None:
-            _add_strip(layout, row, where_x, y, width, False, inverted)
+        if strip_x is not None:
+            _add_strip(layout, row, strip_x, y, columns.end, False, inverted)
         if row.leave and columns.leave_x is not None:
             layout.add(columns.leave_x, y, row.leave, inverted)
         layout.add(status_x, y, row.right, inverted)
@@ -470,7 +493,6 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     epaper = view.clock is None
     calling_for = next((s.mode for s in sections if calling_line(s, layout.live)), None)
     columns = [_columns(s, width, _most_rows(s, alone, epaper)) for s in sections]
-    where_x = _where_column(view, columns, width)
     footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
 
     def section_height(index: int, rows: int) -> int:
@@ -492,16 +514,17 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
             counts[-1] -= 1
     footer_rule = bool(counts) and _fits([section_height(i, c) for i, c in enumerate(counts)], ruled)
     bottom = ruled if footer_rule else footer_y - 2
+    strip_xs = _strip_columns(view, columns, width, counts)
     y = _TOP
-    for index, (section, cols, count) in enumerate(zip(sections, columns, counts, strict=True)):
+    for index, (section, cols, count, strip_x) in enumerate(zip(sections, columns, counts, strip_xs, strict=True)):
         if index:
             rule = y + _ABOVE_RULE - 2  # each line already carries 2 dots of leading
             layout.rules.append(rule)
             y = rule + _BELOW_RULE
         if section.kind == "train":
-            y = _trains(layout, section, y, width, cols, where_x, count, bottom, section.mode == calling_for)
+            y = _trains(layout, section, y, width, cols, strip_x, count, bottom, section.mode == calling_for)
         else:
-            y = _buses(layout, section, y, bottom, width, cols, where_x, count)
+            y = _buses(layout, section, y, bottom, width, cols, strip_x, count)
     if footer_rule:
         # Halfway between the last line and the bottom line, so the gaps match.
         last_bottom = y - _LEADING - 1

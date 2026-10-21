@@ -13,20 +13,21 @@ _DESIGN_HEIGHT = 120
 PLATFORM_COLUMN_MIN_WIDTH = 300
 
 # A screen at least this wide, in the same units, shows where each train or
-# bus is: the words and a little line of stops, after the destination. From
-# 420 a destination still keeps about 100 dots, 18 letters ("Manchester
-# Piccadilly" is 105), beside them, the platform, a bus's "Leave in 12 min" and
-# the status; at 400 a train's would be down to 80. The 7.9" screen's 426 is
-# in; the 10.85" e-paper's 340 is not, and e-paper never shows them anyway.
-# A wider screen gives its spare room to the where words first, up to twenty
-# letters, so they aren't cut short when there's room (see where_width).
+# bus is: a little line of stops after the destination, then the words. From
+# 420 a sign destination still keeps nearly 100 dots, 18 letters ("Manchester
+# Piccadilly" is 105), beside them ("3 stops away"), the platform, a bus's
+# "Leave in 12 min" and the status; at 400 a train's would be down to 78. The
+# 7.9" screen's 426 is in; the 10.85" e-paper's 340 is not, and e-paper never
+# shows them anyway. A wider screen shares its spare room out by a ladder
+# (render.share_out) between the destination, a bus's stop names and the
+# where words.
 STRIP_COLUMN_MIN_WIDTH = 420
 
 # A sign board at least this wide gives a train's "Leave in 3 min" a column on
 # its row rather than a line of its own under it: one line a row. On the bar
-# screen's 480 a destination still keeps 94 dots, 17 letters, beside twenty
-# letters of where words; on the 7.9" screen's 426 it would keep 64, about 11,
-# so only the bar screen does it.
+# screen's 480 a destination still keeps 124 dots, 24 letters, beside the
+# where words; on the 7.9" screen's 426 it would keep 72, about 14, so only
+# the bar screen does it.
 LEAVE_COLUMN_MIN_WIDTH = 460
 
 # A screen at least this wide shows a disruption notice and the rain warning
@@ -38,15 +39,14 @@ LEAVE_COLUMN_MIN_WIDTH = 460
 NOTES_SIDE_BY_SIDE_MIN_WIDTH = 400
 
 # A screen at least this wide calls each bus row's stop by its name ("Henry
-# Street A") where e-paper shows its label ("A"). Train rows don't change: the
-# where column stays where "Manchester Piccadilly" whole puts it, so the name
-# comes out of the bus destination's room. On the bar screen's 480 a sign
-# destination keeps 54 dots, 10 letters, beside "Henry Street A" and 46, 8,
-# beside a name the column's full sixteen letters wide; the plain look's 640
-# keeps over 200 pixels. On the 7.9" screen's 426 the sign look would keep
-# nearly as much (50 and 42), but the plain look's would be down to 27
-# pixels, 4 letters, beside "Henry Street A" and 11, next to nothing, beside a
-# long name, so only the bar screen does it.
+# Street A") where e-paper shows its label ("A"). The ladder gives the names
+# "Henry St A" before the bus destination its target ("Ashton-under-Lyne"),
+# the longest whole after it, a longer one scrolling. On the bar screen's 480
+# a sign destination keeps 103 dots, 20 letters, beside "Henry Street A" and
+# 97 beside a long name; the plain look's 640 keeps over 100 pixels. On the
+# 7.9" screen's 426 the sign look would keep 71 dots, about 14 letters, and
+# the plain look 50 pixels, about 8, beside names cut to "Henry St A", so
+# only the bar screen does it.
 STOP_NAME_MIN_WIDTH = 460
 
 

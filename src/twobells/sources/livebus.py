@@ -722,8 +722,8 @@ def inbound_words(live: LiveDeparture, now: datetime, short: bool = False) -> st
     waiting to leave". At a later stop: "Bus on its way, due in 9 min", when
     the departure is expected there, then, in at the first stop, "Bus
     waiting to start, due in 4 min". `short` for a board's row, which has
-    room for eighteen letters: "On its way, 6 min", "Bus in, waiting",
-    "Waiting to start". `now` is board-local without a zone, as the
+    room for twelve letters ("3 stops away") and more on a wider screen:
+    "On its way, 6 min", "Bus in, waiting", "Waiting to start". `now` is board-local without a zone, as the
     departure's times are."""
     inbound = live.inbound
     if inbound is None:
@@ -779,7 +779,7 @@ def row_strip(live: LiveDeparture, positions: dict[str, StopPosition], now: date
     words = where_words(live, found, now)
     if at is None:
         # Not on the strip yet: "Not yet past The Junction" is too long for a
-        # row (18 characters), so count the calls to your stop instead.
+        # row with room for "3 stops away", so count the calls to your stop instead.
         away = live.call_index - math.floor(live.progress.at + 0.02)
         words = "1 stop away" if away == 1 else f"{away} stops away"
     try:

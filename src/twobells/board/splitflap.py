@@ -43,8 +43,8 @@ from .view import BoardView, Row, Section, Style
 
 # In pHAT pixels: tiles this far apart, with this much black between them,
 # this tall, and the letters on them this big. Tiles take more room than
-# Inter: the bar screen keeps "Manchester Piccadilly" whole, but beside the
-# where column the 7.9" screen has room for 16 letters, and longer scrolls.
+# Inter: the bar screen keeps "Manchester Piccadilly" whole, but before the
+# little lines the 7.9" screen has room for 15 letters, and longer scrolls.
 TILE_PITCH = 7
 TILE_GAP = 1
 TILE_HEIGHT = 12
@@ -193,19 +193,19 @@ class SplitFlapPainter(Painter):
             self.letters((rain[1], s), rain[0], self.p.accent, self.tile_fill)
         self.letters((stamp_x, s), stamp, self.ink, self.tile_fill)
 
-    def section(self, section: Section, y: int, where_x: float | None = None) -> int:
+    def section(self, section: Section, y: int, strip_x: float | None = None) -> int:
         """As the plain look's, counting the section's rows for their fields' keys."""
         self._section, self._index = section.label, 0
         try:
-            return super().section(section, y, where_x)
+            return super().section(section, y, strip_x)
         finally:
             self._section = None
 
     def row(self, row: Row, y: int, platform_x: float | None = None, leave_x: float | None = None,
-            where_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
+            strip_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         """A row on tiles, its status coloured as status_colours says. A
         cancelled row isn't reversed out: its amber tiles say it."""
-        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, where_x, stop_room)
+        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room)
         if self._section is not None:
             self._row = (self._section, self._index)
             self._index += 1

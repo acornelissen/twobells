@@ -2,10 +2,10 @@ import dataclasses
 
 import pytest
 
+from tests.board.painted import assert_in_order, painted_rows
 from twobells.board.panel import HDMI_1280X400, HDMI_1920X440
 from twobells.board.render import (
     SCREEN_PALETTE,
-    STRIP_WIDTH,
     Palette,
     drawn_length,
     leave_column,
@@ -13,8 +13,6 @@ from twobells.board.render import (
     plain_scale,
     platform_column,
     row_layout,
-    where_column,
-    where_width,
 )
 from twobells.board.route import RouteView
 from twobells.board.tft import PILL_PAD, pill_colours, render_route_tft, render_tft, tft_frame
@@ -119,23 +117,15 @@ def test_a_status_and_its_pill_keep_the_right_margin(panel, index):
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)
-def test_a_rows_columns_never_run_into_its_pill(panel):
+def test_a_rows_columns_run_in_order_and_never_into_its_pill(panel):
     fonts, s = fonts_for(panel)
-    where_x = where_column([TRAINS, BUSES], fonts, panel.width, s, live=True)
-    assert where_x is not None
-    for rows in (TRAINS, BUSES):
-        platform_x = platform_column(rows, fonts, panel.width, s)
-        leave_x = leave_column(rows, fonts, panel.width, s)
-        for row in rows:
-            layout = row_layout(row, fonts, panel.width, s, platform_x, leave_x, where_x)
-            pill_x = layout.right_x - fonts.pill
-            ends = [where_x + where_width(fonts, panel.width, s) + (6 + STRIP_WIDTH) * s]
-            if layout.platform_x is not None and row.platform:
-                ends.append(layout.platform_x + drawn_length(fonts.regular, row.platform))
-            if layout.leave_x is not None and layout.leave:
-                ends.append(layout.leave_x + drawn_length(fonts.small, layout.leave))
-            assert max(ends) + 4 * s <= pill_x, row
-            assert layout.middle_x + drawn_length(fonts.regular, layout.middle) <= where_x
+    layouts = painted_rows(tft_frame, board(), panel)
+    assert {row.left for row, layout in layouts if layout.strip_x is not None} == {"07:12", "341"}
+    for row, layout in layouts:
+        assert_in_order(row, layout, fonts, s)
+        if layout.where_x is not None:
+            # The where words end twice the gap clear of the next column: here, the pill.
+            assert layout.where_x + layout.where_room + 12 * s <= layout.right_x - fonts.pill
 
 
 @pytest.mark.parametrize("panel", SCREENS, ids=lambda p: p.name)

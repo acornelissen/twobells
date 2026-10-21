@@ -941,8 +941,9 @@ def test_the_setup_page_signature_follows_its_words():
 
 # Where each train or bus is, on a screen wide enough; and the bar screen's third bus.
 
-from twobells.board.panel import STRIP_COLUMN_MIN_WIDTH  # noqa: E402
-from twobells.board.render import STRIP_WIDTH, row_limits, where_column, where_width  # noqa: E402
+from tests.board.painted import assert_in_order, painted_rows, row_boxes  # noqa: E402
+from twobells.board.panel import STOP_NAME_MIN_WIDTH, STRIP_COLUMN_MIN_WIDTH, Panel  # noqa: E402
+from twobells.board.render import STRIP_WIDTH, board_frame, row_limits, share_out, strip_column  # noqa: E402
 from twobells.core.model import Strip  # noqa: E402
 
 CLOCK = "07:03:15"
@@ -965,62 +966,73 @@ def on_screen(trains=STRIP_TRAINS, buses=STRIP_BUSES, clock=CLOCK):
 
 
 def strip_layouts(panel, trains=STRIP_TRAINS, buses=STRIP_BUSES):
-    """Each row's layout, as the painter places it, and the where column."""
-    s = plain_scale(panel)
-    fonts = load_fonts(s)
-    where_x = where_column([trains, buses], fonts, panel.width, s, live=True)
-    layouts = []
-    for rows in (trains, buses):
-        platform_x = platform_column(rows, fonts, panel.width, s)
-        leave_x = leave_column(rows, fonts, panel.width, s)
-        layouts += [(row, row_layout(row, fonts, panel.width, s, platform_x, leave_x, where_x)) for row in rows]
-    return layouts, where_x, fonts, s
+    """Each row the board draws, with its layout, and the scale."""
+    return painted_rows(board_frame, on_screen(trains, buses), panel), plain_scale(panel)
+
+
+def next_column(layout, fonts):
+    """Where the first of a row's columns after its where words starts."""
+    return min(x for x in (layout.platform_x, layout.leave_x, layout.right_x - fonts.pill) if x is not None)
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_wide_screens_say_where_each_train_and_bus_is_in_a_column(panel):
-    layouts, where_x, fonts, s = strip_layouts(panel)
-    assert where_x is not None
+def test_wide_screens_say_where_each_train_and_bus_is_after_its_little_line(panel):
+    layouts, s = strip_layouts(panel)
+    fonts = load_fonts(s)
     shown = {row.left: layout.where for row, layout in layouts}
-    assert shown["07:12"] == "At Dinting" and shown["341"] == "3 stops away" and shown["237"] == "1 stop away"
-    assert shown["07:42"].startswith("Not yet left") and shown["07:42"].endswith("…")
+    assert shown["07:12"] == "At Dinting" and shown["341"] == "3 stops away"
+    # Whole on the bar screen; cut short on the 7.9" screen, with no room for it.
+    assert shown["07:42"] == fit_text("Not yet left Hadfield sidings", fonts.small,
+                                      next(lay.where_room for row, lay in layouts if row.left == "07:42"),
+                                      functools.partial(drawn_length, fonts.small))
+    assert shown["07:42"].endswith("…") == (panel is HDMI_1280X400)
     for row, layout in layouts:
         if row.strip:
-            assert layout.where_x == where_x
-            assert drawn_length(fonts.small, layout.where) <= where_width(fonts, panel.width, s)
-            assert layout.strip_x == where_x + where_width(fonts, panel.width, s) + 6 * s
+            assert layout.where_x == layout.strip_x + (STRIP_WIDTH + 6) * s
+            assert drawn_length(fonts.small, layout.where) <= layout.where_room
         else:
             # Left blank, but the destination still stops where the others' do.
-            assert layout.where is None and layout.strip_x is None
+            assert layout.where is None and layout.strip_x is None and layout.where_x is None
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
-def test_a_rows_columns_never_overlap_in_the_plain_look(panel):
-    layouts, where_x, fonts, s = strip_layouts(panel)
-    for _, layout in layouts:
-        assert layout.middle_x + drawn_length(fonts.regular, layout.middle) + 6 * s <= where_x
-        strip_end = where_x + where_width(fonts, panel.width, s) + (6 + STRIP_WIDTH) * s
-        for later in (layout.platform_x, layout.leave_x, layout.right_x):
-            if later is not None:
-                assert strip_end + 6 * s <= later
+def test_every_row_runs_lead_destination_little_line_where_words_then_its_columns(panel):
+    layouts, s = strip_layouts(panel)
+    fonts = load_fonts(s)
+    for row, layout in layouts:
+        assert_in_order(row, layout, fonts, s)
+        if row.strip:
+            assert [what for what, _, _ in row_boxes(row, layout, fonts, s)][2:4] == ["strip", "where"]
+            # Twice the gap either side of the little line and its words, so none of them run together.
+            assert layout.middle_x + layout.middle_room + 12 * s == layout.strip_x
+            assert layout.where_x + layout.where_room + 12 * s == next_column(layout, fonts)
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_destinations_keep_their_room_beside_the_strip(panel):
-    layouts, _, _, _ = strip_layouts(panel)
+    layouts, _ = strip_layouts(panel)
     for row, layout in layouts:
         assert layout.middle == (f"{row.stop}: {row.middle}" if row.stop else row.middle)
 
 
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_little_lines_stay_put_whatever_the_words(panel):
+    short = tuple(dataclasses.replace(r, strip=Strip("At Dinting", 4, 2, 1.0)) for r in STRIP_TRAINS)
+    long_words, short_words = ({row.left: layout.strip_x for row, layout in strip_layouts(panel, rows)[0] if row.strip}
+                               for rows in (STRIP_TRAINS, short))
+    assert long_words == {left: x for left, x in short_words.items() if left in long_words}
+
+
 def test_the_plain_look_shows_strips_on_both_screens_only():
     fonts = load_fonts(3)
+    trains = Section("Trains", STRIP_TRAINS, "No trains")
     for panel in STRIP_PANELS:
         assert panel.width / plain_scale(panel) >= STRIP_COLUMN_MIN_WIDTH
     # The 10.85" e-paper is wide enough in the plain look, but e-paper is never live.
-    assert where_column([STRIP_TRAINS], fonts, WAVESHARE_10IN85G.width, 3, live=False) is None
-    assert where_column([STRIP_TRAINS], load_fonts(), WIDTH, 1, live=True) is None
+    assert strip_column([trains], [STRIP_TRAINS], fonts, WAVESHARE_10IN85G.width, 3, live=False) == [None]
+    assert strip_column([trains], [STRIP_TRAINS], load_fonts(), WIDTH, 1, live=True) == [None]
     no_strips = tuple(dataclasses.replace(r, strip=None) for r in STRIP_TRAINS)
-    assert where_column([no_strips], fonts, HDMI_1920X440.width, 3, live=True) is None
+    assert strip_column([trains], [no_strips], fonts, HDMI_1920X440.width, 3, live=True) == [None]
 
 
 @pytest.mark.parametrize("panel", [PHAT, WAVESHARE_10IN85G], ids=lambda p: p.name)
@@ -1029,6 +1041,69 @@ def test_e_paper_in_the_plain_look_is_unchanged_by_strips(panel):
              tuple(dataclasses.replace(r, strip=None) for r in STRIP_BUSES))
     with_strips = render(on_screen(clock=None), PALETTE, panel)
     assert with_strips.tobytes() == render(on_screen(*plain, clock=None), PALETTE, panel).tobytes()
+
+
+# The ladder: a row's room shared out, in turn, between its where words, a
+# bus's stop names and its destination.
+
+
+def test_the_ladder_gives_each_step_its_room_in_turn_and_the_destination_the_rest():
+    steps = [("words", 60), ("names", 50), ("destination", 100), ("names", 80), ("destination", 120), ("words", 90)]
+    assert share_out(40, steps) == {"words": 40, "names": 0, "destination": 0}
+    assert share_out(90, steps) == {"words": 60, "names": 30, "destination": 0}
+    assert share_out(200, steps) == {"words": 60, "names": 50, "destination": 90}
+    assert share_out(230, steps) == {"words": 60, "names": 70, "destination": 100}
+    assert share_out(260, steps) == {"words": 60, "names": 80, "destination": 120}
+    assert share_out(300, steps) == {"words": 90, "names": 80, "destination": 130}
+    assert share_out(-5, steps) == {"words": 0, "names": 0, "destination": 0}
+
+
+def ladder_rooms(kind, panel):
+    """(words, names, destination) a lone row is given on `panel`: a train
+    with its platform, or a bus with its stop's name (or, on a screen too
+    narrow for names, its label before the destination)."""
+    if kind == "train":
+        section = Section("Trains", STRIP_TRAINS[:1], "No trains")
+    else:
+        bus = dataclasses.replace(STRIP_BUSES[0], stop_name="Henry Street A")
+        section = Section("Buses", (bus,), "No buses", mode="bus", stop_names=("Henry Street A", "Henry Street B"))
+    [(row, layout)] = painted_rows(board_frame, BoardView("GLO > MAN", (section,), "07:03", CLOCK), panel)
+    label = drawn_length(load_fonts(3).regular, f"{row.stop}: ") if row.stop and layout.stop_x is None else 0
+    return layout.where_room, layout.stop_room, layout.middle_room - label
+
+
+def widths(least, most, step):
+    """Screens from `least` to `most` pHAT pixels across, three panel pixels each."""
+    return [Panel(f"test-{w}", w * 3, 400, 3, epaper=False) for w in range(least, most, step)]
+
+
+@pytest.mark.parametrize("kind", ["train", "bus"])
+def test_a_plain_row_shares_its_room_out_by_the_ladder(kind):
+    fonts = load_fonts(3)
+    small, regular = functools.partial(drawn_length, fonts.small), functools.partial(drawn_length, fonts.regular)
+    target = regular("Manchester Piccadilly" if kind == "train" else "Ashton-under-Lyne")
+    names_least, names_most = regular("Henry St A"), regular("Henry Street A")
+    words_least, words_most, dest_most = small("3 stops away"), small("Left Manchester Oxford Road"), regular(
+        "Heathrow Terminals 2 & 3")
+    seen = set()
+    for panel in widths(420, 1100, 10):
+        words, names, dest = ladder_rooms(kind, panel)
+        assert words >= words_least - 1  # the first step, on every screen
+        if kind == "bus" and panel.width / 3 >= STOP_NAME_MIN_WIDTH:
+            assert names >= names_least  # before the destination has anything past nothing
+            if names < names_most - 1:
+                assert dest <= target + 1
+        if dest < target - 1:
+            assert words <= words_least + 1
+        if words > words_least + 1:
+            assert dest >= dest_most - 1
+        if dest > dest_most + 1:
+            assert words >= words_most - 1
+        seen.add((dest >= target - 1, words > words_least + 1, dest > dest_most + 1))
+    # The screens reach the steps: the destination short of its target and
+    # past it (a lone train always has that), the words growing, the rest.
+    steps = {(False, False, False), (True, False, False)} if kind == "bus" else set()
+    assert steps | {(True, True, False), (True, True, True)} <= seen
 
 
 def ink_in(image, box, colour=PALETTE.black):
@@ -1046,9 +1121,9 @@ def bus_rows_top(panel):
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_the_little_line_is_drawn_with_the_vehicle_where_it_is(panel):
-    _, where_x, fonts, s = strip_layouts(panel)
+    layouts, s = strip_layouts(panel)
+    strip_x = next(layout.strip_x for row, layout in layouts if row.left == "341")
     top, row_h = bus_rows_top(panel)
-    strip_x = where_x + where_width(fonts, panel.width, s) + 6 * s
     right = strip_x + STRIP_WIDTH * s
     drawn = render(on_screen(), PALETTE, panel)
     assert ink_in(drawn, (strip_x, top, right, top + row_h)) > 0
@@ -1062,9 +1137,9 @@ def test_the_little_line_is_drawn_with_the_vehicle_where_it_is(panel):
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_your_stop_is_in_the_accent_colour(panel):
-    _, where_x, fonts, s = strip_layouts(panel)
+    layouts, s = strip_layouts(panel)
+    strip_x = next(layout.strip_x for row, layout in layouts if row.left == "341")
     top, row_h = bus_rows_top(panel)
-    strip_x = where_x + where_width(fonts, panel.width, s) + 6 * s
     drawn = render(on_screen(), PALETTE, panel)
     assert ink_in(drawn, (strip_x, top, strip_x + STRIP_WIDTH * s, top + row_h), PALETTE.accent) > 0
 
@@ -1078,29 +1153,6 @@ def test_the_bar_screen_shows_three_buses_in_the_plain_look():
     top, row_h = bus_rows_top(HDMI_1920X440)
     assert top + 3 * row_h <= HDMI_1920X440.height
     assert ink_in(image, (0, top + 2 * row_h, 200, top + 3 * row_h)) > 0  # the 237
-
-
-
-def test_eighteen_letters_of_where_fit_uncut_on_the_bar_screen_in_the_plain_look():
-    eighteen = "Left Glossop 07:08"
-    trains = (dataclasses.replace(STRIP_TRAINS[0], strip=Strip(eighteen, 4, 2, 1.0)), *STRIP_TRAINS[1:])
-    buses = (dataclasses.replace(STRIP_BUSES[0], strip=Strip(eighteen, 7, 5, 2.4)), *STRIP_BUSES[1:])
-    layouts, _, _, _ = strip_layouts(HDMI_1920X440, trains, buses)
-    assert [layout.where for _, layout in layouts].count(eighteen) == 2
-    fonts = load_fonts(3)
-    assert where_width(fonts, HDMI_1920X440.width, 3) < drawn_length(fonts.small, "Leaving Hadfield now")
-
-
-def test_the_plain_where_column_is_as_wide_whatever_the_words_and_wider_on_the_bar():
-    fonts = load_fonts(3)
-    narrow, wide = where_width(fonts, HDMI_1280X400.width, 3), where_width(fonts, HDMI_1920X440.width, 3)
-    assert drawn_length(fonts.small, "3 stops away") <= narrow < wide
-    short = tuple(dataclasses.replace(r, strip=Strip("At Dinting", 4, 2, 1.0)) for r in STRIP_TRAINS)
-    for panel in STRIP_PANELS:
-        a = strip_layouts(panel)[0][0][1]
-        b = strip_layouts(panel, short)[0][0][1]
-        assert a.strip_x - a.where_x == b.strip_x - b.where_x
-
 
 
 # The header on a screen: the notice where the title goes, the rain warning beside it.
@@ -1153,7 +1205,6 @@ def test_the_header_draws_the_rain_warning_beside_the_notice():
 
 # On a screen, text too long for its space scrolls, a pHAT pixel at a time, clipped to its column and row.
 
-from twobells.board.render import board_frame  # noqa: E402
 from twobells.board.scroll import SCROLL_PAUSE_S  # noqa: E402
 
 LONG = "Manchester Piccadilly via Hadfield, Dinting, Broadbottom, Hattersley, Godley and Hyde Central"
@@ -1166,21 +1217,24 @@ def long_on_screen():
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
 def test_on_a_screen_long_text_scrolls_in_its_column_and_row(panel):
-    layouts, where_x, fonts, s = strip_layouts(panel, tuple(dataclasses.replace(r, middle=LONG) for r in STRIP_TRAINS))
+    s = plain_scale(panel)
+    layouts = dict(painted_rows(board_frame, long_on_screen(), panel))
     frame = board_frame(long_on_screen(), PALETTE, panel)
     texts = [scroll.text for scroll in frame.scrolls]
-    assert texts.count(LONG) == 3 and "Not yet left Hadfield sidings" in texts and "! " + NOTICE in texts
+    assert texts.count(LONG) == 3 and "! " + NOTICE in texts
+    # The long where words have room on the bar screen, not on the 7.9" one.
+    assert ("Not yet left Hadfield sidings" in texts) == (panel is HDMI_1280X400)
     _, label_h, row_h = heights()
+    first, second = (layouts[r] for r in long_on_screen().sections[0].rows[:2])
     for scroll in frame.scrolls:
         assert scroll.step == s  # a pHAT pixel at a time
+        left, top, right, bottom = scroll.box
         if scroll.text == LONG:
-            row, layout = next((r, lay) for r, lay in layouts if lay.middle_room == scroll.width and r.middle == LONG)
-            left, top, right, bottom = scroll.box
-            assert left == int(layout.middle_x) and right == left + int(layout.middle_room)
+            assert left == int(first.middle_x) and right == left + int(first.middle_room)
             assert bottom - top == row_h * s  # its row, no more
-            assert right <= where_x  # clear of the where words
+            assert right <= first.strip_x  # clear of the little line
         if scroll.text.startswith("Not yet"):
-            assert scroll.box[0] == int(where_x) and scroll.width == int(where_width(fonts, panel.width, s))
+            assert left == int(second.where_x) and scroll.width == int(second.where_room)
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -1211,7 +1265,6 @@ def test_on_a_screen_a_reversed_out_row_scrolls_on_its_own_paper():
 
 # A screen wide enough names each bus row's stop where e-paper shows "A: Hyde".
 
-from twobells.board.panel import STOP_NAME_MIN_WIDTH  # noqa: E402
 from twobells.board.render import stop_column  # noqa: E402
 
 GLOSSOP_STOPS = ("Henry Street A", "Henry Street B")  # both of Glossop's stops are on Henry Street
@@ -1228,27 +1281,24 @@ def named_on_screen(buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS, clock=CLOCK):
 
 
 def named_layouts(panel, buses=NAMED_BUSES, stop_names=GLOSSOP_STOPS):
-    """Each bus row's layout, as the painter places it, and the stop column's width."""
+    """Each bus row the board draws, with its layout, and the stop column's width."""
     s = plain_scale(panel)
-    fonts = load_fonts(s)
-    where_x = where_column([STRIP_TRAINS, buses], fonts, panel.width, s, live=True)
-    leave_x = leave_column(buses, fonts, panel.width, s)
-    room = stop_column(buses, stop_names, fonts, panel.width, s, live=True)
-    layouts = [(row, row_layout(row, fonts, panel.width, s, None, leave_x, where_x, room)) for row in buses]
-    return layouts, room, where_x, fonts, s
+    layouts = [(row, layout) for row, layout in painted_rows(board_frame, named_on_screen(buses, stop_names), panel)
+               if row.left not in {r.left for r in STRIP_TRAINS}]
+    return layouts, layouts[0][1].stop_room, load_fonts(s), s
 
 
 def test_only_the_bar_screen_is_wide_enough_for_stop_names_in_the_plain_look():
     bar, small = HDMI_1920X440, HDMI_1280X400
     assert bar.width / plain_scale(bar) >= STOP_NAME_MIN_WIDTH > small.width / plain_scale(small)
     fonts = load_fonts(3)
-    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, small.width, 3, live=True) is None
-    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, bar.width, 3, live=False) is None  # e-paper never
-    assert stop_column(STRIP_BUSES, (), fonts, bar.width, 3, live=True) is None  # no names known
+    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, small.width, 3, True, small.width) is None
+    assert stop_column(NAMED_BUSES, GLOSSOP_STOPS, fonts, bar.width, 3, False, bar.width) is None  # e-paper never
+    assert stop_column(STRIP_BUSES, (), fonts, bar.width, 3, True, bar.width) is None  # no names known
 
 
 def test_the_bar_screen_names_each_bus_row_s_stop_in_a_column_before_the_destination():
-    layouts, room, where_x, fonts, s = named_layouts(HDMI_1920X440)
+    layouts, room, fonts, s = named_layouts(HDMI_1920X440)
     assert room == drawn_length(fonts.regular, "Henry Street A")
     assert [(lay.stop, lay.middle) for _, lay in layouts] == [
         ("Henry Street A", "Hyde"), ("Henry Street B", "Buxton"), ("Henry Street A", "Ashton"),
@@ -1258,31 +1308,42 @@ def test_the_bar_screen_names_each_bus_row_s_stop_in_a_column_before_the_destina
     assert first.stop_x == 3 * s + left_column_width(fonts, s)  # where the destination starts without names
     # Twice the usual gap after the name, so it and the destination don't read as one.
     assert first.middle_x == first.stop_x + room + 12 * s
-    assert first.middle_x + first.middle_room + 12 * s <= where_x
+    assert first.middle_x + first.middle_room + 12 * s == first.strip_x
 
 
 def test_the_plain_stop_column_is_as_wide_whatever_buses_are_shown():
     fonts = load_fonts(3)
     names = ("Henry Street", "Norfolk Square")
     only_a = tuple(dataclasses.replace(r, stop_name="Henry Street") for r in STRIP_BUSES)
-    room = stop_column(only_a, names, fonts, HDMI_1920X440.width, 3, live=True)
+    room = stop_column(only_a, names, fonts, HDMI_1920X440.width, 3, True, HDMI_1920X440.width)
     assert room == drawn_length(fonts.regular, "Norfolk Square")
 
 
-def test_a_long_stop_name_scrolls_in_a_plain_column_about_sixteen_letters_wide():
-    long = "Glossop Norfolk Street Bus Station Stand 3"
+def test_a_stop_name_past_sixteen_letters_stays_whole_while_the_destination_keeps_its_target():
+    long = "Glossop Norfolk Street Station"
     buses = (dataclasses.replace(NAMED_BUSES[0], stop_name=long), *NAMED_BUSES[1:])
-    layouts, room, _, fonts, s = named_layouts(HDMI_1920X440, buses, (long, "Henry Street B"))
-    assert drawn_length(fonts.regular, "Henry Street B") < room <= drawn_length(fonts.regular, "Norfolk Square W")
-    assert layouts[0][1].stop.endswith("…") and layouts[1][1].stop == "Henry Street B"
+    layouts, room, fonts, _ = named_layouts(HDMI_1920X440, buses, (long, "Henry Street B"))
+    assert room == drawn_length(fonts.regular, long)
+    assert [lay.stop for _, lay in layouts] == [long, "Henry Street B", "Henry Street A"]
+    assert layouts[0][1].middle_room >= drawn_length(fonts.regular, "Ashton-under-Lyne")
+
+
+def test_a_longer_stop_name_scrolls_in_the_room_left_by_the_destination_s_target():
+    long = "Glossop Norfolk Street Bus Station Stand 3, Manchester Road"
+    buses = (dataclasses.replace(NAMED_BUSES[0], stop_name=long), *NAMED_BUSES[1:])
+    layouts, room, fonts, s = named_layouts(HDMI_1920X440, buses, (long, "Henry Street B"))
+    first = layouts[0][1]
+    assert drawn_length(fonts.regular, "Henry Street B") < room < drawn_length(fonts.regular, long)
+    assert first.middle_room == pytest.approx(drawn_length(fonts.regular, "Ashton-under-Lyne"))
+    assert first.stop.endswith("…") and layouts[1][1].stop == "Henry Street B"
     frame = board_frame(named_on_screen(buses, (long, "Henry Street B")), PALETTE, HDMI_1920X440)
     [scroll] = [sc for sc in frame.scrolls if sc.text == long]
-    assert scroll.box[0] == int(layouts[0][1].stop_x) and scroll.width == int(room)
+    assert scroll.box[0] == int(first.stop_x) and scroll.width == int(room)
 
 
 def test_a_stop_whose_name_isn_t_known_shows_its_label_in_the_plain_column():
     buses = (NAMED_BUSES[0], dataclasses.replace(NAMED_BUSES[1], stop_name=None), NAMED_BUSES[2])
-    layouts, _, _, _, _ = named_layouts(HDMI_1920X440, buses, ("Henry Street A",))
+    layouts, _, _, _ = named_layouts(HDMI_1920X440, buses, ("Henry Street A",))
     assert [(lay.stop, lay.middle) for _, lay in layouts][1] == ("B", "Buxton")
     assert len({lay.middle_x for _, lay in layouts}) == 1
 
@@ -1295,7 +1356,7 @@ def test_the_plain_bar_screen_draws_the_names():
 
 
 def test_stop_names_leave_the_plain_train_rows_whole():
-    layouts, where_x, fonts, s = strip_layouts(HDMI_1920X440, buses=NAMED_BUSES)
+    layouts = painted_rows(board_frame, named_on_screen(), HDMI_1920X440)
     trains = [lay for row, lay in layouts if row in STRIP_TRAINS]
     assert [lay.middle for lay in trains] == ["Manchester Piccadilly"] * 3
 
