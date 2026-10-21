@@ -73,7 +73,7 @@ An e-paper board needs no attention: it redraws only when what it shows changes.
 
 ![The station board look on the Inky pHAT, scaled up: the next three trains with the 08:12 cancelled, and three buses with when to leave for each](docs/images/phat-sign.png)
 
-On the 10.85" e-paper there is room for platforms and three modes (as the app draws it; not yet run on the panel itself):
+On the 10.85" e-paper there is room for platforms and [three modes](docs/configuration.md#modes-of-transport) (as the app draws it; not yet run on the panel itself):
 
 ![The station board look on the 10.85 inch e-paper at Manchester Piccadilly: the 07:38 to Manchester Airport from platform 14, leave by 07:32, the 07:41 to Liverpool Lime Street expected 07:45, the 192 bus, the tram to Eccles and the disruption to Buxton](docs/images/epaper-10in85-piccadilly.png)
 
