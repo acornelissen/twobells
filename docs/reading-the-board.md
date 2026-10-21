@@ -132,7 +132,7 @@ The screen can redraw every second, so it shows a bit more. **What to show** on 
 
 ![Departures on the 7.9 inch HDMI screen](images/screen-departures.png)
 
-**Three modes:** a screen has room for trains, buses and trams together where its look and text size keep a whole row for each: the station board, TFT and split-flap looks, and the plain look up to text size 12 on the 7.9" screen and 13 on the bar screen. Each has its section, with at least a row, and its own leave time. The Board page of the settings offers only the looks and text sizes with room for the modes the board shows, and says why (see [Modes of transport](configuration.md#modes-of-transport)).
+**Three modes:** a screen has room for trains, buses and trams together in most looks and text sizes ([Modes of transport](configuration.md#modes-of-transport) says which). Each has its section, with at least a row, and its own leave time.
 
 ![The TFT look on the 7.9 inch HDMI screen with three modes: the 07:12 train with its calling-at line, the 341 bus, and the 07:14 tram to Altrincham marked sch, each section with when to leave](images/screen-trams.png)
 

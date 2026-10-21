@@ -16,7 +16,7 @@ What each display can do, and how to set it up on a Pi. What the board shows on 
 | Redraw | about 20 s, on change only | about 21 s, on change only | instant, every second | instant, every second |
 | Clock, countdowns, bus page, clock page | no | no | yes | yes |
 | Where each train or bus is, on its row | no | no | yes | yes |
-| Room for modes of transport ([how many](configuration.md#modes-of-transport)) | 2 | 3 | 3, or 2 in the plain look from text size 13 | 3, or 2 in the plain look from text size 14 |
+| Room for modes of transport ([how many](configuration.md#modes-of-transport)) | 2 | 3 | 3 in most looks | 3 in most looks |
 | Light at night | none | none | the screen stays lit | the screen stays lit |
 | Pi | Zero W or later | Zero 2 W or later | Zero 2 W or later (Zero needs a mini-HDMI adapter) | Zero 2 W or later (Zero needs a mini-HDMI adapter) |
 | `display =` in `config.toml` | `"inky"` | `"waveshare-10in85g"` | `"hdmi-1280x400"`, plus `rotate = 90` or `270` | `"hdmi-1920x440"` (and `rotate = 90` or `270` only if it comes up on its side) |
