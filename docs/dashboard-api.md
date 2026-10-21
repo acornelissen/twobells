@@ -10,6 +10,7 @@ Rules for every response:
 - **Times:** `*_at` fields are ISO 8601 with the board's UTC offset (`2026-10-10T07:12:00+01:00`). `HH:MM` fields are for display only. The browser counts down from `*_at` against the server clock (`generated_at` plus its own offset), so the server never pushes every second.
 - **Text** is plain text from the feeds; the browser must set it with `textContent`, never as HTML.
 - **`id`** values are 16 lowercase hex characters, opaque, and stable for the same departure across snapshots. Raw Darwin service IDs and bus keys never reach the browser.
+- **Caching:** the snapshot, the pages and the static files carry `Cache-Control: no-cache` and an `ETag`, and answer 304 when `If-None-Match` matches; everything else, errors included, is `no-store`.
 
 Contents:
 
@@ -175,6 +176,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 - **Missing data:**
   - A section can be `null` when it isn't configured or is switched off (`trains`, `buses`, `metro`, `weather`), and `trains`, `buses` and `metro` when `[dashboard] modes` leaves their mode out.
   - `now`, `sun`, `rain`, `strip`, `vehicle`, `position` and `formation` can each be null.
+  - `weather.hours` are up to 24 hours, from the hour under way; `[]` without a forecast.
   - `calling_points` and `previous_points` can be `[]`, and `calling_at` null.
 - **Train `messages`** (National Rail's own messages for the station, at most 3, plain text):
   - `category` is Darwin's, when it sends one: `train`, `station`, `connections`, `system`, `misc`, `prior_trains` or `prior_other`; else null. `severity` likewise: `normal`, `minor`, `major` or `severe`, or null.
@@ -192,7 +194,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
   - `usual_platform` is the platform the train left from on most of its last 10 days in the punctuality history with a platform known: one used on more than half of them, and at least 3. It is null with less history than that, with no one platform used most, for a replacement bus or a ferry, and without a history.
   - `platform_changed` is true when `platform` isn't the one the server's last fetch gave the same train (it stays true while the train keeps its new platform), or isn't `usual_platform`. A platform appearing or going is no change, and a cancelled train, a replacement bus or a ferry is never one. The page says "2 (changed)" in the Plat column, on the late colours, says "Usually: Platform 1" in the sheet, and announces each change once in the live region.
 - **`via`:** Darwin's words on the train's route, after its destination, like "via Guide Bridge", or null. The page shows it under the destination and in the sheet's title.
-- **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true` and null times.
+- **Calling points:** `calling_points` are the stops after this station, `previous_points` the ones before it, both in journey order. Times are `HH:MM` or null; `actual` is set once the train has been there. A cancelled stop has `cancelled: true`, its booked `scheduled` time, and null `expected` and `actual`.
 - **`calling_at`:** the station board's "Calling at" line, in words, from `calling_points` and `length` (or else the coaches in `formation`): "Calling at: Dinting and Manchester Piccadilly." ("Calling at: Manchester Piccadilly only." for one stop, from `calling_points` less those cancelled), then "Does not call at Hattersley or Godley." for stops cancelled (alone when every stop is), then "This train is formed of 3 coaches." when the length is known, or "This is a replacement bus." or "This is a ferry." It is null for a cancelled train and when Darwin gives no calling points. The board's screens scroll the same line under their first train. **On the page:** the first row shows it under the destination; the Dot matrix, TFT and Split-flap looks scroll it along one line, in from the right, while `scrolling` is true, and show two lines of it, cut short with "…", when it is false, as the Standard look always does. With reduced motion it never scrolls; a wall tablet leaves the line out.
 - **`announce`:** what a station's public address would say about the train, as `{"kind", "text"}` in the order to say them, worded by `core/announce.py`. A cancelled train has `cancelled` alone: "We are sorry to announce that the 07:42 Northern service to Manchester Piccadilly has been cancelled. This is due to a shortage of train crew." Any other train has, in this order:
   - `platform` when `platform_changed` is true and the platform is known: "Platform alteration: the 07:12 … will now depart from platform 2."
@@ -379,13 +381,14 @@ A top-level key of `/api/snapshot`, after `disruptions`: the bus lines whose tim
 
 ## `GET /api/events`
 
-Server-sent events (`text/event-stream`):
+Server-sent events (`text/event-stream; charset=utf-8`, with `Cache-Control: no-store` and `X-Accel-Buffering: no` so a proxy doesn't hold the events back; HEAD gets the headers alone):
 - On connect: `retry: 5000`, then the current snapshot as `id: <version>`, `event: snapshot`, `data: <the snapshot JSON on one line>`.
 - On each change: the same event with the new version.
 - Every 15 s: a comment line `: ping`.
 - Resuming: if `Last-Event-ID` equals the current version, it sends no snapshot until the next change.
 - The server closes a stream after 30 min, and the browser reconnects.
-- With too many streams open (12 in all, or 4 from the address asking) the server answers 503 with `Retry-After: 30`; the browser falls back to polling `/api/snapshot` every 30 s.
+- With too many streams open (12 in all, or 4 from the address asking) the server answers 503 with `Retry-After: 30`; the browser falls back to polling `/api/snapshot` every 30 s, and tries the stream again every 5 minutes. Behind Docker Desktop or rootless Podman, where every device shows as one address, the 4 are shared.
+- While the stream is open, the page also asks `/api/snapshot` with `If-None-Match` every 2 minutes, to catch a stream that has died without closing.
 
 ## `GET /api/bus/<id>`
 
@@ -478,14 +481,16 @@ The Performance page's figures: how each regular route, and all the trains or al
 
 ## `GET /healthz`
 
-While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot was rebuilt in the last 3 minutes; otherwise 503. On a Pi the pollers run in the fetch service, which hands the snapshot to the web server with its own health; it counts only while that snapshot is under 3 minutes old. While the dashboard is off: always 200 `ok`.
+While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot was rebuilt in the last 3 minutes; otherwise 503 `unavailable`. On a Pi the pollers run in the fetch service, which hands the snapshot to the web server with its own health; it counts only while that snapshot is under 3 minutes old. While the dashboard is off: always 200 `ok`.
 
 ## Static files
 
 - `/`: the page (`index.html`).
 - `/performance`: the Performance page (`performance.html`), with the same headers and caching.
-- `/static/<path>`: files from `src/twobells/dashboard_static/`, from an allowlist built at start.
+- `/static/<path>`: files from `src/twobells/dashboard_static/`, from an allowlist built at start: each file of a known type, read into memory then, leaving out hidden files, symbolic links, odd names and anything over 5 MB. Anything else is 404.
 - `/manifest.webmanifest`.
+- Each has an `ETag` (the SHA-256 of what is sent) and `Cache-Control: no-cache`, and answers 304 when `If-None-Match` matches. Each page's footer carries the version running.
+- Without the folder (a broken install), `/` answers 200 with a short "Front end not built" page.
 
 ## Access rules (every request)
 
@@ -498,7 +503,7 @@ Checked in this order, before anything else. Each refusal has a plain-text body 
 - While the dashboard is off, the rest is answered as at the top of this page.
 - **403** for `/api/` when `Sec-Fetch-Site` is `cross-site`: another site's page can't read the API through the browser.
 
-Before any of these, a connection is closed unread and unanswered while 16 are open from its address or 48 in all, and dropped unanswered when a request's line, headers and body take more than 15 s all told (or any one read more than 10 s). An event stream counts as one connection while it is open.
+Before any of these, a connection is closed unread and unanswered while 16 are open from its address or 48 in all, and dropped unanswered when a request's line, headers and body take more than 15 s all told (or any one read more than 10 s). An event stream counts as one connection while it is open, and the deadline doesn't cut it short: it only writes. Behind Docker Desktop or rootless Podman, where every device shows as one address, the 16 are shared.
 
 ## Security headers (every response while the dashboard is on)
 
