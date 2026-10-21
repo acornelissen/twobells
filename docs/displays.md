@@ -35,7 +35,9 @@ The display is set in `/etc/twobells/config.toml` only. It starts as `"inky"`.
   sudo systemctl enable --now twobells-screen.service
   ```
 
-  State is written only when new data arrives, not on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on. Feeds are polled on the same schedule as on e-paper, so the TransportAPI budget is unchanged.
+  State is written when new data arrives, and every 5 minutes so the settings' Overview stays current, never on every redraw, to spare the SD card. Touch isn't used yet, and the backlight stays on. Feeds are polled on the same schedule as on e-paper, so the TransportAPI budget is unchanged.
+
+  Each second's board is made a second ahead, beside the frames, and only the parts that changed (the clock, the countdowns) are put on the screen, so scrolling text moves evenly. If it jerks, `twobells run --loop --timings` logs how long each second's board took to make and show (see [Troubleshooting](troubleshooting.md)).
 - **The 11.3" bar screen** is set up the same way, with `display = "hdmi-1920x440"`. The board draws four pixels a dot there, one more than on the 7.9" screen, so the text is a third bigger, with one line for each train or bus (see [The 11.3" bar screen](reading-the-board.md#the-113-bar-screen)). Bar screens differ in how they come up: if the log (`journalctl -u twobells-screen`) says the screen is 440x1920, set `rotate = 90` or `270`; if it says another size, the screen isn't telling the Pi its own, so add `video=HDMI-A-1:1920x440@60` to the end of the line in `/boot/firmware/cmdline.txt` and restart.
 
 If the display errors about chip select, add `dtoverlay=spi0-0cs` to `/boot/firmware/config.txt` and reboot.
