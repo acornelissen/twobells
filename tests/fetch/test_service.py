@@ -241,8 +241,9 @@ class PollersOnly(FakeCollector):
     """The real collector's pollers for the settings, never started."""
 
     def __init__(self, dash, hub, history):
-        super().__init__(dash, hub, history)
+        # Before super(), which adds it to `made` for the test to read.
         self.pollers = set(make_collector(dash, hub, history).pollers())
+        super().__init__(dash, hub, history)
 
 
 def test_a_saved_show_list_stops_fetching_what_it_leaves_out_without_a_restart(pi):
