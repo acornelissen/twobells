@@ -51,6 +51,9 @@ Then:
 - Updating: [on a Pi](install-pi.md#updating), [in Docker](docker.md#updating) or [on a desktop](desktop.md#updating). What changed in each release is in the [changelog](../CHANGELOG.md).
 - [Looking after a Pi](pi.md): its services, logs, and checking the keys.
 - [How the web server is kept safe](security.md): the home-network checks, the addresses it answers to, the Pi's network guard and the fetch service. To report a vulnerability, see [SECURITY.md](../SECURITY.md).
+- [What leaves your home](privacy.md): every outside service each install talks to, and what it sends.
+- [Backing up or moving the settings, keys and history](backup.md).
+- [Removing Two Bells from a Pi, Docker or a desktop](uninstall.md).
 - [Commands](commands.md): every `twobells` command and its options.
 - [Troubleshooting](troubleshooting.md): what you see, the likely cause and what to do, and how to log an HDMI screen's timings.
 
