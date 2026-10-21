@@ -1075,6 +1075,14 @@ def test_tram_stops_that_aren_t_metrolink_stops_are_refused(tmp_path, stops, say
         load_config(write(tmp_path, f"[metro]\n[metro.stops]\n{stops}\n"), ENV)
 
 
+@pytest.mark.parametrize("stop", ["9400ZZMAPIC", "940GZZLUBNK"])  # Metrolink's timetable, TfL's live times
+def test_trams_switched_off_are_neither_shown_nor_checked_for(tmp_path, stop):
+    text = f'[train]\ncrs = "GLO"\n[metro]\nenabled = false\n[metro.stops]\nT = "{stop}"\n'
+    settings = load_config(write(tmp_path, text), ENV)
+    assert [config.source.name for config in settings.board.sources] == ["train"]
+    assert settings.board.modes == ("train",) and settings.board.walk.metro == {}
+
+
 # London's metro: [metro] with TfL's codes, live from TfL (sources/tfl.py).
 
 

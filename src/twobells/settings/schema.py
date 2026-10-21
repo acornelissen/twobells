@@ -595,7 +595,7 @@ def fields(display: str = "inky", theme: str = "sign", text_size: int | None = N
               hint="One per line, LABEL = stop code, like A = 1000DGHS0900. Setup finds stops and their bus "
                    "companies on a map.", needs="bus", page="trains_buses", heading="Buses", tier="advanced"),
         Field("metro_enabled", "general", "metro", "enabled", "Show trams", on_off, "radios",
-              hint=f"Off: no trams are shown. {_KEPT}", options=_ON_OFF, default=True, needs="metro",
+              hint=f"Off: no trams are shown or checked for. {_KEPT}", options=_ON_OFF, default=True, needs="metro",
               page="trains_buses", heading="Trams"),
         Field("metro_walk_minutes", "general", "metro", "walk_minutes", "Walk to each tram stop", walk_per_stop,
               "per_stop", hint="Shows when to leave. Leave a box empty for none.", needs="metro",

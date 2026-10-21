@@ -217,6 +217,14 @@ def test_sections_switched_off_are_none_whatever_is_in_them(tmp_path, opened):
     assert dash.walk.train is None and dash.walk.bus == {}
 
 
+@pytest.mark.parametrize("stop", ["9400ZZMAPIC", "940GZZLUBNK"])  # Metrolink's timetable, TfL's live times
+def test_trams_switched_off_are_neither_shown_nor_checked_for(config, tmp_path, opened, stop):
+    config.write_text(config.read_text() + f'[metro]\nenabled = false\n[metro.stops]\nT = "{stop}"\n')
+    dash = load(config, tmp_path / "dash", opened=opened)
+    assert (dash.metro, dash.metro_upkeep, dash.metro_live, dash.metro_stops) == (None, None, None, {})
+    assert dash.walk.metro == {}
+
+
 def test_the_dashboard_fetches_only_the_modes_it_shows(config, tmp_path, opened):
     config.write_text(config.read_text() + '[dashboard]\nmodes = ["bus"]\n')
     dash = load(config, tmp_path / "dash", opened=opened)
