@@ -4,6 +4,10 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-21
+
+A new row layout on HDMI screens: the little line straight after the destination, where it is in words after it, and the room shared out so destinations and stop names show whole more often.
+
 ### Changed
 
 - On an HDMI screen, each train or bus line shows the little line of its stops straight after the destination, then where it is in words (`3 stops away`, `At Dinting`), then its platform, leave time and status. The words used to come first. The room on a line is shared out in a fixed order: the words get room for `3 stops away`, the destination for `Manchester Piccadilly` (a bus's `Ashton-under-Lyne`), a bus's stop name on the bar screen, then the destination and the words more, so longer stop names and where words fit before they scroll. The bar screen's stop names are no longer held to about 16 letters.
@@ -243,7 +247,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.1...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.5.2...main
+[0.5.2]: https://github.com/acornelissen/twobells/releases/tag/v0.5.2
 [0.5.1]: https://github.com/acornelissen/twobells/releases/tag/v0.5.1
 [0.5.0]: https://github.com/acornelissen/twobells/releases/tag/v0.5.0
 [0.4.3]: https://github.com/acornelissen/twobells/releases/tag/v0.4.3
