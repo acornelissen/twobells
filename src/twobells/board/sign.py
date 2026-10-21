@@ -90,7 +90,8 @@ def item_size(item: Item) -> tuple[int, int]:
 # next column (platform, leave time or status).
 STRIP_WIDTH = 42  # eight stops, five or six dots apart
 # Twice the usual gap after the destination, so it and the little line don't
-# run together.
+# run together, and after the where words, so "Left Glossop" and "Plat 1"
+# don't read as one phrase.
 _WHERE_GAP = 2 * _COL_GAP
 # A row's room between its lead (ordinal and time, or route and stop) and its
 # section's next column is shared out by a ladder (share_out), in turn: the
@@ -105,8 +106,15 @@ _DEST_TARGET = {"train": _FONT.getlength("Manchester Piccadilly"), "bus": _FONT.
 _DEST_MOST = _FONT.getlength("Heathrow Terminals 2 & 3")
 # Where a train row's destination starts.
 _TRAIN_DEST_X = MARGIN + _FONT.getlength(_ORDINAL_W) + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
-# Where a bus row's stop starts, after its route.
-_STOP_X = MARGIN + _FONT.getlength("000") + _COL_GAP - 1
+# On a screen, twice the usual gap between the leave words and the status,
+# so "Leave in 2 min" and "Exp 07:24" don't read as one phrase; e-paper keeps
+# the one.
+_LEAVE_GAP = 2 * _COL_GAP
+# On a screen, a bus row's route column: as wide as the widest route shown,
+# from "000" to four characters ("201A", "N199"); a longer one scrolls.
+# E-paper keeps it "000" wide, cutting a longer route short.
+_ROUTE_LEAST = _FONT.getlength("000")
+_ROUTE_MOST = _FONT.getlength("N199")
 
 
 # On a screen wide enough, a bus row's stop by its name: a column as wide as
@@ -176,9 +184,10 @@ class _Columns:
     platform_x: float | None = None
 
 
-def _train_columns(section: Section, width: int, most: int = _MAX_TRAINS) -> _Columns:
+def _train_columns(section: Section, width: int, most: int, live: bool) -> _Columns:
     """From the right, each column left-aligned clear of the widest one after
-    it, so it lines up, for the first `most` rows."""
+    it, so it lines up, for the first `most` rows; on a screen (`live`),
+    the leave words twice the gap clear of the status."""
     rows = section.rows[:most]
     if not rows:
         return _Columns(width - MARGIN)
@@ -187,14 +196,14 @@ def _train_columns(section: Section, width: int, most: int = _MAX_TRAINS) -> _Co
     if section.leave and width >= LEAVE_COLUMN_MIN_WIDTH and (section.leave_for or 0) < len(rows):
         # One line a row: the leave words on their train's row, not under it,
         # set further off the platform so the two don't read as one phrase.
-        leave_x = end = end - _COL_GAP - _w(section.leave)
+        leave_x = end = end - (_LEAVE_GAP if live else _COL_GAP) - _w(section.leave)
         end -= _COL_GAP
     if width >= PLATFORM_COLUMN_MIN_WIDTH and any(r.platform for r in rows):
         platform_x = end = end - _COL_GAP - max(_w(r.platform) for r in rows if r.platform)
     return _Columns(end, leave_x, platform_x)
 
 
-def _bus_columns(section: Section, width: int) -> _Columns:
+def _bus_columns(section: Section, width: int, live: bool) -> _Columns:
     rows = section.rows
     if not rows:
         return _Columns(width - MARGIN)
@@ -202,13 +211,22 @@ def _bus_columns(section: Section, width: int) -> _Columns:
     leaves = [r.leave for r in rows if r.leave]
     if not leaves:
         return _Columns(end)
-    leave_x = end - _COL_GAP - max(map(_w, leaves))
+    leave_x = end - (_LEAVE_GAP if live else _COL_GAP) - max(map(_w, leaves))
     return _Columns(leave_x, leave_x)
 
 
-def _columns(section: Section, width: int, most: int) -> _Columns:
+def _columns(section: Section, width: int, most: int, live: bool) -> _Columns:
     """A section's columns, as its mode's rows are drawn (modes.Mode.rows)."""
-    return _train_columns(section, width, most) if section.kind == "train" else _bus_columns(section, width)
+    if section.kind == "train":
+        return _train_columns(section, width, most, live)
+    return _bus_columns(section, width, live)
+
+
+def _stop_x(section: Section, live: bool) -> float:
+    """Where a bus section's stop column starts: after its route column, on a
+    screen (`live`) as wide as its widest route, "000" to four characters."""
+    widest = max((_w(r.left) for r in section.rows), default=0) if live else 0
+    return MARGIN + min(_ROUTE_MOST, max(_ROUTE_LEAST, widest)) + _COL_GAP - 1
 
 
 def _names_wanted(section: Section, width: int, live: bool) -> float | None:
@@ -227,7 +245,7 @@ def _bus_lead(section: Section, width: int, live: bool, dest_end: float) -> tupl
     `dest_end`: the names as wide as they want, as far as the bus
     destination's target leaves room, and at least STOP_NAME_LEAST; None
     for names_w where the rows show their labels."""
-    stop_x = _STOP_X
+    stop_x = _stop_x(section, live)
     wanted = _names_wanted(section, width, live)
     if wanted is None:
         stops = [r.stop for r in section.rows if r.stop]
@@ -242,7 +260,7 @@ def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
     """Where a section's little lines start against its own columns: after
     what the ladder gives its destinations (and a bus's stop names) of the
     row's room, the where words having their share before the next column."""
-    words_end = columns.end - _COL_GAP
+    words_end = columns.end - _WHERE_GAP
     wanted = _names_wanted(section, width, True) if section.kind == "bus" else None
     if section.kind == "train":
         lead = _TRAIN_DEST_X
@@ -251,7 +269,7 @@ def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
         lead = _bus_lead(section, width, True, 0)[2]
         steps = [("words", _WHERE_LEAST), ("destination", _DEST_TARGET["bus"])]
     else:
-        lead = _STOP_X + _STOP_GAP
+        lead = _stop_x(section, True) + _STOP_GAP
         steps = [("words", _WHERE_LEAST), ("names", min(wanted, STOP_NAME_LEAST)),
                  ("destination", _DEST_TARGET["bus"]), ("names", wanted)]
     steps += [("destination", _DEST_MOST), ("words", _WHERE_MOST)]
@@ -293,7 +311,7 @@ def _add_strip(layout: SignLayout, row: Row, strip_x: float, y: int, end: float,
     layout.strips.append(StripMark(strip_x, y, row.strip, train, inverted))
     words_x = strip_x + STRIP_WIDTH + _COL_GAP
     if row.strip.where:
-        layout.fit(words_x, y, row.strip.where, end - _COL_GAP - words_x, inverted)
+        layout.fit(words_x, y, row.strip.where, end - _WHERE_GAP - words_x, inverted)
 
 
 def calling_line(section: Section, live: bool) -> str | None:
@@ -504,7 +522,7 @@ def sign_layout(view: BoardView, width: int = WIDTH, height: int = HEIGHT) -> Si
     alone = len(sections) == 1
     epaper = view.clock is None
     calling_for = next((s.mode for s in sections if calling_line(s, layout.live)), None)
-    columns = [_columns(s, width, _most_rows(s, alone, epaper)) for s in sections]
+    columns = [_columns(s, width, _most_rows(s, alone, epaper), layout.live) for s in sections]
     footer_y = height - (GLYPH_H if view.clock else TINY_HEIGHT) - 1  # the bottom line's top
 
     def section_height(index: int, rows: int) -> int:

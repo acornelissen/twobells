@@ -797,10 +797,10 @@ def test_every_row_runs_lead_destination_little_line_where_words_then_its_column
         before, where, after = strip_row(layout, mark)
         destination = before[-1]
         assert destination.text in destinations
-        # Twice the usual gap after the destination.
+        # Twice the usual gap after the destination and after the where words.
         assert destination.x + item_size(destination)[0] + 10 <= mark.x
         assert where.x == mark.x + STRIP_WIDTH + 5
-        assert where.x + item_size(where)[0] + 5 <= after[0].x
+        assert where.x + item_size(where)[0] + 10 <= after[0].x
         assert {i.text for i in after} <= {"Plat 1", "Plat 2", "Leave in 3 min", *(r.leave for r in SCREEN_BUSES),
                                            *(r.right for s in view.sections for r in s.rows)}
 
@@ -862,7 +862,7 @@ def test_long_where_words_scroll_up_to_their_section_s_next_column(panel):
     _, where, after = strip_row(layout, mark)
     assert where.text == "Not yet left Hadfield sidings"
     assert after[0].text == "Plat 1"  # the trains' next column
-    assert where.box == int(after[0].x - 5 - where.x)
+    assert where.box == int(after[0].x - 10 - where.x)
 
 
 @pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
@@ -1041,7 +1041,7 @@ def lone_row_rooms(kind, width):
     before, where, after = strip_row(layout, mark)
     destination = before[-1]
     names = destination.x - 10 - before[1].x if kind == "bus" and width >= STOP_NAME_MIN_WIDTH else 0
-    return after[0].x - 5 - where.x, names, mark.x - 10 - destination.x
+    return after[0].x - 10 - where.x, names, mark.x - 10 - destination.x
 
 
 @pytest.mark.parametrize("kind", ["train", "bus"])
@@ -1067,6 +1067,56 @@ def test_a_sign_row_shares_its_room_out_by_the_ladder(kind):
     # the destination again. Short of it, see the 7.9" screen's lined-up strips.
     steps = {(True, False, False)} if kind == "bus" else set()
     assert steps | {(True, True, False), (True, True, True)} <= seen
+
+
+# The sign look's gaps and its bus route column.
+
+
+def leave_gap(view, width, height):
+    """Dots between the bus rows' leave column and the nearest status."""
+    items = sign_layout(view, width, height).items
+    leaves = [find(items, r.leave) for r in SCREEN_BUSES]
+    assert len({i.x for i in leaves}) == 1
+    statuses = [find(items, r.right) for r in SCREEN_BUSES]
+    return min(i.x for i in statuses) - (leaves[0].x + max(item_size(i)[0] for i in leaves))
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_twice_the_usual_gap_between_the_bus_leave_times_and_their_status(panel):
+    assert leave_gap(screen(), *dots(panel)) == 10
+
+
+def test_twice_the_usual_gap_between_a_train_s_leave_words_and_the_statuses_on_the_bar():
+    items = sign_layout(screen(), *dots(HDMI_1920X440)).items
+    leave = find(items, "Leave in 3 min")
+    assert leave.x + item_size(leave)[0] + 10 == min(find(items, r.right).x for r in SCREEN_TRAINS)
+
+
+def stop_column_x(routes, panel=HDMI_1920X440):
+    """Where the bus rows' stops start, the rows' routes being `routes`."""
+    buses = [dataclasses.replace(r, left=route) for r, route in zip(SCREEN_BUSES, routes, strict=True)]
+    items = sign_layout(screen(buses=buses), *dots(panel)).items
+    return {line_of(items, r.middle)[1].x for r in buses}, items
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_the_bus_route_column_is_as_wide_as_the_routes_shown(panel):
+    # From three characters' room to four ("201A", "N199"); a longer route scrolls in it.
+    assert stop_column_x(("61", "7", "8"), panel)[0] == {MARGIN + FONT.getlength("000") + 4}
+    assert stop_column_x(("341", "61", "237"), panel)[0] == {MARGIN + FONT.getlength("000") + 4}
+    assert stop_column_x(("201A", "61", "N199"), panel)[0] == {
+        MARGIN + max(FONT.getlength("201A"), FONT.getlength("N199")) + 4}
+    xs, items = stop_column_x(("X57ABC", "61", "237"), panel)
+    assert xs == {MARGIN + FONT.getlength("N199") + 4}
+    assert find(items, "X57ABC").box is not None
+
+
+def test_e_paper_keeps_its_route_column_and_leave_gap():
+    view = dataclasses.replace(screen(buses=[dataclasses.replace(SCREEN_BUSES[0], left="201A"), *SCREEN_BUSES[1:]]),
+                               clock=None)
+    items = sign_layout(view, *dots(WAVESHARE_10IN85G)).items
+    assert line_of(items, "Hyde")[1].x == MARGIN + FONT.getlength("000") + 4
+    assert leave_gap(view, *dots(WAVESHARE_10IN85G)) == 5
 
 
 # The bottom line on a screen: the notice and the rain warning side by side.
