@@ -7,7 +7,7 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 ### Changed
 
 - On an HDMI screen, each train or bus line shows the little line of its stops straight after the destination, then where it is in words (`3 stops away`, `At Dinting`), then its platform, leave time and status. The words used to come first. The room on a line is shared out in a fixed order: the words get room for `3 stops away`, the destination for `Manchester Piccadilly` (a bus's `Ashton-under-Lyne`), a bus's stop name on the bar screen, then the destination and the words more, so longer stop names and where words fit before they scroll. The bar screen's stop names are no longer held to about 16 letters.
-- The little lines sit in one column down the board in the plain, TFT and split-flap looks and in the station board look on the 7.9" screen. In the station board look on the bar screen, the trains' and the buses' each sit against their own section's columns.
+- The little lines sit in one column down the board in the plain, TFT and split-flap looks on the bar screen. On the 7.9" screen, and in the station board look on either screen, the trains' and the buses' each sit against their own section's columns.
 - In the station board look on an HDMI screen, the leave times stand twice as far from the status, and the where words twice as far from the next column, so the two don't read as one phrase. The bus route column is as wide as the routes shown, 3 to 4 characters, so `201A` and `N199` no longer scroll. E-paper is unchanged.
 
 ## [0.5.1] - 2026-10-21

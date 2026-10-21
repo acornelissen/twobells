@@ -44,7 +44,7 @@ from .view import BoardView, Row, Section, Style
 # In pHAT pixels: tiles this far apart, with this much black between them,
 # this tall, and the letters on them this big. Tiles take more room than
 # Inter: the bar screen keeps "Manchester Piccadilly" whole, but before the
-# little lines the 7.9" screen has room for 15 letters, and longer scrolls.
+# little lines the 7.9" screen has room for 19 letters, and longer scrolls.
 TILE_PITCH = 7
 TILE_GAP = 1
 TILE_HEIGHT = 12

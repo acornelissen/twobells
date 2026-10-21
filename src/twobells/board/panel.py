@@ -14,10 +14,10 @@ PLATFORM_COLUMN_MIN_WIDTH = 300
 
 # A screen at least this wide, in the same units, shows where each train or
 # bus is: a little line of stops after the destination, then the words. From
-# 420 a sign destination still keeps nearly 100 dots, 18 letters ("Manchester
-# Piccadilly" is 105), beside them ("3 stops away"), the platform, a bus's
-# "Leave in 12 min" and the status; at 400 a train's would be down to 78. The
-# 7.9" screen's 426 is in; the 10.85" e-paper's 340 is not, and e-paper never
+# 420 a sign row keeps "Manchester Piccadilly" whole beside them ("3 stops
+# away"), the platform and the status, and a bus's destination about 120
+# dots, 22 letters, beside them, its "Leave in 12 min" and the status; at
+# 400 the bus's would be down to 99. The 7.9" screen's 426 is in; the 10.85" e-paper's 340 is not, and e-paper never
 # shows them anyway. A wider screen shares its spare room out by a ladder
 # (render.share_out) between the destination, a bus's stop names and the
 # where words.
