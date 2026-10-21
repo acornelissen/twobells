@@ -12,8 +12,8 @@ Start with the settings' [Overview](settings.md#overview): it says what is worki
 | Setup says **The board's settings can't be read** | The fetch service can't read `/etc/twobells/config.toml` | `journalctl -u twobells-fetch -n 20` says why; fix `config.toml`, or delete it to use the defaults |
 | A command says `Run this as the service's user: sudo -u twobells …` | It was run as root, on the services' store | Run it as `sudo -u twobells /opt/twobells/venv/bin/twobells …` |
 | E-paper blank after install | The board isn't started, or nothing fetched yet | `sudo systemctl enable --now twobells.timer`; wait a minute; `journalctl -u twobells -f` |
-| `NOT UPDATING: TRAINS`, or `! NOT UPDATING` by TRAINS | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `twobells probe train` |
-| `NOT UPDATING: BUSES`, or `! NOT UPDATING` by BUSES | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | **On the board** in the settings' Overview; `twobells probe bus` |
+| `NOT UPDATING: TRAINS`, or `! NOT UPDATING` by TRAINS | Rail key wrong, or the feed is down | Test the key on the Keys page of the settings; `twobells probe train` (on a Pi, `sudo /opt/twobells/venv/bin/twobells probe train`: see [Checking the keys and codes](pi.md#checking-the-keys-and-codes)) |
+| `NOT UPDATING: BUSES`, or `! NOT UPDATING` by BUSES | No bus timetable yet and no TransportAPI keys; or TransportAPI's daily budget spent, its key wrong, or its feed down | **On the board** in the settings' Overview; `twobells probe bus` (on a Pi, `sudo /opt/twobells/venv/bin/twobells probe bus`) |
 | Every bus says `sch` | No live positions for those buses right now, or live positions failing (the Overview says so) | Usually nothing; times are from the timetable |
 | The Overview says `From TransportAPI: there is no bus timetable yet` | The timetable hasn't been built, or the build failed | `journalctl -u twobells-timetable -n 20`; start it as in [Bus times](buses.md) |
 | The Overview says `From TransportAPI: the bus timetable is for other stops` | You changed the stops; on a Pi it rebuilds once they are saved, which takes a few minutes | Wait, or start the timetable service |
@@ -48,7 +48,7 @@ Start with the settings' [Overview](settings.md#overview): it says what is worki
 | The Performance page says **Delay Repay needs a Service Details key** | No `RDM_DETAILS_API_KEY` | Get one and add it on the Keys page (see [Getting your keys](keys.md#rail-data-marketplace-service-details)) |
 | The Overview says **Network guard: Off** (a Pi) | The guard's rules didn't load, or something flushed every nftables rule since (`sudo nft flush ruleset`, a restart of `nftables`), so nothing stops the web server connecting out | `sudo systemctl restart twobells-guard twobells-web twobells-fetch`: loading the guard again empties its sets, so the web server and the fetch service restart after it to be put back in them. If it stays off, `sudo journalctl -u twobells-guard -u twobells-web` says why (see [Checking the guard](security.md#checking-the-guard)) |
 | Settings won't open | Server stopped, or you're not on the home network | `systemctl status twobells-web.service` on a Pi; the container's state in Docker |
-| Settings say **Forbidden** | Opened from outside the home network, or through an unusual address | Use `http://<name>.local:8090/settings` from home Wi-Fi, or add the name to `allowed_hosts` |
+| Settings say **Forbidden** | Opened from outside the home network, or through an unusual address | Use `http://<name>.local:8090/settings` from home Wi-Fi, or add the name to `allowed_hosts` (see [Addresses it answers to](security.md#addresses-it-answers-to)) |
 
 ## Logging the screen's timings
 
