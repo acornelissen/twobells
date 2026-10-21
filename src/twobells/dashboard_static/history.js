@@ -11,6 +11,8 @@ import { dayText } from "./time.js";
 const WORDS = { on_time: "On time", late: "Late", cancelled: "Cancelled", unknown: "Unknown" };
 const DAY_TYPES = { weekday: "weekdays", saturday: "Saturdays", sunday: "Sundays and bank holidays" };
 const TRAIN_KINDS = [[" (replacement bus)", "replacement bus"], [" (ferry)", "ferry"]];
+// The most days [dashboard] history_days keeps (schema.py), and so the most the server sends.
+const MOST_DAYS = 3650;
 
 let request = 0;
 
@@ -61,7 +63,7 @@ function render(data, stops) {
     fill(body, h("p", {}, "There's no history for this departure."));
     return;
   }
-  const days = list(data.days).filter(obj).slice(0, 90);
+  const days = list(data.days).filter(obj).slice(0, MOST_DAYS);
   const dayType = own(DAY_TYPES, data.day_type) || "days";
   const mode = data.mode === "bus" ? "bus" : "train";
   fill(body,

@@ -3427,6 +3427,25 @@ def test_the_history_never_reads_inherited_keys_as_words():
 
 
 @needs_node
+def test_the_history_shows_every_day_the_setting_keeps():
+    # history_days goes up to 3650 and the server sends at most that many:
+    # all are shown, not just 90, and no more than the setting's most.
+    from twobells.dashboard.config import _MAX_HISTORY_DAYS
+
+    script = """
+        const day = HISTORY.days[0];
+        HISTORY.days = Array.from({ length: %d }, () => ({ ...day }));
+        openTrain(train(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const table = elements(history).filter((el) => el.nodeName === "TABLE").at(-1);
+        const caption = elements(table).find((el) => el.nodeName === "CAPTION");
+        console.log(JSON.stringify([elements(table).filter((el) => el.nodeName === "TR").length, spoken(caption)]));
+    """
+    assert run_js(_sheet() + script % 400) == [400 + 1, "The last 400 weekdays, newest first"]  # and the header row
+    assert run_js(_sheet() + script % (_MAX_HISTORY_DAYS + 1))[0] == _MAX_HISTORY_DAYS + 1
+
+
+@needs_node
 def test_the_sheet_holds_the_history_and_remind_me():
     # One sheet, not three dialogs: the punctuality loads into it on opening,
     # and Remind me is in it, saying honestly that on the LAN's plain http the
