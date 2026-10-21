@@ -51,7 +51,6 @@ IMAGES = ROOT / "docs" / "images"
 
 # name: (demo options, scale)
 DEMOS = {
-    "preview.png": (["--display", "inky", "--theme", "sign"], 1),
     "phat-sign.png": (["--display", "inky", "--theme", "sign"], 3),
     "phat-rain.png": (["--display", "inky", "--theme", "sign", "--rain"], 3),
     "phat-notice.png": (["--display", "inky", "--theme", "sign", "--notice"], 3),
