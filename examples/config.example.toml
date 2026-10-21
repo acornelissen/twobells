@@ -142,8 +142,9 @@ stale_after_minutes = 30
 # TransportAPI's address; change it only if TransportAPI moves it.
 # base_url = "https://transportapi.com/v3"
 #
-# Or TransportAPI alone, with no timetable: take out source and operators,
-# and set interval_minutes and windows to its pace and its windows:
+# Or TransportAPI alone, with no timetable: set source = "transportapi", take
+# out operators, and set interval_minutes and windows to its pace and its
+# windows, as here (these are its defaults when they're left out):
 # interval_minutes = 12
 # windows = ["Mon-Fri 07:00-08:30", "Mon-Fri 17:00-18:00"]
 
@@ -228,7 +229,7 @@ A = "CHANGE_ME"   # like "1000DGHS0900"
 # Optional: a rain warning from Open-Meteo's forecast (free, no key). The board
 # says "Rain from 07:10 (70%)" when rain is likely before you would reach the
 # next train or bus you can still catch (or within the hour, without walk
-# times). Polled every 30 minutes, only inside the train and bus windows,
+# times). Polled every 30 minutes, only inside the train, bus and tram windows,
 # and only while [board] show has "rain" (the dashboard's "weather" has its own).
 # Two decimal places is plenty; that is all that is sent.
 # [weather]
