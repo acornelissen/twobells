@@ -14,7 +14,7 @@ A made-up morning at Manchester Piccadilly. In every picture here the stations, 
 
 One install is one app with two views of the same departures:
 
-- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480), a Waveshare 7.9" HDMI screen (1280x400, on its side) and an 11.3" HDMI bar screen (1920x440); those are tested in software but not yet on the hardware.
+- **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). It also runs on an 11.3" HDMI bar screen (1920x440), tried on a Pi 4 with Raspberry Pi OS Trixie. The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480) and a Waveshare 7.9" HDMI screen (1280x400, on its side); those are tested in software but not yet on the hardware.
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and 15 buses (and 10 trams), calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
 
 A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples, and the pictures from [The dashboard](#the-dashboard) on, use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
