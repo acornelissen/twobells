@@ -2,7 +2,7 @@
 # Which stops and lines: Powered by TfL Open Data. Contains OS data (c) Crown copyright and
 # database rights 2016, and Geomni UK Map data (c) and database rights 2019.
 # Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,
-# https://naptan.api.dft.gov.uk/ , downloaded 2026-10-17.
+# https://naptan.api.dft.gov.uk/ , downloaded 2026-11-03.
 # Contains public sector information licensed under the Open Government Licence v3.0:
 # https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
 # Built by tools/build_setup_data.py; rebuild rather than edit by hand.

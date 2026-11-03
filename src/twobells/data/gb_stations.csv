@@ -1,6 +1,6 @@
 # National Rail stations in Great Britain, with their CRS codes.
 # Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,
-# https://naptan.api.dft.gov.uk/ , downloaded 2026-10-09.
+# https://naptan.api.dft.gov.uk/ , downloaded 2026-11-03.
 # Contains public sector information licensed under the Open Government Licence v3.0:
 # https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
 # Built by tools/build_setup_data.py; rebuild rather than edit by hand.
@@ -330,7 +330,6 @@ Bootle Oriel Road,BOT,53.44662,-2.99573
 Bow Street,BOW,52.43991,-4.03036
 Beaulieu Park,BPA,51.75806,0.51834
 Blackpool Pleasure Beach,BPB,53.78795,-3.05388
-Penychain,BPC,52.90288,-4.33872
 Brookmans Park,BPK,51.72106,-0.20455
 Blackpool North,BPN,53.82191,-3.04927
 Blackpool South,BPS,53.79870,-3.04894
@@ -1236,6 +1235,7 @@ Heathrow Terminal 5,HWV,51.47005,-0.49059
 How Wood (Herts),HWW,51.71774,-0.34467
 High Wycombe,HWY,51.62959,-0.74541
 Hoveton & Wroxham,HXM,52.71557,1.40800
+Heathrow Terminals 2 & 3,HXX,51.47185,-0.45410
 Honeybourne,HYB,52.10160,-1.83374
 Hyde Central,HYC,53.45188,-2.08525
 Heyford,HYD,51.91919,-1.29927
@@ -1425,7 +1425,6 @@ Leatherhead,LHD,51.29882,-0.33323
 Loch Eil Outward Bound,LHE,56.85527,-5.19158
 Lealholm,LHM,54.46059,-0.82572
 Langho,LHO,53.80483,-2.44866
-Heathrow Terminals 2 & 3,LHR,51.47185,-0.45410
 Limehouse,LHS,51.51254,-0.03980
 Lochwinnoch,LHW,55.78716,-4.61608
 Lichfield City,LIC,52.68015,-1.82542
@@ -1763,7 +1762,6 @@ Olton,OLT,52.43851,-1.80431
 Ockley,OLY,51.15151,-0.33601
 Ormskirk,OMS,53.56927,-2.88119
 Orrell Park,OPK,53.46190,-2.96332
-Oxford Parkway,OPY,51.80407,-1.27449
 Ore,ORE,50.86695,0.59157
 Old Roan,ORN,53.48690,-2.95107
 Orpington,ORP,51.37330,0.08909
@@ -1776,6 +1774,7 @@ Overpool,OVE,53.28405,-2.92406
 Overton,OVR,51.25429,-1.25927
 Oxford,OXF,51.75350,-1.27015
 Oxenholme Lake District,OXN,54.30493,-2.72187
+Oxford Parkway,OXP,51.80407,-1.27449
 Oxshott,OXS,51.33640,-0.36242
 Oxted,OXT,51.25791,-0.00483
 London Paddington,PAD,51.51600,-0.17617
@@ -1840,6 +1839,7 @@ Portsmouth & Southsea,PMS,50.79850,-1.09091
 Polmont,PMT,55.98474,-3.71497
 Penmaenmawr,PMW,53.27047,-3.92351
 Penally,PNA,51.65892,-4.72206
+Penychain,PNC,52.90288,-4.33872
 Penge East,PNE,51.41933,-0.05422
 Penyffordd,PNF,53.14309,-3.05484
 Pannal,PNL,53.95832,-1.53347
@@ -2641,4 +2641,4 @@ Yeovil Pen Mill,YVP,50.94453,-2.61343
 Southease - Piddinghoe Road,ZBU,50.82963,0.01782
 Canada Water,ZCW,51.49799,-0.04972
 Farringdon,ZFD,51.52017,-0.10520
-Whitechapel,ZWL,51.51947,-0.05976
+Whitechapel,ZLW,51.51947,-0.05976
