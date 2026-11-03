@@ -1,6 +1,6 @@
 # Manchester Metrolink stops, with their NaPTAN codes (9400ZZMA and TfGM's three letters).
 # Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,
-# https://naptan.api.dft.gov.uk/ , downloaded 2026-10-17.
+# https://naptan.api.dft.gov.uk/ , downloaded 2026-11-03.
 # Contains public sector information licensed under the Open Government Licence v3.0:
 # https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
 # Built by tools/build_setup_data.py; rebuild rather than edit by hand.

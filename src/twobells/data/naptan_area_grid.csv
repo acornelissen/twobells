@@ -1,7 +1,7 @@
 # NaPTAN areas with bus stops in each cell of 0.1 by 0.1 degrees.
 # lat10 and lon10 are the cell's south-west corner times ten, rounded down.
 # Source: National Public Transport Access Nodes (NaPTAN), Department for Transport,
-# https://naptan.api.dft.gov.uk/ , downloaded 2026-10-09.
+# https://naptan.api.dft.gov.uk/ , downloaded 2026-11-03.
 # Contains public sector information licensed under the Open Government Licence v3.0:
 # https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/
 # Built by tools/build_setup_data.py; rebuild rather than edit by hand.
@@ -1181,7 +1181,7 @@ lat10,lon10,areas
 525,-17,380 420
 525,-16,260 420
 525,-15,260 420
-525,-14,260 420
+525,-14,260 370 420
 525,-13,260
 525,-12,260 269
 525,-11,260
@@ -3084,6 +3084,7 @@ lat10,lon10,areas
 580,-43,670
 580,-42,670
 580,-39,670
+580,-38,670
 580,-37,670
 581,-72,601
 581,-71,601
