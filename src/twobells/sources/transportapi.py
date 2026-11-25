@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from datetime import date
 from urllib.parse import urlencode
 
 from ..core.model import Departure, Status, is_clock, minutes_between
@@ -52,9 +53,20 @@ def _parse_bus(entry: dict, stop_label: str | None) -> Departure:
     )
 
 
-def _sort_key(entry: dict) -> tuple[str, str]:
+def _sort_key(entry: dict) -> int:
+    """Minutes from the booked date's day 1 to when the bus is expected: the
+    booked time plus its delay. By its estimate alone, a bus booked at 23:58
+    and expected at 00:03 would come first that day. Without a readable
+    date, the day counts as 0."""
+    aimed = entry["aimed_departure_time"]
     best = entry.get("best_departure_estimate")
-    return (_text(entry.get("date")), best if is_clock(best) else entry["aimed_departure_time"])
+    delay = minutes_between(aimed, best) if is_clock(best) else 0
+    try:
+        day = date.fromisoformat(_text(entry.get("date"))).toordinal()
+    except ValueError:
+        day = 0
+    hours, minutes = aimed.split(":")
+    return day * 24 * 60 + int(hours) * 60 + int(minutes) + delay
 
 
 def _matches(entry: dict, directions: Iterable[str] | None) -> bool:
@@ -78,8 +90,8 @@ def _entries(payload: dict, directions: Iterable[str] | None) -> list[dict]:
 
 def _dated(
     payload: dict, directions: Iterable[str] | None, stop_label: str | None
-) -> list[tuple[tuple[str, str], Departure]]:
-    """Departures in order, each with its (date, time), which orders them across midnight."""
+) -> list[tuple[int, Departure]]:
+    """Departures in order, each with when it is expected (_sort_key), which orders them across midnight."""
     entries = sorted(_entries(payload, directions), key=_sort_key)
     return [(_sort_key(e), _parse_bus(e, stop_label)) for e in entries]
 

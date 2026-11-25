@@ -138,6 +138,30 @@ def test_merged_stops_keep_their_order_across_midnight():
     assert [(d.scheduled, d.stop) for d in deps] == [("23:55", "A"), ("00:05", "B")]
 
 
+def test_a_late_bus_that_runs_past_midnight_comes_after_earlier_ones():
+    def at(aimed, best, date="2026-10-09"):
+        return bus(aimed_departure_time=aimed, expected_departure_time=best, best_departure_estimate=best, date=date)
+
+    # Booked 23:58 but expected 00:03 the next day: after the 23:50, and the 00:01 running on time.
+    payloads = {
+        "a": stop(at("23:58", "00:03"), at("23:50", "23:50")),
+        "b": stop(at("00:01", "00:01", "2026-10-10")),
+    }
+    deps = source({"A": "a", "B": "b"}, payloads, rows=3).fetch()
+    assert [(d.scheduled, d.expected) for d in deps] == [("23:50", None), ("00:01", None), ("23:58", "00:03")]
+    assert [d.scheduled for d in parse_stop(payloads["a"])] == ["23:50", "23:58"]
+
+
+def test_an_early_bus_after_midnight_still_comes_after_the_day_before():
+    def at(aimed, best, date):
+        return bus(aimed_departure_time=aimed, best_departure_estimate=best, date=date)
+
+    # Booked 00:02, estimated 23:59 the night before: before the 00:00, after the 23:55.
+    payload = stop(at("00:00", "00:00", "2026-10-10"), at("00:02", "23:59", "2026-10-10"),
+                   at("23:55", "23:55", "2026-10-09"))
+    assert [d.scheduled for d in parse_stop(payload)] == ["23:55", "00:02", "00:00"]
+
+
 def test_source_truncates_to_requested_rows_after_filtering():
     payload = stop(
         bus(direction="Hayfield"),
