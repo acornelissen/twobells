@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from tests.paths import FIXTURES
+from twobells.core.errors import NoTimetable
 from twobells.core.model import Departure, Status, strip_key
 from twobells.sources import holidays
 from twobells.sources.bodsbus import BodsBusSource, unusable
@@ -166,7 +167,7 @@ def test_without_a_timetable_the_fallback_stands_in(tmp_path):
 def test_without_a_timetable_or_fallback_the_fetch_fails_saying_what_to_run(tmp_path):
     bus = source(tmp_path, at(10, 0))
     assert not bus.falling_back and bus.cost == 0
-    with pytest.raises(RuntimeError, match="twobells timetable"):
+    with pytest.raises(NoTimetable, match="twobells timetable"):
         bus.fetch()
 
 
@@ -377,7 +378,7 @@ def test_fetch_live_never_falls_back(tmp_path):
 def test_fetch_live_raises_for_a_timetable_it_can_t_use(tmp_path):
     timetable.save(tmp_path, schedule())
     bus = source(tmp_path, at(10, 0), stops={"A": HENRY_A, "B": "100000008350"})
-    with pytest.raises(RuntimeError, match="for other stops"):
+    with pytest.raises(NoTimetable, match="for other stops"):
         bus.fetch_live()
 
 

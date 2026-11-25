@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import cast
 
-from ..core.errors import safe_message
+from ..core.errors import NoTimetable, public_problem, safe_message
 from ..core.model import Departure, Strip, strip_key
 from ..core.net import get_bytes
 from ..core.places import BODS_BASE_URL
@@ -99,6 +99,8 @@ class BusBoard:
     journeys: list[LiveJourney] = field(default_factory=list)
     # Every live bus on your lines around your stops, placed or not, for the area map.
     vehicles: list[Vehicle] = field(default_factory=list)
+    # `note` for the public dashboard: the same, but the failure in plain words (core.errors.public_problem).
+    public_note: str | None = None
 
 
 class BodsBusSource:
@@ -199,20 +201,22 @@ class BodsBusSource:
         """Hits of the fallback's daily allowance the next fetch will use."""
         return self._fallback.cost if self._fallback is not None and self.falling_back else 0
 
-    def _vehicles(self, schedule: Schedule) -> tuple[list[Vehicle], str | None]:
-        """Live buses around the timetable's stops, and a note if asking failed."""
+    def _vehicles(self, schedule: Schedule) -> tuple[list[Vehicle], str | None, str | None]:
+        """Live buses around the timetable's stops, and a note, and the note for
+        the public dashboard, if asking failed."""
         box = _box(schedule)
         if box is None:
-            return [], None
+            return [], None, None
         lines = {journey.line for journey in schedule.journeys}
         source = BodsVehicleSource(
             self._api_key, box, lines, self._base_url, self._http_get, now=self._clock
         )
         try:
-            return source.fetch(), None
+            return source.fetch(), None, None
         except Exception as error:  # noqa: BLE001 - without positions, timetabled times still show
             log.warning("bus: live positions failed, showing timetabled times: %s", safe_message(error))
-            return [], f"Timetabled times only; live positions failed: {safe_message(error)}"
+            return ([], f"Timetabled times only; live positions failed: {safe_message(error)}",
+                    f"Timetabled times only; live positions failed: {public_problem(error)}")
 
     def _board(self, schedule: Schedule, now: datetime, rows: int) -> BusBoard:
         names = _holiday_names(self._folder, now.date())
@@ -220,9 +224,9 @@ class BodsBusSource:
         def runs_on(journey: Journey, day: date) -> bool:
             return timetable.runs_on(journey.calendar, day, names)
 
-        vehicles, note = self._vehicles(schedule)
+        vehicles, note, public_note = self._vehicles(schedule)
         found, placed = livebus.live_board(schedule, now, vehicles, runs_on, rows, self._directions)
-        return BusBoard(found, schedule, note is None, note, placed, list(vehicles))
+        return BusBoard(found, schedule, note is None, note, placed, list(vehicles), public_note)
 
     def fetch(self) -> list[Departure]:
         now = self._clock()
@@ -232,7 +236,7 @@ class BodsBusSource:
         self.board = None
         if reason is not None:
             if self._fallback is None:
-                raise RuntimeError(f"{reason}; run twobells timetable")
+                raise NoTimetable(f"{reason}; run twobells timetable")
             log.warning("bus: %s, using TransportAPI", reason)
             self.note = f"From TransportAPI: {reason}"
             return self._fallback.fetch()
@@ -302,7 +306,7 @@ class BodsBusSource:
         schedule = self._schedule()
         reason = unusable(schedule, self._stops, now.replace(tzinfo=None))
         if reason is not None:
-            raise RuntimeError(reason)
+            raise NoTimetable(reason)
         # As in fetch: no reason means there is a timetable.
         return self._board(cast(Schedule, schedule), now, self._rows if rows is None else rows)
 

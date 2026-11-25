@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, tzinfo
 from pathlib import Path
 
+from ..core.errors import NoTimetable
 from ..core.model import Departure, Status
 from ..timetable import trams as timetable
 from ..timetable.trams import TramCall, TramTimetable
@@ -80,7 +81,7 @@ class TramTimetableSource:
         found = self._timetable()
         reason = timetable.unusable(found, self._stops, now.replace(tzinfo=None))
         if reason is not None or found is None:
-            raise RuntimeError(f"{reason}; run twobells timetable")
+            raise NoTimetable(f"{reason}; run twobells timetable")
         local = now.replace(tzinfo=None)
         return [(leaves.replace(tzinfo=now.tzinfo), call)
                 for leaves, call in found.leaving(local, self._rows if rows is None else rows, self._directions)]

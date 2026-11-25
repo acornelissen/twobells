@@ -1,8 +1,23 @@
+import socket
+import ssl
 import time
+from urllib.error import HTTPError, URLError
 
 import pytest
 
-from twobells.core.errors import MESSAGE_LIMIT, redact_keys, safe_message, scrub_secrets
+from twobells.core.errors import (
+    KEY_REFUSED,
+    MESSAGE_LIMIT,
+    NO_TIMETABLE,
+    SERVICE_TROUBLE,
+    SOMETHING_WRONG,
+    UNREACHABLE,
+    NoTimetable,
+    public_problem,
+    redact_keys,
+    safe_message,
+    scrub_secrets,
+)
 
 
 # A server chooses what an error says: an HTTP reason phrase can be 64 KB.
@@ -88,3 +103,47 @@ def test_scrub_secrets_takes_the_longest_first_and_passes_over_empty_ones():
     assert scrub_secrets("nothing to hide", [""]) == "nothing to hide"
     assert scrub_secrets("nothing to hide", []) == "nothing to hide"
     assert scrub_secrets("bad 1234", {"A": "1234"}.values()) == "bad …"
+
+
+# What the public dashboard says of a failure: by kind, never by the error's words.
+def _http(code):
+    return HTTPError("https://api.example.invalid/board?x-apikey=SECRET123", code, "Words nobody should see", {}, None)
+
+
+@pytest.mark.parametrize(("error", "said"), [
+    (_http(401), KEY_REFUSED),
+    (_http(403), KEY_REFUSED),
+    (_http(429), SERVICE_TROUBLE),
+    (_http(500), SERVICE_TROUBLE),
+    (_http(503), SERVICE_TROUBLE),
+    (_http(404), SOMETHING_WRONG),
+    (URLError("[Errno -3] Temporary failure in name resolution"), UNREACHABLE),
+    (TimeoutError("timed out"), UNREACHABLE),
+    (ConnectionResetError(), UNREACHABLE),
+    (socket.gaierror(-3, "Temporary failure"), UNREACHABLE),
+    (ssl.SSLError("handshake"), UNREACHABLE),
+    (NoTimetable("there is no bus timetable yet; run twobells timetable"), NO_TIMETABLE),
+    (ValueError("Forecast is not JSON"), SOMETHING_WRONG),
+    (RuntimeError("anything else"), SOMETHING_WRONG),
+    (FileNotFoundError("/data/settings.toml"), SOMETHING_WRONG),
+])
+def test_public_problem_names_the_kind_of_failure_in_plain_words(error, said):
+    assert public_problem(error) == said
+
+
+def test_public_problem_looks_through_a_source_that_re_raised_without_the_key():
+    # `raise RuntimeError(text) from None` inside the except keeps the original as its context.
+    try:
+        try:
+            raise _http(401)
+        except HTTPError as error:
+            raise RuntimeError(safe_message(error)) from None
+    except RuntimeError as wrapped:
+        assert public_problem(wrapped) == KEY_REFUSED
+
+
+def test_public_problem_never_says_the_errors_own_words():
+    for error in (_http(500), URLError("<urlopen error [Errno -3] host.internal>"), RuntimeError("x-apikey=SECRET123")):
+        said = public_problem(error)
+        assert "SECRET123" not in said and "api.example" not in said and "internal" not in said
+        assert not said.endswith(".") and len(said) < 100  # it reads after "Problem: " and takes a full stop

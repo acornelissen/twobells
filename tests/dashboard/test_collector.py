@@ -2,12 +2,14 @@ import json
 import sqlite3
 import time
 from datetime import datetime, timedelta
+from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from tests.paths import FIXTURES
 from tests.sources.test_livebus import HALFWAY, HENRY_A, at, bus, schedule
+from twobells.core.errors import KEY_REFUSED, SERVICE_TROUBLE, SOMETHING_WRONG, UNREACHABLE
 from twobells.core.polling import parse_window
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.collector import Collector, Poller
@@ -102,8 +104,9 @@ class Buses:
             raise self.error
         vehicles = [bus(*HALFWAY, at(10, 14))] if self.vehicles_ok else []
         note = None if self.vehicles_ok else "Timetabled times only; live positions failed: down"
+        public = None if self.vehicles_ok else f"Timetabled times only; live positions failed: {UNREACHABLE}"
         found, placed = live_board(schedule(), self.clock(), vehicles, lambda journey, day: True, 10)
-        return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles)
+        return BusBoard(found, schedule(), self.vehicles_ok, note, placed, vehicles, public)
 
     def last_buses(self, now=None):
         if self.last_error:
@@ -293,15 +296,17 @@ def test_an_error_keeps_the_last_trains_and_marks_them_stale(tmp_path):
     setup.collector.poll_trains()
     good = setup.snapshot()["trains"]["rows"]
     setup.clock.now += timedelta(minutes=1)
-    setup.trains.error = RuntimeError("HTTP 500 for https://api.example/board?x-apikey=SECRET123")
-    with pytest.raises(RuntimeError):
+    setup.trains.error = HTTPError("https://api.example/board?x-apikey=SECRET123", 500, "Server Error", {}, None)
+    with pytest.raises(HTTPError):
         setup.collector.poll_trains()
     trains = setup.snapshot()["trains"]
     assert trains["rows"] == good
     assert trains["status"]["stale"] is True
     assert trains["status"]["last_success"] == "2026-10-09T22:03:00+01:00"
     assert "SECRET123" not in setup.hub.current()[1].decode()
-    assert trains["status"]["error"].startswith("HTTP 500")
+    # In plain words by the kind of failure: no address, no status line, no text of the error's own.
+    assert trains["status"]["error"] == SERVICE_TROUBLE
+    assert "api.example" not in setup.hub.current()[1].decode()
     assert len(setup.history.observed) == 1  # a failed poll decides nothing
 
     setup.trains.error = None
@@ -354,7 +359,7 @@ def test_an_error_before_any_data_is_stale_with_no_rows(tmp_path):
     with pytest.raises(RuntimeError):
         setup.collector.poll_trains()
     trains = setup.snapshot()["trains"]
-    assert trains["rows"] == [] and trains["status"]["stale"] and trains["status"]["error"] == "down"
+    assert trains["rows"] == [] and trains["status"]["stale"] and trains["status"]["error"] == SOMETHING_WRONG
 
 
 # Train positions
@@ -451,7 +456,7 @@ def test_a_refused_key_turns_details_off_for_six_hours(tmp_path, caplog):
     assert warnings == ["dashboard train positions off for 6 hours: Service details refused the key (HTTP 403)"]
 
     said = setup.snapshot()["trains"]["positions"]
-    assert said["error"] == "Service details refused the key (HTTP 403)" and said["stale"] is True
+    assert said["error"] == KEY_REFUSED and said["stale"] is True
     assert said["note"] == "Not asked again for 6 hours" and said["last_success"] is not None
 
     setup.monotonic.now += 5 * 3600 + 1  # six hours on
@@ -671,7 +676,8 @@ def test_the_buses_say_how_asking_where_they_are_is_going(tmp_path):
     setup.collector.poll_buses()
     failing = setup.snapshot()["buses"]["positions"]
     assert failing["last_success"] == first["last_success"] and failing["stale"] is True
-    assert failing["error"] == "Timetabled times only; live positions failed: down"
+    assert failing["error"] == f"Timetabled times only; live positions failed: {UNREACHABLE}"
+    assert "down" not in setup.hub.current()[1].decode()  # the raw words stay with the source and the log
     setup.buses.vehicles_ok = True
     setup.collector.poll_buses()
     assert setup.snapshot()["buses"]["positions"]["error"] is None
@@ -680,11 +686,11 @@ def test_the_buses_say_how_asking_where_they_are_is_going(tmp_path):
 def test_an_error_keeps_the_last_buses(tmp_path):
     setup = Setup(tmp_path)
     setup.collector.poll_buses()
-    setup.buses.error = OSError("timed out")
+    setup.buses.error = TimeoutError("timed out")
     with pytest.raises(OSError):
         setup.collector.poll_buses()
     buses = setup.snapshot()["buses"]
-    assert buses["rows"] and buses["status"]["stale"] and buses["status"]["error"] == "timed out"
+    assert buses["rows"] and buses["status"]["stale"] and buses["status"]["error"] == UNREACHABLE
     assert buses["timetable"]["state"] == "ready"
 
 

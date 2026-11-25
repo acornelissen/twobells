@@ -7,8 +7,11 @@ ConfigError, what settings that don't load raise, wherever they are read."""
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+import socket
+import ssl
+from collections.abc import Callable, Iterable, Iterator
 from typing import overload
+from urllib.error import HTTPError, URLError
 
 MESSAGE_LIMIT = 160
 # The most of a message read. A server chooses what an error says (a reason
@@ -31,6 +34,20 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 class ConfigError(Exception):
     pass
+
+
+class NoTimetable(RuntimeError):
+    """A bus or tram timetable is wanted and there is none to use."""
+
+
+# What the dashboard says publicly of a feed that failed (public_problem): a
+# short sentence per kind, never the error's own words, which can carry
+# hostnames and internals. Each reads after "Problem: " and takes a full stop.
+KEY_REFUSED = "The service refused the key; check it in Settings > Keys"
+UNREACHABLE = "Can't reach the service"
+SERVICE_TROUBLE = "The service is having trouble"
+NO_TIMETABLE = "There is no timetable yet; it is being built or needs building in Settings"
+SOMETHING_WRONG = "Something went wrong getting this; it will try again"
 
 
 def safe_message(error: BaseException | str) -> str:
@@ -95,3 +112,35 @@ def _each_string(value: object, change: Callable[[str], str]) -> object:
     if isinstance(value, list):
         return [_each_string(v, change) for v in value]
     return value
+
+
+def _chain(error: BaseException) -> Iterator[BaseException]:
+    """`error`, then what it was raised from or while handling, nearest first.
+    A source that re-raises without the key or URL (`from None`) still has
+    the original as its context."""
+    seen: set[int] = set()
+    found: BaseException | None = error
+    while found is not None and id(found) not in seen and len(seen) < 8:
+        seen.add(id(found))
+        yield found
+        found = found.__cause__ or found.__context__
+
+
+def public_problem(error: BaseException) -> str:
+    """A feed's failure as one plain sentence for anyone who can see the
+    dashboard, by the kind of error and its HTTP status, never its text:
+    a refused key, no way to reach the service, the service in trouble, no
+    timetable, else a general one. The error itself goes in the log
+    (safe_message) and, for the settings' Overview, nowhere public."""
+    for found in _chain(error):
+        if isinstance(found, NoTimetable):
+            return NO_TIMETABLE
+        if isinstance(found, HTTPError):
+            if found.code in (401, 403):
+                return KEY_REFUSED
+            if found.code == 429 or found.code >= 500:
+                return SERVICE_TROUBLE
+            return SOMETHING_WRONG
+        if isinstance(found, (URLError, TimeoutError, ConnectionError, socket.gaierror, ssl.SSLError)):
+            return UNREACHABLE
+    return SOMETHING_WRONG

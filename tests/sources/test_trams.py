@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from tests.timetable.test_trams import NOW, STOPS, read
+from twobells.core.errors import NoTimetable
 from twobells.core.model import Status
 from twobells.sources.trams import TramTimetableSource
 from twobells.timetable import trams
@@ -39,7 +40,7 @@ def test_leaving_says_when_each_goes_in_the_board_s_zone(tmp_path):
 
 
 def test_without_a_usable_timetable_it_says_why(tmp_path):
-    with pytest.raises(RuntimeError, match="there is no tram timetable yet"):
+    with pytest.raises(NoTimetable, match="there is no tram timetable yet"):
         source(tmp_path).fetch()
     trams.save(tmp_path, read())
     assert source(tmp_path).unusable() is None

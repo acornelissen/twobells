@@ -64,7 +64,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..core.errors import safe_message
+from ..core.errors import KEY_REFUSED, public_problem, safe_message
 from ..core.model import mark_platform_changes
 from ..core.places import tram_stop_names
 from ..sources import holidays as _holidays
@@ -200,7 +200,9 @@ class _Feed:
         self.data, self.fetched, self.last_success, self.error, self.note = data, now, now, None, note
 
     def failed(self, error: BaseException) -> None:
-        self.error = safe_message(error)
+        # The dashboard needs no sign-in, so what it says is a plain sentence by
+        # the kind of error, not the error's words (the poller logs those).
+        self.error = public_problem(error)
 
 
 def _with_platform_changes(before: TrainBoard | None, fetched: datetime | None, board: TrainBoard,
@@ -542,6 +544,7 @@ class Collector:
                 self._train_positions.worked(None, self._clock())
             elif isinstance(error, DetailsUnavailable):
                 self._train_positions.failed(error)
+                self._train_positions.error = KEY_REFUSED
                 self._train_positions.note = "Not asked again for 6 hours"
                 log.warning("dashboard train positions off for 6 hours: %s", safe_message(error))
             elif not isinstance(error, ServiceGone):
@@ -609,12 +612,14 @@ class Collector:
             self._buses.failed(error)
             self._publish_buses()
             raise
+        # What the public dashboard says of a failed ask for positions: the plain sentence, never the error's words.
+        public = board.public_note or ("Timetabled times only; live positions failed" if board.note else None)
         if board.vehicles_ok:  # timetabled times alone say nothing about punctuality
             self._observe("bus", bus_observations(board, self._tz, now), now)
             self._bus_positions.worked(None, now)
         else:
-            self._bus_positions.error = board.note or "Live positions failed"
-        self._buses.worked(board, now, board.note)
+            self._bus_positions.error = public or "Live positions failed"
+        self._buses.worked(board, now, public)
         self._last_buses = self._find_last_buses(source, now)
         self._publish_buses()
         self._hub.put("area", area_view(board, now))
