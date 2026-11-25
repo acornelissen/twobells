@@ -10,6 +10,32 @@
 # it and renaming that over it, so it always names one release or the other.
 # It expects PREFIX and REPO, set -euo pipefail and umask 022.
 
+# The lock that keeps a second install.sh or update.sh from running beside
+# this one: its start-up prune would remove the release this one is
+# building. In /run, which only root can write to, so nobody else can put a
+# file or a link there first; and in memory, gone at each start.
+LOCK=/run/twobells-deploy.lock
+
+# Takes the lock, or fails saying why: another run holds it, or there's no
+# flock (util-linux, which every Raspberry Pi OS has). It is held on file
+# descriptor 9, open until this shell exits, however it exits, going back
+# to the release before included: nothing has to let it go. The file is
+# never replaced, as a run holding the old one would then run beside one
+# holding the new. Commands run as the services' user get 9 closed (9<&-).
+take_lock() {
+  if ! command -v flock >/dev/null; then
+    echo "flock isn't installed, so this can't make sure it runs alone. It comes with util-linux:" >&2
+    echo "  sudo apt-get install util-linux" >&2
+    return 1
+  fi
+  : >>"$LOCK"
+  exec 9<"$LOCK"
+  if ! flock --nonblock 9; then
+    echo "Another install.sh or update.sh is running. Let it finish, then run this again." >&2
+    return 1
+  fi
+}
+
 # A release's version, as release.yml tags it (upgrade.sh's valid_version).
 valid_release_version() {
   [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]

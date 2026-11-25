@@ -474,7 +474,7 @@ def test_update_refuses_where_nothing_is_installed_before_changing_anything():
     block = update[check:update.index("fi\n", check)]
     assert "install.sh" in block and "exit 1" in block  # says what to run instead
     # After putting back the venv link a power cut part way through an update left out.
-    assert update.index('source "$REPO/deploy/pi/releases.sh"\nrecover\n') < check
+    assert update.index('source "$REPO/deploy/pi/releases.sh"\ntake_lock\nrecover\n') < check
 
 
 def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_guard():
@@ -867,8 +867,9 @@ def _query(name: str, what: str, conf: Path) -> list[str]:
     `name`, as it would with its config folder at `conf`."""
     [body] = re.findall(r"^query\(\) \{\n  (.*)\n\}$", _script(name), re.M)
     words = shlex.split(body)
-    # Asked as the services' user, not as root.
+    # Asked as the services' user, not as root, and not handed the lock (releases.sh's take_lock).
     assert words[:4] == ["runuser", "-u", "twobells", "--"], words
+    assert words.pop() == "9<&-", words
     assert words[4] == "$PREFIX/venv/bin/twobells"
     return [what if word == "$1" else word.replace("$CONF", str(conf)) for word in words[5:]]
 
@@ -1016,7 +1017,7 @@ def test_update_switches_to_the_new_release_only_once_it_imports_and_restarts_af
 def test_install_lays_out_the_app_as_update_does():
     # A fresh install the same way, so update.sh has one case to update.
     install = _script("install.sh")
-    steps = ['source "$REPO/deploy/pi/releases.sh"\nrecover\n', "trap finish EXIT\n",
+    steps = ['source "$REPO/deploy/pi/releases.sh"\ntake_lock\nrecover\n', "trap finish EXIT\n",
              "read_version\nprune\nnew_release\n", NEW_RELEASE, 'switch_to "$release"\nprune\n',
              'install -d -m 755 "$CONF"', '"$(query display)"']
     places = [install.index(step) for step in steps]
@@ -1255,6 +1256,113 @@ def test_the_guide_says_where_each_release_is_as_the_scripts_lay_them_out():
     assert 'mktemp -d "$PREFIX/releases/$version-XXXXXX"' in releases and 'echo "$version-inplace"' in releases
     assert 'ln -sfnT "releases/$2/venv" "$PREFIX/$1.new"' in releases
     assert "#where-the-app-is" in PI_GUIDE and "about 30 MB" in PI_GUIDE
+
+
+# One install.sh or update.sh at a time (releases.sh's take_lock), run for real with flock.
+
+
+def _flock() -> None:
+    """Skips unless flock is there, as on the Pi (util-linux's)."""
+    import shutil
+
+    if shutil.which("flock", path="/usr/bin:/bin") is None:
+        pytest.skip("needs flock (util-linux), as on the Pi")
+
+
+def _locking(lock: Path, calls: str, path: str = "/usr/bin:/bin"):
+    """A bash running `calls` with releases.sh sourced and its LOCK at `lock`, not waited for."""
+    import shutil
+    import subprocess
+
+    script = f'set -euo pipefail\nsource "$1"\nLOCK="$2"\n{calls}\n'
+    return subprocess.Popen([shutil.which("bash") or "/bin/bash", "-c", script, "bash", str(PI / "releases.sh"),
+                             str(lock)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, env={"PATH": path})
+
+
+def _locked(lock: Path, calls: str = "take_lock\necho took it", path: str = "/usr/bin:/bin"):
+    """`calls` run to the end, as _locking: (exit code, stdout, stderr)."""
+    run = _locking(lock, calls, path)
+    out, err = run.communicate(timeout=10)
+    return run.returncode, out, err
+
+
+def test_a_second_install_or_update_stops_at_once_while_one_runs(tmp_path):
+    _flock()
+    lock = tmp_path / "twobells-deploy.lock"
+    first = _locking(lock, "take_lock\necho held\nread -r _ || true\necho done")
+    try:
+        assert first.stdout.readline() == "held\n"
+        code, out, err = _locked(lock)
+        # Not waiting for it: it stops, saying why, before anything else.
+        assert (code, out) == (1, "")
+        assert "Another install.sh or update.sh is running" in err
+    finally:
+        first.communicate("\n", timeout=10)
+    assert first.returncode == 0
+    # Once the first has ended, the next takes it.
+    assert _locked(lock)[:2] == (0, "took it\n")
+
+
+@pytest.mark.parametrize("ending", ["exit 3", "kill -KILL $$", "false"])
+def test_the_lock_is_let_go_however_a_run_ends(tmp_path, ending):
+    # A check that fails (set -e), a power cut's kill: nothing is left to clear by hand.
+    _flock()
+    lock = tmp_path / "twobells-deploy.lock"
+    code, _, _ = _locked(lock, f"take_lock\n{ending}\necho never")
+    assert code != 0
+    assert _locked(lock)[:2] == (0, "took it\n")
+
+
+def test_the_lock_is_held_to_the_end_of_the_run_and_its_file_never_replaced(tmp_path):
+    # Held through everything after, going back included; the file kept, as
+    # a run holding the old one would run beside one holding a new one.
+    _flock()
+    lock = tmp_path / "twobells-deploy.lock"
+    lock.write_text("")
+    inode = lock.stat().st_ino
+    first = _locking(lock, "take_lock\necho held\nread -r _ || true")
+    try:
+        assert first.stdout.readline() == "held\n"
+        assert _locked(lock)[0] == 1
+        assert lock.stat().st_ino == inode
+    finally:
+        first.communicate("\n", timeout=10)
+    assert _locked(lock)[0] == 0 and lock.stat().st_ino == inode
+
+
+def test_without_flock_install_and_update_stop_saying_how_to_get_it(tmp_path):
+    lock = tmp_path / "twobells-deploy.lock"
+    code, out, err = _locked(lock, path=str(tmp_path / "nothing"))
+    assert (code, out) == (1, "")
+    assert "util-linux" in err and "sudo apt-get install util-linux" in err
+    assert not lock.exists()  # stopped before making anything
+
+
+def test_the_lock_is_where_only_root_can_make_it():
+    # Not /run/lock or /tmp, which anyone may write to: a link put there
+    # first would have root open whatever it points to.
+    [path] = re.findall(r"^LOCK=(\S+)$", _script("releases.sh"), re.M)
+    assert Path(path).parent == Path("/run")
+    lock = _function("releases.sh", "take_lock")
+    # Made if missing, never replaced or removed; opened only to read, and held on until the shell exits.
+    assert ': >>"$LOCK"\n  exec 9<"$LOCK"\n  if ! flock --nonblock 9; then\n' in lock
+    for script in ("install.sh", "update.sh", "releases.sh"):
+        text = _script(script)
+        assert not re.search(r'(rm|install|mv|ln)\b[^\n]*"\$LOCK"', text), script
+        # Never let go before the end, nor closed but for the services' user's commands (_query).
+        assert not re.search(r"flock (-u|--unlock)|exec 9[<>]&-", text), script
+
+
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_install_and_update_take_the_lock_before_changing_anything(name):
+    script = _script(name)
+    taken = script.index('source "$REPO/deploy/pi/releases.sh"\ntake_lock\nrecover\n')
+    for change in ("apt-get update", 'install -m 644 "$config"', "useradd", "trap finish EXIT", NEW_RELEASE):
+        if change in script:
+            assert taken < script.index(change), change
+    # Only the root check before it, which changes nothing.
+    assert script.index("if [[ $EUID -ne 0 ]]; then") < taken
 
 
 STAY_UP = re.compile(r"^stay_up\(\) \{\n.*?^\}$", re.M | re.S)

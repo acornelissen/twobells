@@ -108,6 +108,7 @@ sudo ./deploy/pi/update.sh
 
 What `update.sh` does:
 
+- It runs alone. If another `update.sh` or `install.sh` is running (from another login, say), it stops at once and says so, before changing anything: let that one finish, then run it again. `install.sh` does the same. The lock goes when the run ends, however it ends, so there's never one to clear by hand.
 - It stops before changing anything if the app isn't installed in `/opt/twobells`, and says to run `install.sh`.
 - It first installs the Debian packages the new release needs: `nftables` if it's missing, and pygame, the EGL and GLES libraries and espeak-ng if `display` says `hdmi-…` and they're missing.
 - It builds the new release in a folder of its own (see [Where the app is](#where-the-app-is)), beside the one running, which it doesn't touch: the board's timer and the services carry on meanwhile. The Inky driver comes from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). Then it checks that the new code, the Inky driver and their libraries all import. If anything fails up to here, it removes the new folder and stops, and the old code runs on as it was.

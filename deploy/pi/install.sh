@@ -23,6 +23,15 @@ CONF=/etc/twobells
 screen=false
 [[ "${1:-}" == "--screen" ]] && screen=true
 
+# The release folders (releases.sh), and its lock, so no other install.sh or
+# update.sh runs beside this one, taken before anything changes. A power cut
+# part way through an update may have left the venv link out, so that goes
+# back first.
+# shellcheck source=deploy/pi/releases.sh
+source "$REPO/deploy/pi/releases.sh"
+take_lock
+recover
+
 apt-get update
 # spidev, gpiozero and lgpio drive the Waveshare panel; the venv sees them via system site packages.
 # Pillow, numpy, smbus2 and gpiod (for inky) come from Debian rather than pip: built for the
@@ -41,9 +50,6 @@ install -d -o twobells -g twobells -m 750 /var/lib/twobells
 # The app goes in a release folder of its own, the venv link pointing to it
 # once it imports (releases.sh), as update.sh does it: run again, this makes a
 # new one and keeps the one before. If it stops first, the new folder goes.
-# shellcheck source=deploy/pi/releases.sh
-source "$REPO/deploy/pi/releases.sh"
-recover
 release="" build=""
 finish() {
   if [[ -n "$build" ]]; then rm -rf "$build"; fi
@@ -62,9 +68,10 @@ install -d -m 755 "$CONF"
 [[ -f "$CONF/secrets.env" ]] || install -m 600 "$REPO/deploy/secrets.env.example" "$CONF/secrets.env"
 
 # Ask the app, as the services' user, about the settings in force: config.toml
-# with those saved from the settings site over it. No keys are read.
+# with those saved from the settings site over it. No keys are read, and the
+# lock isn't handed on.
 query() {
-  runuser -u twobells -- "$PREFIX/venv/bin/twobells" query "$1" --install pi --config "$CONF/config.toml"
+  runuser -u twobells -- "$PREFIX/venv/bin/twobells" query "$1" --install pi --config "$CONF/config.toml" 9<&-
 }
 if ! display="$(query display)" || ! views="$(query views)"; then
   echo "Fix the settings named above, then run this again" >&2

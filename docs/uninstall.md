@@ -43,7 +43,8 @@ Each install keeps everything it saves in one folder, its [store](configuration.
 4. Remove the app, its settings, its store, the screen's cache, the folder it shares with the fetch service and the e-paper board's:
 
    ```bash
-   sudo rm -rf /opt/twobells /etc/twobells /var/lib/twobells /var/cache/twobells-screen /run/twobells-fetch /run/twobells
+   sudo rm -rf /opt/twobells /etc/twobells /var/lib/twobells /var/cache/twobells-screen /run/twobells-fetch /run/twobells \
+     /run/twobells-deploy.lock
    ```
 
    - `/opt/twobells`: the app (the release in use and the one before, each in `releases/`; see [Where the app is](install-pi.md#where-the-app-is)) and the network guard's rules.
@@ -52,6 +53,7 @@ Each install keeps everything it saves in one folder, its [store](configuration.
    - `/var/cache/twobells-screen`: the HDMI screen's graphics cache, if it ran.
    - `/run/twobells-fetch`: in memory, and gone at the next restart anyway.
    - `/run/twobells`: the e-paper board's last redraw, kept there only while the SD card can't be written; in memory too.
+   - `/run/twobells-deploy.lock`: the lock that keeps `install.sh` and `update.sh` from running at once; in memory too.
 
 5. Remove the user the services ran as:
 

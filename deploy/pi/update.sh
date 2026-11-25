@@ -37,10 +37,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# The release folders; and a power cut part way through an update may have
-# left the venv link out, so that goes back first.
+# The release folders (releases.sh), and its lock, so no other install.sh or
+# update.sh runs beside this one, taken before anything changes. A power cut
+# part way through an update may have left the venv link out, so that goes
+# back first.
 # shellcheck source=deploy/pi/releases.sh
 source "$REPO/deploy/pi/releases.sh"
+take_lock
 recover
 
 # Only an installed board is updated: on a Pi without the app, stop before
@@ -71,9 +74,10 @@ fi
 
 # Ask the code installed, as the services' user, about the settings in force:
 # config.toml with those saved from the settings site over it. No keys are
-# read. Until the new code goes in below, that is the old code.
+# read, and the lock isn't handed on. Until the new code goes in below, that
+# is the old code.
 query() {
-  runuser -u twobells -- "$PREFIX/venv/bin/twobells" query "$1" --install pi --config "$CONF/config.toml"
+  runuser -u twobells -- "$PREFIX/venv/bin/twobells" query "$1" --install pi --config "$CONF/config.toml" 9<&-
 }
 # Switched to the HDMI screen since installing? It needs pygame, looked for
 # where Debian's python3-pygame puts it, and installed as nftables is above.
