@@ -247,6 +247,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)
+    entry.pop(_MARKED, None)
     # A source that got there the long way round (the bus timetable's fallback)
     # says so, for the settings site.
     note = getattr(config.source, "note", None)
@@ -282,10 +283,25 @@ def _fresh(config: SourceConfig, fetched: datetime | None, now: datetime) -> boo
     return fetched is not None and fetched <= now and now - fetched <= config.stale_after
 
 
-def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
+# Saved in a source's entry while its section says "not updating", so the
+# mark outlasts the window it showed in (_is_stale); a fetch that works clears it.
+_MARKED = "not_updating"
+
+
+def _is_stale(config: SourceConfig, entry: dict, now: datetime, untrusted: bool = False) -> bool:
+    """Whether a source's section says "not updating". In its windows: when
+    what it has is older than stale_after, or is `untrusted` (_untrusted).
+    Outside them it isn't trying, so it shows what it last knew unmarked,
+    unless the mark was showing as the window closed: that stays until a
+    fetch succeeds (_poll clears it), as nothing has come since."""
     if not config.policy.is_active(now):
-        return False
-    return not _fresh(config, _saved_time(entry, "last_success"), now)
+        return untrusted or entry.get(_MARKED) is True
+    stale = untrusted or not _fresh(config, _saved_time(entry, "last_success"), now)
+    if stale:
+        entry[_MARKED] = True
+    else:
+        entry.pop(_MARKED, None)
+    return stale
 
 
 def _untrusted(config: SourceConfig, since_start: set[str] | None) -> bool:
@@ -553,7 +569,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
     entries = state.get("sources", {})
     stale = {
         c.source.name for c in board.sources
-        if _is_stale(c, entries.get(c.source.name, {}), now) or _untrusted(c, since_start)
+        if _is_stale(c, entries.get(c.source.name, {}), now, _untrusted(c, since_start))
     }
     departures = {mode: _departures(state, mode, now) for mode in board.modes}
     view = build_view(

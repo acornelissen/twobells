@@ -2174,3 +2174,57 @@ def test_the_e_paper_timer_trusts_what_it_saved_a_minute_ago():
     result = run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
     assert trains.calls == 1
     assert not result.view.section("train").stale and not result.rendered
+
+
+# --- A "not updating" mark showing as the window closes stays until a fetch succeeds ---
+
+
+def failing_into_the_close():
+    """Trains fetched at 08:48, failing from 08:50: marked from 08:56 (6 minutes), the window shutting at 09:00."""
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("09:05"), train("09:20")]
+    run_once(board, state, display, at("08:48"))
+    trains.error = OSError("network down")
+    for hhmm in ("08:50", "08:52", "08:54", "08:56", "08:58"):
+        run_once(board, state, display, at(hhmm))
+    return trains, board, display, state
+
+
+def test_a_mark_showing_as_the_window_closes_stays_after_it():
+    trains, board, display, state = failing_into_the_close()
+    assert run_once(board, state, display, at("08:59")).view.section("train").stale
+    for hhmm in ("09:01", "09:10"):
+        result = run_once(board, state, display, at(hhmm))
+        assert result.view.section("train").stale, hhmm
+    assert [r.left for r in result.view.section("train").rows] == ["09:20"]
+    assert trains.calls == 6  # nothing fetched once the window shut
+
+
+def test_a_mark_kept_past_the_close_goes_with_the_next_fetch_that_works(tmp_path):
+    trains, board, display, state = failing_into_the_close()
+    run_once(board, state, display, at("09:10"))
+    store = StateStore(tmp_path / "state.json")
+    store.save(state)
+    state = store.load()  # the e-paper timer's next run, or a restart
+    assert run_once(board, state, display, at("23:00")).view.section("train").stale
+    trains.error = None
+    friday = datetime(2026, 10, 9, 7, 0)
+    assert not run_once(board, state, display, friday).view.section("train").stale
+    assert not run_once(board, state, display, friday.replace(hour=9, minute=30)).view.section("train").stale
+
+
+def test_a_fetch_outside_the_window_clears_the_mark():
+    trains, board, display, state = failing_into_the_close()
+    trains.error = None
+    result = run_once(board, state, display, at("12:00"), prime=True)
+    assert not result.view.section("train").stale
+    assert not run_once(board, state, display, at("12:30")).view.section("train").stale
+
+
+def test_data_fine_as_the_window_closes_shows_unmarked_after_it():
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("09:05"), train("09:20")]
+    run_once(board, state, display, at("08:58"))
+    trains.error = OSError("network down")
+    for hhmm in ("09:01", "09:10", "23:00"):
+        assert not run_once(board, state, display, at(hhmm)).view.section("train").stale, hhmm
