@@ -88,11 +88,15 @@ class FakeJob:
             self.state.update(state="failed", message="Cancelled")
 
     def finish(self, roads=None):
-        """Done; with `roads` (done, total), still finding the roads for the maps."""
-        self.state.update(state="done", step=discover.STEP_TIMETABLE, done=1, total=1,
-                          message=f"Found 1 with {self.api_key}", result=json.loads(json.dumps(RESULT)))
+        """Done; with `roads` (done, total), still finding the roads for the maps.
+        In one step, as SetupJob sets them: the service reads the status from
+        threads of its own, and one read between "done" and its roads would
+        see a search over and let go of it."""
+        done = {**self.state, "state": "done", "step": discover.STEP_TIMETABLE, "done": 1, "total": 1,
+                "message": f"Found 1 with {self.api_key}", "result": json.loads(json.dumps(RESULT))}
         if roads is not None:
-            self.state["roads"] = {"state": "running", "done": roads[0], "total": roads[1]}
+            done["roads"] = {"state": "running", "done": roads[0], "total": roads[1]}
+        self.state = done
 
 
 @pytest.fixture

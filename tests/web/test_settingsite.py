@@ -1856,7 +1856,9 @@ def test_a_key_test_says_why_start_up_would_refuse_an_http_address_and_sends_not
     monkeypatch.setattr(net, "urlopen", lambda request, **options: opened.append(request.full_url))
 
     def wizard(store):
-        return SetupApi(store.target(settings_from), store.env, store.folder, install=install_named("docker"))
+        # A limit of its own: the default is the process's, which another test may have just used.
+        return SetupApi(store.target(settings_from), store.env, store.folder, install=install_named("docker"),
+                        key_tests=RateLimit(10.0))
 
     running = make(install="docker", config=CONFIG.replace('crs = "GLO"', 'crs = "GLO"\nbase_url = "http://example.com/ldb"'),
                    setup=wizard)
