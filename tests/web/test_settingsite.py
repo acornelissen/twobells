@@ -565,7 +565,8 @@ def test_a_tab_is_there_only_while_its_view_is_on(make):
                                    (docker, "/settings/dashboard", "/settings/board")):
         cookie = running.session()
         assert running("GET", shown, cookie=cookie)[0].status == 200
-        assert running("GET", shown)[0].getheader("Location") == "/settings/login"
+        name = shown.removeprefix("/settings/")
+        assert running("GET", shown)[0].getheader("Location") == f"/settings/login?next={name}"
         page = running("GET", "/settings", cookie=cookie)[1]
         assert f'href="{shown}"' in page and f'href="{hidden}"' not in page
         # Not found, signed in or not, and nothing saved through it.
@@ -1022,7 +1023,7 @@ def test_save_errors_come_back_on_the_form(signed):
     assert not (signed.folder / "settings.toml").exists()
 
 
-@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/dashboard"])
+@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/dashboard", "/settings/general"])
 @pytest.mark.parametrize("csrf, origin", [
     ("forged", "same"),
     (None, "same"),
@@ -1041,9 +1042,98 @@ def test_every_change_needs_the_same_origin_and_the_form_token(signed, path, csr
 
 
 def test_a_save_without_a_session_goes_to_sign_in(signed):
+    # It went to a bare /settings/login, which dropped the changes without a
+    # word and then opened the Overview: now sign-in says so, and goes back.
     for path in ("/settings/trains-and-buses", "/settings/dashboard", "/settings/keys", "/settings/general"):
         response, _ = signed("POST", path, {"csrf": "x", "title": "x"})
-        assert response.status == 303 and response.getheader("Location") == "/settings/login", path
+        name = path.removeprefix("/settings/")
+        assert response.status == 303, path
+        assert response.getheader("Location") == f"/settings/login?next={name}&expired=1", path
+    assert not (signed.folder / "settings.toml").exists()
+
+
+RAN_OUT = re.compile(r'<p class="notice" role="status" id="login-notice">[^<]+</p>')
+
+
+@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/keys", "/settings/general"])
+def test_a_save_after_the_sign_in_ran_out_says_nothing_was_saved_and_goes_back(signed, path):
+    cookie, csrf = signed.sign_in(path)
+    fields = fields_from(signed("GET", path, cookie=cookie)[1]) | {"csrf": csrf, "title": "Our house",
+                                                                   "key": "RDM_API_KEY", "RDM_API_KEY": "new-key-1"}
+    signed.clock.now += SESSION_SECONDS  # left open, unused
+    response, _ = signed("POST", path, fields, cookie=cookie)
+    assert response.status == 303
+    _, page = signed("GET", response.getheader("Location"))
+    assert RAN_OUT.search(page) and 'aria-describedby="login-notice"' in page
+    # What was typed is not kept, nor posted again after signing in: only where to go back to.
+    assert "Our house" not in page and "new-key-1" not in page
+    assert not (signed.folder / "settings.toml").exists() and not signed.store.secrets_file.exists()
+    hidden = dict(re.findall(r'<input type="hidden" name="(next|step)" value="([^"]*)">', page))
+    assert hidden == {"next": path.removeprefix("/settings/")}
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, **hidden})
+    assert response.status == 303 and response.getheader("Location") == path
+    assert not (signed.folder / "settings.toml").exists()
+
+
+def test_the_sign_in_page_says_the_sign_in_ran_out_only_when_asked(signed):
+    assert not RAN_OUT.search(signed("GET", "/settings/login")[1])
+    assert not RAN_OUT.search(signed("GET", "/settings/login?expired=yes")[1])
+    assert RAN_OUT.search(signed("GET", "/settings/login?expired=1")[1])
+
+
+@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/dashboard", "/settings/keys",
+                                  "/settings/general"])
+def test_signing_in_goes_back_to_the_page_you_were_on(signed, path):
+    name = path.removeprefix("/settings/")
+    response, _ = signed("GET", path)
+    assert response.status == 303 and response.getheader("Location") == f"/settings/login?next={name}"
+    _, page = signed("GET", response.getheader("Location"))
+    assert f'<input type="hidden" name="next" value="{name}">' in page and not RAN_OUT.search(page)
+    response, page = signed("POST", "/settings/login", {"password": "wrong", "next": name})
+    assert response.status == 401 and f'name="next" value="{name}"' in page  # kept for the next try
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": name})
+    assert response.status == 303 and response.getheader("Location") == path
+    # The Overview needs none: signing in goes there anyway.
+    assert signed("GET", "/settings")[0].getheader("Location") == "/settings/login"
+
+
+@pytest.mark.parametrize("wanted", [
+    "https://evil.example.com/", "//evil.example.com", "/\\evil.example.com", "http:evil.example.com",
+    "/settings/board", "/settings", "board\r\nSet-Cookie: x=1", "general\n", " general", "GENERAL", "../general",
+    "general/", "general?x=1", "general#top", "trains_buses", "overview", "login", "logout", "reset", "style.css",
+    "setup/", "setup/api/session", "keys%2F..%2F", "ɡeneral", "",
+])
+def test_signing_in_goes_back_only_to_the_sites_own_pages(signed, wanted):
+    response, _ = signed("GET", "/settings/login?" + urlencode({"next": wanted}))
+    if response.status == 200:  # the server may refuse a bad address outright
+        assert 'name="next"' not in signed.seen[-1]
+    response, _ = signed("POST", "/settings/login", {"password": PASSWORD, "next": wanted})
+    assert response.status == 303 and response.getheader("Location") == "/settings"
+
+
+def test_signing_in_does_not_go_back_to_a_page_whose_view_is_off(pi_signed):
+    # A Pi without the dashboard view: its page isn't there, so the Overview instead.
+    response, _ = pi_signed("POST", "/settings/login", {"password": PASSWORD, "next": "dashboard"})
+    assert response.getheader("Location") == "/settings"
+    response, _ = pi_signed("POST", "/settings/login", {"password": PASSWORD, "next": "board"})
+    assert response.getheader("Location") == "/settings/board"
+
+
+@pytest.mark.parametrize("path", ["/settings/trains-and-buses", "/settings/keys"])
+def test_a_form_from_an_older_session_gets_a_page_saying_it_was_out_of_date(signed, path):
+    old_cookie, old_csrf = signed.sign_in(path)
+    fields = fields_from(signed("GET", path, cookie=old_cookie)[1])
+    cookie, _ = signed.sign_in(path)  # signed in again, in another tab, say
+    marker = '"><script>REFLECTED</script>'
+    fields |= {"csrf": old_csrf, "title": marker, "key": "RDM_API_KEY", "RDM_API_KEY": marker, "do": "save"}
+    response, page = signed("POST", path, fields, cookie=cookie)
+    assert response.status == 403 and response.getheader("Content-Type") == "text/html; charset=utf-8"
+    assert "REFLECTED" not in page and old_csrf not in page
+    _, inside, _ = landmarks(page)
+    assert re.search(r'<div class="summary" role="alert" tabindex="-1" autofocus><h2>[^<]+</h2>', inside)
+    assert f'<a href="{path}">' in inside
+    assert '<link rel="stylesheet" href="/settings/style.css">' in page and page.count("<h1") == 1
+    assert not (signed.folder / "settings.toml").exists() and not signed.store.secrets_file.exists()
 
 
 def test_the_forms_save_into_the_store_and_never_show_a_key(signed):
@@ -1462,7 +1552,7 @@ def test_a_key_form_needs_signing_in(signed):
     for do in ("save", "save_test", "test"):
         response, _ = signed("POST", "/settings/keys", {"csrf": "x", "key": "RDM_API_KEY", "do": do,
                                                          "RDM_API_KEY": "new-rail-key-1"})
-        assert response.status == 303 and response.getheader("Location") == "/settings/login"
+        assert response.status == 303 and response.getheader("Location") == "/settings/login?next=keys&expired=1"
     assert signed.setup.tests == [] and not signed.store.secrets_file.exists()
 
 

@@ -15,7 +15,6 @@ from twobells.settings.resetcodes import RESET_MAX_TRIES, ResetCodes
 from twobells.web.auth import MAX_FAILURES, TOO_COMMON, TOTAL_FAILURES, FormTokens, Lockout, PasswordStore, Sessions
 from twobells.web.formpages import (
     HTML,
-    TEXT,
     WIZARD_TYPES,
     WRONG_CODE,
     FormPages,
@@ -225,7 +224,7 @@ def cookie_from(reply, name):
 class Host:
     """A FormPages as a host builds it, and what it was built from."""
 
-    def __init__(self, folder, resume_setup="", json_reply=compact_json):
+    def __init__(self, folder, resume_setup="", json_reply=compact_json, pages=None):
         folder.mkdir(exist_ok=True)
         self.wording = WIDGET
         self.clock = Clock()
@@ -244,8 +243,8 @@ class Host:
                                prefix="/area",
                                shell=lambda title, body, header="", footer="": f"<title>{title}</title>{header}{body}{footer}",
                                home=lambda: "/area", log=logging.getLogger("tests.widget"),
-                               resume_setup=resume_setup, setup=self.steps, json_reply=json_reply,
-                               clock=self.clock)
+                               resume_setup=resume_setup, pages=lambda: pages or {}, setup=self.steps,
+                               json_reply=json_reply, clock=self.clock)
 
     def signed_in(self):
         """A session cookie and its form token, made directly."""
@@ -287,7 +286,22 @@ def test_the_sign_in_page_posts_under_the_prefix_in_the_hosts_words(host):
     assert page.endswith(WIDGET.back) and 'name="next"' not in page
     cookie = reply.headers["Set-Cookie"]
     assert cookie.startswith("widget_form=") and "Path=/area;" in cookie and "HttpOnly" in cookie
-    assert 'name="next" value="setup"' in host.pages.login_page(200, headers(), to_setup=True).body.decode()
+    # Without the wizard there is no going back to it (it was drawn, then ignored on signing in).
+    assert 'name="next"' not in host.pages.login_page(200, headers(), then="setup").body.decode()
+
+
+def test_signing_in_goes_back_only_to_a_page_the_host_lists(tmp_path):
+    host = Host(tmp_path, resume_setup="/area/setup/", pages={"widgets": "/area/widgets"})
+    host.password.set(PASSWORD)
+    assert 'name="next" value="setup"' in host.pages.login_page(200, headers(), then="setup").body.decode()
+    assert 'name="next" value="widgets"' in host.pages.login_page(200, headers(), then="widgets").body.decode()
+    for name in ("gadgets", "/area/widgets", "https://evil.example.com/", "widgets\n", ""):
+        assert 'name="next"' not in host.pages.login_page(200, headers(), then=name).body.decode(), name
+        assert host.pages.sign_in({"password": PASSWORD, "next": name}, headers(), CLIENT).headers["Location"] == "/area"
+    reply = host.pages.sign_in({"password": PASSWORD, "next": "widgets"}, headers(), CLIENT)
+    assert reply.headers["Location"] == "/area/widgets"
+    assert host.pages.settings_page(headers(), here="widgets").headers["Location"] == "/area/login?next=widgets"
+    assert host.pages.settings_page(headers(), here="gadgets").headers["Location"] == "/area/login"
 
 
 def test_an_error_on_the_sign_in_page_is_escaped_and_announced(host):
@@ -552,11 +566,15 @@ def test_signing_out_needs_the_sessions_token(host):
 
 
 def test_a_save_needs_a_session_and_its_token(host):
+    # Without a session it went to a bare sign-in, and a wrong token got a
+    # bare text 403: sign-in now says nothing was saved, and the 403 is a page.
     reply = host.pages.save({"csrf": "x", "title": "x"}, headers())
-    assert reply.status == 303 and reply.headers["Location"] == "/area/login"
+    assert reply.status == 303 and reply.headers["Location"] == "/area/login?expired=1"
     cookie, _ = host.signed_in()
-    reply = host.pages.save({"csrf": "forged", "title": "x"}, headers(cookie))
-    assert reply.status == 403 and reply.content_type == TEXT
+    reply = host.pages.save({"csrf": "forged", "title": "<i>typed</i>"}, headers(cookie), where="/area/widgets")
+    assert reply.status == 403 and reply.content_type == HTML
+    page = reply.body.decode()
+    assert '<a href="/area/widgets">' in page and "typed" not in page and "forged" not in page
     assert host.page.saved == []
 
 

@@ -20,7 +20,9 @@ reset codes settings/resetcodes.py's), and the pages and forms web/formpages.py'
   carry a signed double-submit token (settings_form). The names are new:
   the old board page's `session` cookie, at Path=/, reaches /settings too,
   and must never be mistaken for one. Every POST must be same-origin and
-  carry the session's (or the form's) token.
+  carry the session's (or the form's) token. Signing in goes back to the
+  page it was started from, named in ?next= (NEXT_NAMES, or the wizard's
+  "setup"); any other name goes to the Overview.
 - The settings are in pages by task, one tab each (schema.PAGES): the
   Overview at /settings, which only shows, then Trains and buses, Board
   and Dashboard while their view is on (a page whose view is off is not
@@ -128,6 +130,9 @@ _STEP_BODY_REFUSED = {
 }
 # The wizard's shortcuts (?step=), which a sign-in started there goes back to.
 SETUP_STEPS = ("stops", "station")
+# Each page's name in a sign-in's ?next=, which goes back to it: the end of
+# its address. The Overview has none, as signing in goes there anyway.
+NEXT_NAMES = {tab: path.removeprefix(PREFIX + "/") for tab, path in TAB_PATHS.items() if tab != "overview"}
 # The largest snapshot the overview reads, as a Pi's handoff allows.
 MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
 _SHARED = {
@@ -306,7 +311,8 @@ class SettingsSite:
             FormTokens(clock, cookie_name=FORM_COOKIE_NAME, cookie_path=PREFIX, key_file=store.form_key_file),
             lambda: wording(install, self.to_board(), self._running()), prefix=PREFIX, shell=shell,
             page_shell=page_shell,
-            home=self._home, log=log, resume_setup=SETUP, setup_steps=SETUP_STEPS, setup=setup, clock=clock,
+            home=self._home, log=log, resume_setup=SETUP, setup_steps=SETUP_STEPS, pages=self._back_pages,
+            setup=setup, clock=clock,
         )
         self._stylesheet = _default_stylesheet() if stylesheet is None else stylesheet
         self._script = _default_script() if script is None else script
@@ -329,6 +335,10 @@ class SettingsSite:
         """The pages shown, as tabs: every one but a view's while it is off."""
         on = self.views()
         return tuple(tab for tab in TABS if tab not in _VIEWS or tab in on)
+
+    def _back_pages(self) -> dict[str, str]:
+        """The pages a sign-in may go back to, by their NEXT_NAMES: the tabs shown now but the Overview."""
+        return {NEXT_NAMES[tab]: TAB_PATHS[tab] for tab in self.tabs() if tab in NEXT_NAMES}
 
     def _running(self) -> bool:
         try:
@@ -415,9 +425,11 @@ class SettingsSite:
         if tab == "overview":  # it only shows
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
         if tab == "keys":
-            return self._pages.key_form(fields, headers, self._keys, self._title(tab), TAB_PATHS[tab])
+            return self._pages.key_form(fields, headers, self._keys, self._title(tab), TAB_PATHS[tab],
+                                        here=NEXT_NAMES[tab])
         if tab is not None:
-            return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab])
+            return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab],
+                                    here=NEXT_NAMES[tab])
         return Reply(404, b"Not Found")
 
     def _tab(self, path: str) -> str | None:
@@ -433,14 +445,14 @@ class SettingsSite:
             return self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
         if tab is not None:
             page = self._keys if tab == "keys" else self._forms[tab]
-            return self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"))
+            return self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"),
+                                             here=NEXT_NAMES[tab])
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
-            asked = _query(query)
-            to_setup = asked.get("next") == "setup"
-            step = asked.get("step", "") if to_setup and asked.get("step") in SETUP_STEPS else ""
-            return self._pages.login_page(200, headers, to_setup=to_setup, step=step)
+            asked = _query(query)  # each checked by login_page against its own lists
+            return self._pages.login_page(200, headers, then=asked.get("next", ""), step=asked.get("step", ""),
+                                          ran_out=asked.get("expired") == "1")
         if path == PREFIX + "/reset":
             return self._pages.reset_page(200, headers, asked=query == "asked")
         if path == PREFIX + "/style.css":

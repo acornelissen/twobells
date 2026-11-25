@@ -25,11 +25,11 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from io import BufferedIOBase
 from typing import TYPE_CHECKING, Protocol, cast
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
 from ..settings.resetcodes import ResetCodes, ResetLimited, ResetShutOut
 from ..setup import api
@@ -73,6 +73,8 @@ SHUT_OUT = ("Too many wrong tries from this device, so it can't use the code tha
 # turns, keeping their place for two minutes (auth.WAITING_KEEP_S) after each try.
 SLOWED = ("Lots of wrong passwords have been tried lately, so signing in is slowed for everyone. "
           "Try again in a minute.")
+# A save sent after its session had ended: sign-in says so (login_page's ran_out).
+RAN_OUT = "Your sign-in had run out, so your changes weren't saved. Sign in, then make them again."
 _LENGTH = re.compile(r"[0-9]{1,15}")
 # A setup wizard step's name, as it comes in the path.
 _STEP_NAME = re.compile(r"[a-z]{1,20}")
@@ -257,20 +259,23 @@ class FormPages:
 
     `page` is the settings form drawn and saved when no other is named.
     `wording()` gives the words for each page. `home()` is where a new
-    session lands. `resume_setup`, if set, is the wizard's page: a sign-in
-    started there (`?next=setup`) goes back to it, at the shortcut's step
-    if it was one of `setup_steps` (`&step=stops`). `shell(title, body,
-    header, footer)` wraps a page in the HTML document; `page_shell`, if
-    given, wraps a signed-in visitor's settings pages instead (with their
-    script), so the sign-in and reset pages never have one. Log lines go to `log`, so each
-    host's keep their own name. `setup` runs the wizard's steps, answered
-    with `json_reply`."""
+    session lands, unless it was started from a page to go back to: a
+    page's name in `?next=`, which only ever leads to one of `pages()` (the
+    host's own fixed set, by name) or, with `resume_setup` set, the
+    wizard's page (`?next=setup`), at the shortcut's step if it was one of
+    `setup_steps` (`&step=stops`). Any other name leads home.
+    `shell(title, body, header, footer)` wraps a page in the HTML
+    document; `page_shell`, if given, wraps a signed-in visitor's settings
+    pages instead (with their script), so the sign-in and reset pages never
+    have one. Log lines go to `log`, so each host's keep their own name.
+    `setup` runs the wizard's steps, answered with `json_reply`."""
 
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  codes: ResetCodes, forms: FormTokens, wording: Callable[[], Wording], *, prefix: str,
                  shell: Shell, home: Callable[[], str], log: logging.Logger,
                  page_shell: Shell | None = None, resume_setup: str = "",
-                 setup_steps: tuple[str, ...] = (), setup: SetupSteps | None = None,
+                 setup_steps: tuple[str, ...] = (), pages: Callable[[], Mapping[str, str]] = dict,
+                 setup: SetupSteps | None = None,
                  json_reply: Callable[[int, dict], Reply] = compact_json,
                  clock: Callable[[], float] = time.time) -> None:
         self._page = page
@@ -288,6 +293,7 @@ class FormPages:
         self._log = log
         self._resume_setup = resume_setup
         self._setup_steps = setup_steps
+        self._back_pages = pages
         self._setup = setup
         self._json = json_reply
         self._clock = clock
@@ -299,14 +305,15 @@ class FormPages:
     # Pages
 
     def settings_page(self, headers: Headers, page: SettingsPage | KeyForms | None = None,
-                      title: str | None = None, saved: bool = False) -> Reply:
+                      title: str | None = None, saved: bool = False, here: str = "") -> Reply:
         """A settings form (`page`, or the one given at the start) for a
         signed-in visitor, under `title` (or the wording's); sign-in for
-        anyone else. `saved` (the address's ?saved, or ?tested) shows what
-        the session's last save on that page changed, or its key test found, once."""
+        anyone else, going back to the page named `here` after. `saved`
+        (the address's ?saved, or ?tested) shows what the session's last
+        save on that page changed, or its key test found, once."""
         session = self._sessions.get(self._token(headers))
         if session is None:
-            return redirect(self._prefix + "/login")
+            return redirect(self._login_address(here))
         page = page or self._page
         title = title or self._wording().title
         notice = None
@@ -325,26 +332,33 @@ class FormPages:
             body = page.render(session.csrf, message=notice.message)
         return self._signed_in_html(200, f"{notice.title} – {title}", page, session.csrf, body)
 
-    def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False,
-                   step: str = "") -> Reply:
-        """Sign in, or the first claim while no password is set. With
-        `to_setup`, signing in goes back to the wizard, at `step` if it is one of setup_steps."""
+    def login_page(self, status: int, headers: Headers, message: str = "", then: str = "", step: str = "",
+                   ran_out: bool = False) -> Reply:
+        """Sign in, or the first claim while no password is set. Signing in
+        goes back to the page `then` names, if it is one to go back to, and
+        in the wizard to `step` if it is one of setup_steps. `ran_out` says
+        a save came after the session had ended, so it wasn't saved."""
         if not self._password.is_set():
             return self.reset_page(status, headers, message)  # the first claim
         wording = self._wording()
         token, cookie = self._form_token(headers)
+        notice = f'<p class="notice" role="status" id="login-notice">{RAN_OUT}</p>' if ran_out else ""
         error = (f'<p class="error" role="alert" id="login-error">{html.escape(message, quote=False)}</p>'
                  if message else "")
-        described = ' aria-describedby="login-error" aria-invalid="true"' if message else ""
-        then = '<input type="hidden" name="next" value="setup">' if to_setup else ""
-        if to_setup and step in self._setup_steps:
-            then += f'<input type="hidden" name="step" value="{html.escape(step)}">'
+        described = " ".join(name for name, on in (("login-notice", ran_out), ("login-error", message)) if on)
+        attributes = (f' aria-describedby="{described}"' if described else "") + (
+            ' aria-invalid="true"' if message else "")
+        back = ""
+        if self._back(then):  # only a name on the list, so only it goes in the page
+            back = f'<input type="hidden" name="next" value="{html.escape(then)}">'
+            if then == "setup" and step in self._setup_steps:
+                back += f'<input type="hidden" name="step" value="{html.escape(step)}">'
         body = (
-            f"{error}"
-            f'<form method="post" action="{self._prefix}/login" class="signin">{then}'
+            f"{notice}{error}"
+            f'<form method="post" action="{self._prefix}/login" class="signin">{back}'
             '<label for="password">Password</label>'
             '<input id="password" name="password" type="password" autocomplete="current-password" '
-            f"required autofocus{described}>"
+            f"required autofocus{attributes}>"
             '<button type="submit" class="primary">Sign in</button></form>'
             f'<form method="post" action="{self._prefix}/forgot" class="forgot">'
             f'<input type="hidden" name="form" value="{token}">'
@@ -416,19 +430,20 @@ class FormPages:
         address (an IPv6 one by its /64) and across every client."""
         if not self._password.is_set():
             return self.login_page(403, headers)
-        to_setup = bool(self._resume_setup) and fields.get("next") == "setup"
-        # Only a step on the list goes into the address signing in leads to.
-        step = fields.get("step", "") if to_setup and fields.get("step") in self._setup_steps else ""
+        # Only a page and a step on the lists go into the address signing in leads to.
+        then = fields.get("next", "")
+        then = then if self._back(then) else ""
+        step = fields.get("step", "") if then == "setup" and fields.get("step") in self._setup_steps else ""
         result = self._checker.sign_in(client, fields.get("password", ""))
         if result is SignInResult.BUSY:
-            return self.login_page(429, headers, "Busy, try again in a moment.", to_setup, step)
+            return self.login_page(429, headers, "Busy, try again in a moment.", then, step)
         if result is SignInResult.LOCKED:
-            return self.login_page(429, headers, "Too many attempts. Try again in 15 minutes.", to_setup, step)
+            return self.login_page(429, headers, "Too many attempts. Try again in 15 minutes.", then, step)
         if result is SignInResult.SLOWED:
-            return self.login_page(429, headers, SLOWED, to_setup, step)
+            return self.login_page(429, headers, SLOWED, then, step)
         if result is SignInResult.WRONG:
-            return self.login_page(401, headers, "That password isn't right.", to_setup, step)
-        return self._signed_in(to_setup, step)
+            return self.login_page(401, headers, "That password isn't right.", then, step)
+        return self._signed_in(then, step)
 
     def ask_for_code(self, fields: dict[str, str], headers: Headers, client: str) -> Reply:
         """Issue a reset code, if this browser's form token is good. The reply
@@ -486,22 +501,25 @@ class FormPages:
         return redirect(self._prefix + "/login", {"Set-Cookie": self._sessions.expired_cookie()})
 
     def save(self, fields: dict[str, str], headers: Headers, page: SettingsPage | None = None,
-             title: str | None = None, where: str | None = None) -> Reply:
+             title: str | None = None, where: str | None = None, here: str = "") -> Reply:
         """A settings form (`page`, or the one given at the start), from a
         signed-in session with its token. Saved, it redirects to `where`
         (the page's address, or the prefix) with ?saved, whose page says
         what changed, so reloading it can't post the form again; refused,
         the form is drawn again under `title` (or the wording's) with what
-        was typed and the problems."""
+        was typed and the problems. Without a session, sign-in says nothing
+        was saved and goes back to the page named `here`; with another
+        session's token, a page says it was out of date. Neither keeps
+        anything typed."""
         session = self._sessions.get(self._token(headers))
         if session is None:
-            return redirect(self._prefix + "/login")
-        if not csrf_matches(session, fields.get("csrf", "")):
-            return Reply(403, b"Forbidden: form expired, reload the page")
-        fields.pop("csrf", None)
+            return redirect(self._login_address(here, ran_out=True))
         page = page or self._page
         wording = self._wording()
         title = title or wording.title
+        if not csrf_matches(session, fields.get("csrf", "")):
+            return self._out_of_date(page, session.csrf, title, where or self._prefix)
+        fields.pop("csrf", None)
         changed: list[str] = []
         errors = page.save(fields, changed)
         if errors:
@@ -510,18 +528,20 @@ class FormPages:
         self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, wording.saved)))
         return redirect((where or self._prefix) + "?saved")
 
-    def key_form(self, fields: dict[str, str], headers: Headers, page: KeyForms, title: str, where: str) -> Reply:
+    def key_form(self, fields: dict[str, str], headers: Headers, page: KeyForms, title: str, where: str,
+                 here: str = "") -> Reply:
         """One of the Keys page's forms (fields["key"]), from a signed-in
-        session with its token, as save is. Its button (fields["do"]) saves
-        its key, saves then tests it, or tests the saved key. Done, it
-        redirects to `where` with ?saved (or ?tested, after a test alone),
-        whose page says what changed and what the test found; refused, the
-        page is drawn again under `title` with the problems, its key boxes empty."""
+        session with its token, as save is (`here` as there). Its button
+        (fields["do"]) saves its key, saves then tests it, or tests the
+        saved key. Done, it redirects to `where` with ?saved (or ?tested,
+        after a test alone), whose page says what changed and what the test
+        found; refused, the page is drawn again under `title` with the
+        problems, its key boxes empty."""
         session = self._sessions.get(self._token(headers))
         if session is None:
-            return redirect(self._prefix + "/login")
+            return redirect(self._login_address(here, ran_out=True))
         if not csrf_matches(session, fields.get("csrf", "")):
-            return Reply(403, b"Forbidden: form expired, reload the page")
+            return self._out_of_date(page, session.csrf, title, where)
         fields.pop("csrf", None)
         do = fields.get("do") or "save"  # Enter in a box sends the first button, Save key
         if do not in ("save", "save_test", "test") or not page.knows(fields.get("key", "")):
@@ -638,9 +658,41 @@ class FormPages:
     def _form_token_ok(self, fields: dict[str, str], headers: Headers) -> bool:
         return self._forms.check(headers.get("Cookie"), fields.get("form", ""))
 
-    def _signed_in(self, to_setup: bool = False, step: str = "") -> Reply:
+    def _back(self, name: str) -> str:
+        """The address of the page a sign-in's `next` names: one of the
+        host's own pages, or the wizard's ("setup"); "" for any other name,
+        as it may come from anywhere. Only the host's own addresses are
+        ever given back, never what was sent."""
+        if not name:
+            return ""
+        if name == "setup":
+            return self._resume_setup
+        return self._back_pages().get(name, "")
+
+    def _login_address(self, here: str, ran_out: bool = False) -> str:
+        """The sign-in page's address, going back to the page named `here`
+        if it is one to go back to, and saying, with `ran_out`, that a save
+        came after the session had ended."""
+        query = {"next": here} if self._back(here) else {}
+        if ran_out:
+            query["expired"] = "1"
+        return self._prefix + "/login" + (f"?{urlencode(query)}" if query else "")
+
+    def _out_of_date(self, page: SettingsPage | KeyForms, csrf: str, title: str, where: str) -> Reply:
+        """The page answering a form sent with a token that isn't this
+        session's: drawn before the browser last signed in, most often. It
+        says nothing was saved and links back to the page, at `where` (the
+        host's own address), with nothing of what was sent."""
+        body = ('<div class="summary" role="alert" tabindex="-1" autofocus><h2>This page was out of date</h2>'
+                "<p>It was opened before you last signed in, so your changes weren't saved.</p>"
+                f'<p><a href="{html.escape(where)}">Open the page again</a> and make them again.</p></div>')
+        return self._signed_in_html(403, f"Out of date – {title}", page, csrf, body)
+
+    def _signed_in(self, then: str = "", step: str = "") -> Reply:
+        """A new session, going back to the page `then` names, if it is one,
+        else home."""
         token, _ = self._sessions.create()
-        where = self._resume_setup if to_setup else self._home()
-        if to_setup and step in self._setup_steps:
+        where = self._back(then) or self._home()
+        if then == "setup" and step in self._setup_steps:
             where += f"?step={step}"
         return redirect(where, {"Set-Cookie": self._sessions.cookie(token)})
