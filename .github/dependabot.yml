@@ -6,8 +6,8 @@
 # Not covered here, so bump them by hand:
 #   - mise.toml tools (python, ruff, node, uv) and the mise version in the
 #     workflows; then `mise lock`, as CI installs only what mise.lock pins.
-#     pyproject's dev pin of ruff must match mise.toml, so
-#     pyproject.toml and uv.lock are left out on purpose (uv lock --upgrade).
+#   - ruff in pyproject's dev group, which must match mise.toml's: bump the
+#     two together, then `uv lock --upgrade-package ruff`.
 #   - The binfmt and buildkit image digests in ci.yml and release.yml.
 #   - Debian packages that deploy/pi/install.sh takes from apt.
 version: 2
@@ -49,6 +49,22 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+
+  # uv.lock: the dev tools (pyproject's dev group) and the package's own
+  # dependencies, as `mise run setup` installs them. Not ruff: see above.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: ruff
+    groups:
+      uv-lock:
+        patterns: ["*"]
+    commit-message:
+      prefix: build
 
   # The python:3.12-slim base image, pinned by digest in the Dockerfile. Only
   # new digests of 3.12-slim: moving to another Python is a deliberate change

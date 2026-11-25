@@ -1777,6 +1777,20 @@ def test_the_data_refresh_reports_nothing_for_anything_but_a_full_commit_sha(tmp
     assert asked is None
 
 
+def test_dependabot_updates_uv_lock_but_leaves_ruff_in_step_with_mise():
+    import tomllib
+
+    entries = (ROOT / ".github" / "dependabot.yml").read_text().split("\n  - package-ecosystem: ")
+    uv = next(entry for entry in entries if entry.startswith("uv\n"))
+    assert "\n    directory: /\n" in uv and "\n      interval: weekly\n" in uv and "\n      default-days: 7\n" in uv
+    assert "\n    ignore:\n      - dependency-name: ruff\n" in uv
+    # The one pin Dependabot can't move alone: pyproject's and uv.lock's ruff are mise.toml's.
+    ruff = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["ruff"]
+    assert f"ruff=={ruff}" in tomllib.loads((ROOT / "pyproject.toml").read_text())["dependency-groups"]["dev"]
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    assert [package["version"] for package in lock["package"] if package["name"] == "ruff"] == [ruff]
+
+
 def _upgrade(*args: str, path: Path | None = None):
     """Runs upgrade.sh, with only the folder `path` on PATH if given."""
     import os
