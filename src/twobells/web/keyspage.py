@@ -16,7 +16,8 @@ The page's stylesheet shows Save and test while a box has something typed
 in it and Test saved key while they are empty; without it, both show.
 
 Keys are write-only: a box is never filled, and no part of a key is in any
-page, error or log line. A key replaced forgets its last test. A test's
+page, error or log line. A key replaced forgets its last test, and a test
+still running then keeps nothing, as it was of the old key. A test's
 result is kept as works or refused, with its time (settings/keyresults.py),
 never the key or the test's words; the words are shown once, on the page
 after the test. The site answers each post with a redirect (formpages,
@@ -219,6 +220,7 @@ class KeysPage:
         form = self._form(fields.get("key", ""))
         if form is None or self._test_key is None:
             return None
+        tested = self._tested_with(form)
         result = self._test_key(form.name, None, None)
         env = self._load_secrets()
         secrets = [*(fields.get(box, "").strip() for box in form.boxes),
@@ -228,9 +230,25 @@ class KeysPage:
             message = message.replace(secret, "…")
         state = result.state if result.state in RESULTS else "unknown"
         found = keyresults.FOUND.get(state)
-        if found is not None:
+        # A key saved while the test ran (up to 45 s on a Pi) has forgotten
+        # the old one's result: this one is the old key's too, so isn't kept.
+        if found is not None and self._tested_with(form) == tested:
             keyresults.record(self._store.folder, form.name, found, self._clock())
         return Tested(form.name, state, safe_message(message))
+
+    def _tested_with(self, form: KeyForm) -> tuple[str, ...]:
+        """What a test of `form`'s key tests, as saved now: its keys, and the
+        engineering works key's address, whose change forgets its result too.
+        Only compared, never kept or shown."""
+        env = self._load_secrets()
+        saved = [str(env.get(box, "")).strip() for box in form.boxes]
+        if form.name == "RDM_KB_API_KEY":
+            try:
+                data, _ = self._read()
+            except (OSError, ConfigError):
+                data = {}
+            saved.append(_address_shown(data))
+        return tuple(saved)
 
     # Drawing
 

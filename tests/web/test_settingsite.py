@@ -1249,6 +1249,33 @@ def test_replacing_a_key_forgets_its_last_result(signed):
     assert "Works, tested" in key_form(page, "BODS_API_KEY")
 
 
+@pytest.mark.parametrize("name, saved", [
+    ("RDM_API_KEY", lambda s: s.store.secrets_file.write_text("RDM_API_KEY=new-rail-key-1\n")),
+    ("RDM_KB_API_KEY", lambda s: s.store.settings_file.write_text(
+        '[dashboard]\nkb_incidents_url = "https://raildata.org.uk/other"\n')),
+])
+def test_a_test_that_ends_after_its_key_was_replaced_keeps_no_result(signed, name, saved):
+    """A test can take 45 s on a Pi. A key saved meanwhile (from another tab,
+    or the wizard) forgets the old key's result; the test ending after must
+    not keep its result as the new key's. The engineering works key's test
+    reads its address, so a new address is a new key to it."""
+    signed.secrets.write_text(KEYS + "RDM_KB_API_KEY=kb-key-0001\n")
+    signed.store.settings_file.write_text('[dashboard]\nkb_incidents_url = "https://raildata.org.uk/kb"\n')
+    tests = signed.setup.test_key
+
+    def replaced_meanwhile(*args):
+        result = tests(*args)
+        saved(signed)
+        return result
+
+    signed.setup.test_key = replaced_meanwhile
+    response, cookie = press(signed, name, "test")
+    assert response.getheader("Location") == "/settings/keys?tested"
+    assert not (signed.folder / "keytests.json").exists()
+    page = signed("GET", "/settings/keys", cookie=cookie)[1]
+    assert "Saved, not tested</span>" in key_form(page, name)
+
+
 def test_a_key_pasted_wrongly_is_not_saved_or_tested_and_the_summary_says_so(signed):
     cookie = signed.session()
     for do in ("save", "save_test"):
