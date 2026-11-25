@@ -192,8 +192,11 @@ class RunResult:
     page: str = "departures"
 
 
-def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False) -> None:
-    """Fetch if due. `prime` fetches regardless of windows; the budget still applies."""
+def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
+          save: Callable[[dict], bool] | None = None) -> None:
+    """Fetch if due. `prime` fetches regardless of windows; the budget still applies.
+    With `save`, a source with a budget has the state saved as spent before
+    it fetches, and doesn't fetch if that fails."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
     if not prime and not config.current_policy().is_due(now, _saved_time(entry, "last_attempt")):
@@ -208,10 +211,26 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False)
     if config.daily_budget is not None:
         budgets = state.setdefault("budgets", {})
         budget = DailyBudget.from_dict(budgets.get(name), config.daily_budget)
-        if not budget.try_spend(now.date(), getattr(config.source, "cost", 1)):
-            log.warning("%s: daily budget of %d spent, skipping", name, config.daily_budget)
+        cost = getattr(config.source, "cost", 1)
+        if not budget.try_spend(now.date(), cost):
+            # Warned of once, as the last of it was spent (below), not at every check refused since.
+            log.debug("%s: daily budget of %d spent, skipping", name, config.daily_budget)
             return
+        before = budgets.get(name)
         budgets[name] = budget.to_dict()
+        entry["last_attempt"] = to_iso(now)
+        # Saved as spent before it is: on a full or read-only SD card the
+        # e-paper timer, which reads the state afresh each run, would forget
+        # the spend and spend it again every minute.
+        if save is not None and not save(state):
+            if before is None:
+                del budgets[name]
+            else:
+                budgets[name] = before
+            log.warning("%s: not fetched, as the state can't be saved with the daily budget spent", name)
+            return
+        if budget.remaining(now.date()) < cost:
+            log.warning("%s: daily budget of %d spent; no more fetches until tomorrow", name, config.daily_budget)
 
     entry["last_attempt"] = to_iso(now)
     try:
@@ -471,17 +490,20 @@ def _render_key(shown: BoardView | RouteView | CodeView | SetupView | ClockView,
 
 
 def run_once(
-    board: Board, state: dict, display: Display, now: datetime, prime: bool = False
+    board: Board, state: dict, display: Display, now: datetime, prime: bool = False,
+    save: Callable[[dict], bool] | None = None,
 ) -> RunResult:
-    result, frame, drawn = _make(board, state, display, now, prime)
+    """One tick. `save` writes the state, saying whether it could: given, a
+    source with a daily budget is saved as spent before it fetches (_poll)."""
+    result, frame, drawn = _make(board, state, display, now, prime, save)
     if frame is not None:
         _present(display, frame, now)
         state["last_render"] = drawn
     return result
 
 
-def _make(board: Board, state: dict, display: Display, now: datetime,
-          prime: bool) -> tuple[RunResult, Frame | None, dict | None]:
+def _make(board: Board, state: dict, display: Display, now: datetime, prime: bool,
+          save: Callable[[dict], bool] | None = None) -> tuple[RunResult, Frame | None, dict | None]:
     """run_once's work but for showing it: fetch whatever is due, and draw the
     board if it has changed. Gives what it found, the Frame to show (None
     if nothing changed) and what to save as the last redraw once it is
@@ -492,7 +514,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime,
     fetched = set()
     for config in board.sources:
         before = state.get("sources", {}).get(config.source.name, {}).get("last_success")
-        _poll(config, state, now, prime)
+        _poll(config, state, now, prime, save)
         _keep_messages(config, state, before)
         if state.get("sources", {}).get(config.source.name, {}).get("last_success") != before:
             fetched.add(config.source.name)
@@ -620,21 +642,43 @@ class _Saves:
     """Writes the state when what was fetched changes: a screen redraws every
     second, and writing the SD card that often would wear it out. Also every
     few minutes, so the settings site's status (last redraw, bus positions)
-    doesn't go stale while nothing new is fetched."""
+    doesn't go stale while nothing new is fetched.
+
+    A full or read-only SD card never stops the board: it is warned of once,
+    not every tick, and a save is tried again when what was fetched next
+    changes, or in _SAVE_EVERY."""
 
     def __init__(self, store) -> None:
         self._store = store
         self._saved: str | None = None
         self._at: datetime | None = None
+        self._failing = False
 
     def tick(self, state: dict, now: datetime) -> None:
         if self._store is None:
             return
-        fetched = _fetched(state)
         overdue = self._at is None or not timedelta(0) <= now - self._at < _SAVE_EVERY
-        if fetched != self._saved or overdue:
+        if _fetched(state) != self._saved or overdue:
+            self.write(state, now)
+
+    def write(self, state: dict, now: datetime | None = None) -> bool:
+        """Writes the state now, saying whether it could."""
+        if self._store is None:
+            return True
+        try:
             self._store.save(state)
-            self._saved, self._at = fetched, now
+        except OSError as error:
+            if not self._failing:
+                log.warning("Can't save the board's state; it carries on, and tries again later: %s", error)
+            self._failing = True
+        else:
+            if self._failing:
+                log.info("The board's state saves again")
+            self._failing = False
+        self._saved = _fetched(state)
+        if now is not None:
+            self._at = now
+        return not self._failing
 
 
 def run_loop(
@@ -655,7 +699,8 @@ def run_loop(
 ) -> None:
     """Tick forever (or `ticks` times). A clock with `advance()` is simulated.
     With `prime`, the first tick fetches every source so the board starts filled.
-    State is written only when what was fetched changes (_Saves). `reload`, if
+    State is written only when what was fetched changes (_Saves), and before
+    a source with a daily budget fetches (_poll). `reload`, if
     given, is asked each tick for a new Board when the settings have changed.
 
     With `frame_seconds`, a display that can scroll text (or turn tiles
@@ -668,6 +713,10 @@ def run_loop(
     the board shows them (_announce)."""
     sleep = sleep or time.sleep
     saves = _Saves(store)
+    if not display.panel.epaper:
+        # A screen starts blank: what the last run drew isn't on it, whatever
+        # the state says. E-paper keeps its image, so it skips an unchanged one.
+        state.pop("last_render", None)
     if frame_seconds and hasattr(display, "scroll") and round(tick_seconds / frame_seconds) >= 2:
 
         def make(now: datetime, first: bool) -> Tick:
@@ -676,7 +725,7 @@ def run_loop(
             started = time.perf_counter()
             if reload is not None:
                 board = reload() or board
-            result, frame, drawn = _make(board, state, display, now, first)
+            result, frame, drawn = _make(board, state, display, now, first, saves.write)
             if drawn is not None:
                 state["last_render"] = drawn  # before it is shown: see below for a fault showing it
             if speaker is not None:
@@ -693,8 +742,7 @@ def run_loop(
             # The board last made may never have reached the screen: the next start draws afresh.
             # Keep what was fetched, so a fault doesn't cost a refetch on restart.
             state.pop("last_render", None)
-            if store is not None:
-                store.save(state)
+            saves.write(state)  # a card that can't be written mustn't hide the fault
             raise
         finally:
             ahead.stop()
@@ -706,11 +754,10 @@ def run_loop(
             board = reload() or board
         now = clock()
         try:
-            result = run_once(board, state, display, now, prime=prime and count == 0)
+            result = run_once(board, state, display, now, prime=prime and count == 0, save=saves.write)
         except Exception:
             # Keep what was fetched, so a display fault doesn't cost a refetch on restart.
-            if store is not None:
-                store.save(state)
+            saves.write(state)  # a card that can't be written mustn't hide the fault
             raise
         if speaker is not None:
             _announce(board, state, display, speaker, now)

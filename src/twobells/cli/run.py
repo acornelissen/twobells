@@ -100,13 +100,26 @@ def _run(args) -> int:
     # been drawn) fetches everything once, so the panel isn't blank until the
     # next poll window opens.
     try:
+        # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
         result = run_once(settings.board, state, display, local_now(settings.timezone),
-                          prime="sources" not in state)
+                          prime="sources" not in state, save=lambda kept: _save(store, kept))
     finally:
         # Even if drawing failed: what was fetched, and the bus budget spent on it, must not be lost.
-        store.save(state)
+        _save(store, state)
     logging.info("rendered=%s", result.rendered)
     return 0
+
+
+def _save(store: StateStore, state: dict) -> bool:
+    """Saves the state, saying whether it could. A full or read-only SD card
+    is warned of, never raised: it mustn't hide a fault already on its way
+    out, nor turn a clean stop or a restart into a crash."""
+    try:
+        store.save(state)
+    except OSError as error:
+        logging.warning("Can't save the board's state: %s", error)
+        return False
+    return True
 
 
 class _Restart(Exception):
@@ -186,7 +199,7 @@ def _run_loop(settings, display, store, state, args) -> int:
         return RESTART
     finally:
         # However it ends (Ctrl+C, SIGTERM, a restart): keep what was fetched.
-        store.save(state)
+        _save(store, state)
     return 0
 
 
@@ -265,7 +278,7 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
         try:
             result = run_once(board, state, display, local_now(settings.timezone))
         finally:
-            store.save(state)
+            _save(store, state)
         logging.info("rendered=%s", result.rendered)
         return 0
     tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
@@ -287,5 +300,5 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
         logging.info(restarting)
         return RESTART
     finally:
-        store.save(state)
+        _save(store, state)
     return 0

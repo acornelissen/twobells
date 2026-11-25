@@ -1,4 +1,5 @@
 import dataclasses
+import itertools
 import threading
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -394,8 +395,9 @@ def test_loop_writes_state_only_when_fetched_data_changes():
     store = CountingStore()
     times = iter(THU_0700 + timedelta(seconds=s) for s in range(30))
     run_loop(board, state, FakeScreen(), lambda: next(times), 0, ticks=30, sleep=lambda s: None, store=store)
-    # Redrawn 30 times, but both sources were fetched only on the first tick.
-    assert store.saves == 1
+    # Redrawn 30 times, but both sources were fetched only on the first tick:
+    # saved with the bus budget spent before its fetch, then with what was fetched.
+    assert store.saves == 2
 
 
 # --- Route strip page (screens only) ---
@@ -691,7 +693,7 @@ def test_run_loop_saves_state_before_a_draw_failure_escapes():
     store = CountingStore()
     with pytest.raises(OSError):
         run_loop(board, state, BrokenDisplay(), lambda: THU_0700, 0, ticks=1, sleep=lambda s: None, store=store)
-    assert store.saves == 1
+    assert store.saves == 2  # the bus budget before its fetch; then all of it as the fault escapes
 
 
 def test_malformed_saved_departures_are_skipped():
@@ -1635,7 +1637,8 @@ def test_a_screen_s_boards_are_made_off_its_thread_with_the_speaker_saving_and_r
     assert threading.main_thread() not in threads and len(threads) == 1
     assert titles == ["GLO > MAN", "Renamed", "Renamed"]
     assert [now for _, now, _ in speaker.ticks] == [THU_0700 + timedelta(seconds=s) for s in range(3)]
-    assert store.saves == 1 and (trains.calls, buses.calls) == (1, 1)  # fetched once, saved once
+    # Fetched once; saved with the bus budget spent before its fetch, then with what was fetched.
+    assert store.saves == 2 and (trains.calls, buses.calls) == (1, 1)
     assert state["last_render"]["at"] == "2026-10-08T07:00:02"
     assert not [t for t in threading.enumerate() if t.name == "twobells-ahead"]  # the worker has stopped
 
@@ -1650,7 +1653,8 @@ def test_a_screen_fault_stops_the_worker_and_saves_what_was_fetched_but_not_the_
     store = CountingStore()
     with pytest.raises(OSError, match="screen gone"):
         scrolling_run(board, state, BrokenScreen(), store=store)
-    assert store.saves == 2  # once fetched, by the worker; once more as the fault escapes
+    # By the worker: the bus budget before its fetch, then what was fetched; once more as the fault escapes.
+    assert store.saves == 3
     assert "last_render" not in state  # never shown, so the next start draws it
     assert state["sources"]["train"]["last_success"]
     assert not [t for t in threading.enumerate() if t.name == "twobells-ahead"]
@@ -1881,3 +1885,176 @@ def test_trains_with_no_rail_key_say_so_on_the_board_and_are_not_called_stale():
     assert (section.label, section.empty_text, section.rows, section.stale) == ("Trains", TRAINS_NEED_KEY, (), False)
     assert state["sources"]["train"]["note"] == TRAINS_NEED_KEY and "last_error" not in state["sources"]["train"]
     assert result.rendered and len(display.shown) == 1
+
+
+# --- Saving the state: a screen's restart, a card that can't be written, the bus budget ---
+
+class FullStore:
+    """A state store on a full or read-only SD card: every write fails."""
+
+    def __init__(self):
+        self.tries = 0
+
+    def save(self, state):
+        self.tries += 1
+        raise OSError(28, "No space left on device")
+
+
+def endless(start, step):
+    """A board clock from `start`, `step` seconds a tick, for as long as it is asked."""
+    moments = (start + timedelta(seconds=step * n) for n in itertools.count())
+    return lambda: next(moments)
+
+
+SETUP_PAGE = SetupView("http://twobells.local:8090/settings")
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_screen_draws_its_page_again_after_every_restart(tmp_path, scrolling):
+    # A screen starts black: what the last run drew isn't on it any more.
+    board = Board(title="x", sources=[], setup=SETUP_PAGE)
+    store = StateStore(tmp_path / "state.json")
+    for start in range(3):
+        state = store.load()
+        screen, wall = (ScrollingScreen() if scrolling else FakeScreen()), WallClock(1000.0)
+        run_loop(board, state, screen, endless(THU_0700 + timedelta(minutes=start), 1), 1, ticks=5,
+                 sleep=wall.sleep, store=store, frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall)
+        store.save(state)
+        assert len(screen.frames if scrolling else screen.shown) == 1, f"start {start + 1}"
+
+
+def test_e_paper_keeps_its_last_image_across_restarts(tmp_path):
+    board = Board(title="x", sources=[], setup=SETUP_PAGE)
+    store = StateStore(tmp_path / "state.json")
+    shown = []
+    for start in range(3):
+        state = store.load()
+        display = FakeDisplay()
+        run_loop(board, state, display, endless(THU_0700 + timedelta(minutes=5 * start), 60), 0, ticks=2,
+                 sleep=lambda s: None, store=store)
+        store.save(state)
+        shown.append(len(display.shown))
+    assert shown == [1, 0, 0]  # the panel still shows it
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_full_card_never_stops_a_screen_and_is_warned_of_once(scrolling, caplog):
+    trains, buses, board, display, state = setup()
+    store = FullStore()
+    screen, wall = (ScrollingScreen() if scrolling else FakeScreen()), WallClock(1000.0)
+    with caplog.at_level("WARNING"):
+        run_loop(board, state, screen, endless(THU_0700, 2), 1, ticks=600, sleep=wall.sleep, store=store,
+                 frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall)
+    assert len(screen.frames if scrolling else screen.shown) == 600  # each tick's clock reached the screen
+    assert len([r for r in caplog.records if "No space left" in r.getMessage()]) == 1
+    # Tried again as new data comes in and every few minutes, never every tick.
+    assert 2 <= store.tries <= 30
+    assert buses.calls == 0  # its spend couldn't be saved
+    working, _, board, _, state = setup()
+    wall = WallClock(1000.0)
+    run_loop(board, state, FakeScreen(), endless(THU_0700, 2), 1, ticks=600, sleep=wall.sleep, store=CountingStore())
+    assert trains.calls == working.calls > 0  # the trains as on a card that works
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_screen_fault_on_a_full_card_still_says_what_the_fault_was(scrolling):
+    trains, buses, board, display, state = setup()
+    if scrolling:
+        with pytest.raises(OSError, match="screen gone"):
+            scrolling_run(board, state, BrokenScreen(), store=FullStore())
+    else:
+        with pytest.raises(OSError, match="GPIO busy"):
+            run_loop(board, state, BrokenDisplay(), lambda: THU_0700, 0, ticks=1, sleep=lambda s: None,
+                     store=FullStore())
+
+
+def test_a_budgeted_fetch_is_saved_as_spent_before_it_is_made():
+    trains, buses, board, display, state = setup(bus_budget=28)
+    seen = []
+
+    def save(saved):
+        seen.append((buses.calls, saved["budgets"]["bus"]["used"], saved["sources"]["bus"]["last_attempt"]))
+        return True
+
+    run_once(board, state, display, THU_0700, save=save)
+    assert seen == [(0, 1, "2026-10-08T07:00:00")]  # saved as spent, then fetched
+    assert (trains.calls, buses.calls) == (1, 1)
+
+
+def test_a_budgeted_fetch_whose_spend_cant_be_saved_is_not_made():
+    # The e-paper timer reads the state afresh each minute: a spend it can't
+    # save is forgotten, and would otherwise be spent again on every run.
+    trains, buses, board, display, _ = setup(bus_budget=28)
+    for minute in range(120):
+        state = {}  # what is on the card, which can't be written
+        run_once(board, state, display, THU_0700 + timedelta(minutes=minute), prime=True, save=lambda s: False)
+    assert buses.calls == 0
+    assert trains.calls == 120  # not budgeted: fetched as ever
+
+
+def test_a_screen_whose_bus_spend_cant_be_saved_tries_again_at_the_next_check():
+    trains, buses, board, display, state = setup(bus_budget=28)
+    tries = []
+
+    def save(saved):
+        tries.append(saved["budgets"]["bus"]["used"])
+        return False
+
+    for second in range(6 * 60):
+        run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=second), save=save)
+    assert tries == [1, 1]  # at 07:00 and at 07:05, not every second; the spend wasn't kept
+    assert buses.calls == 0 and "bus" not in state["budgets"]
+
+
+def test_a_spent_budget_is_warned_of_once_not_every_tick(caplog):
+    trains, buses, board, display, state = setup(bus_budget=1)
+    with caplog.at_level("WARNING"):
+        for second in range(3600):
+            run_once(board, state, FakeScreen(), THU_0700 + timedelta(seconds=second))
+    assert buses.calls == 1
+    assert len(caplog.records) == 1
+    # Polling is as it was: the refused checks don't count as checks.
+    assert state["sources"]["bus"]["last_attempt"] == "2026-10-08T07:00:00"
+
+
+def test_a_budget_spent_by_a_two_stop_lookup_is_warned_of_when_the_next_wont_fit(caplog):
+    trains, buses, board, display, state = setup(bus_budget=3)
+    buses.cost = 2
+    with caplog.at_level("WARNING"):
+        run_once(board, state, display, THU_0700)
+    assert len(caplog.records) == 1
+
+
+def test_a_bad_saved_budget_gives_a_fresh_one_rather_than_stopping_the_board(tmp_path):
+    path = tmp_path / "state.json"
+    path.write_text('{"sources": {}, "budgets": {"bus": {"day": "2026-13-45", "used": 1}}}')
+    trains, buses, board, display, _ = setup()
+    run_once(board, StateStore(path).load(), display, THU_0700)
+    assert buses.calls == 1
+
+
+def test_a_saved_forecast_hour_with_a_utc_offset_doesnt_stop_the_board():
+    weather, board, display, state = weather_setup()
+    weather.error = OSError("network down")
+    state["weather"] = {"last_success": "2026-10-08T06:50:00",
+                        "hours": [{"start": "2026-10-08T07:00:00+01:00", "probability": 90, "precipitation": 1.0}]}
+    assert run_once(board, state, display, at("07:00")).view.rain is None
+
+
+def test_a_saved_departure_that_doesnt_read_back_is_warned_of_once_not_every_tick(tmp_path, caplog):
+    import json
+
+    from twobells.board.state import departure_to_dict
+
+    saturday = datetime(2026, 10, 10, 7, 0)  # outside the windows: nothing fetched replaces it
+    good = departure_to_dict(train("07:30"))
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": {"train": {"last_success": saturday.isoformat(),
+                                                      "departures": [good, {**good, "scheduled": "7:30"}]}}}))
+    trains, buses, board, display, _ = setup()
+    with caplog.at_level("WARNING"):
+        state = StateStore(path).load()
+        for second in range(60):
+            result = run_once(board, state, FakeScreen(), saturday + timedelta(seconds=second))
+    assert len(caplog.records) == 1
+    assert [r.left for r in result.view.section("train").rows] == ["07:30"]

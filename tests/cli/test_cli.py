@@ -599,6 +599,27 @@ def test_run_saves_state_even_when_drawing_fails(tmp_path, monkeypatch):
     assert "last_render" not in state
 
 
+def test_a_timer_run_whose_state_cant_be_saved_spends_none_of_the_bus_budget(probe_env, tmp_path, monkeypatch,
+                                                                              caplog):
+    from datetime import datetime
+
+    from twobells.board.state import StateStore
+    from twobells.cli import run
+
+    args, calls = probe_env
+    (tmp_path / "config.toml").write_text(f'state_file = "{tmp_path / "state.json"}"\n{CONFIG}')
+
+    def full(self, state):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(StateStore, "save", full)
+    monkeypatch.setattr(run, "local_now", lambda tz: datetime(2026, 10, 8, 7, 10))  # Thursday, in the window
+    for _ in range(3):
+        assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0  # drawn, and warned of
+    assert calls == []
+    assert "No space left" in caplog.text
+
+
 def _stopped_while_drawing(monkeypatch):
     """PngDisplay.show as if systemd sent SIGTERM mid-refresh (at TimeoutStartSec,
     or systemctl stop): it calls the handler run installed. Without one the
