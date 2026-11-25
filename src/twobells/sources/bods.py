@@ -27,6 +27,10 @@ MAX_RESPONSE_ELEMENTS = 80_000
 # BODS keeps sending a vehicle's last position long after it stops reporting
 # (parked overnight, tracker off), so anything older than this is ignored.
 MAX_AGE = timedelta(minutes=10)
+# And a position from further ahead than this is refused: clocks drift a
+# little, but a tracker sending its local time as UTC reads an hour ahead,
+# and would show its bus that much late.
+MAX_AHEAD = timedelta(minutes=2)
 
 _NS = {"siri": "http://www.siri.org.uk/siri"}
 # VehicleRef is the operator's own name for a bus. Around Glossop it comes as a
@@ -218,4 +222,4 @@ def recorded_time(vehicle: Vehicle) -> datetime | None:
 
 def _fresh(vehicle: Vehicle, now: datetime) -> bool:
     when = recorded_time(vehicle)
-    return when is not None and now - when <= MAX_AGE
+    return when is not None and -MAX_AHEAD <= now - when <= MAX_AGE

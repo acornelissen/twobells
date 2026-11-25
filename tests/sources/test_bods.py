@@ -213,6 +213,26 @@ def test_positions_not_updated_for_ten_minutes_are_dropped():
     assert [v.vehicle_ref for v in source.fetch()] == ["BNML-1003"]  # 07:12:35, the only one under 10 min old
 
 
+def test_positions_from_more_than_two_minutes_ahead_are_dropped():
+    from datetime import datetime
+
+    # 07:12:28 to 07:12:35 BST: two minutes ahead of 06:10:30 UTC is 07:12:30.
+    early = datetime(2026, 10, 8, 6, 10, 30, tzinfo=UTC)
+    source = BodsVehicleSource("k", BOX, {"341", "237"}, http_get=lambda u, m: FIXTURE, now=lambda: early)
+    assert [v.vehicle_ref for v in source.fetch()] == ["BNML-1002", "BNML-2001"]
+
+
+def test_a_local_time_labelled_utc_is_an_hour_ahead_and_dropped():
+    from datetime import datetime
+
+    # A tracker sending its BST clock as UTC: 07:12:31 "UTC" is an hour from now.
+    body = FIXTURE.replace(b"2026-10-08T07:12:31+01:00", b"2026-10-08T07:12:31+00:00")
+    now = datetime(2026, 10, 8, 6, 13, tzinfo=UTC)
+    source = BodsVehicleSource("k", BOX, {"341"}, http_get=lambda u, m: body, now=lambda: now)
+    found = {v.vehicle_ref for v in source.fetch()}
+    assert "BNML-1001" not in found and "BNML-1002" in found
+
+
 def test_lines_are_kept_whatever_their_case():
     from datetime import datetime
 
