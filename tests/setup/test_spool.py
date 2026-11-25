@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import pytest
 
+from twobells.core import net
 from twobells.settings.overlay import board_target
 from twobells.setup import discover
 from twobells.setup.api import RateLimit, SetupApi
@@ -946,3 +947,24 @@ def test_the_page_shows_why_the_service_cant_help(board):
     finally:
         board.worker._stop.set()
         thread.join(5)
+
+
+def test_the_setup_service_sends_no_key_to_an_address_start_up_would_refuse(board, monkeypatch):
+    # On a Pi the test runs in the service, with the settings it reads itself
+    # and its real key test: the same check, before any request.
+    opened = []
+    monkeypatch.setattr(net, "urlopen", lambda request, **options: opened.append(request.full_url))
+    stop = threading.Event()
+    worker = Worker(board.runner.spool.folder, job_folder=board.state, load_secrets=lambda: {"RDM_API_KEY": SAVED_RDM},
+                    settings=lambda: {"train": {"crs": "GLO", "base_url": "http://example.com/ldb"}},
+                    make_job=FakeJob, idle=60, poll=0.01, stop=stop)
+    thread = threading.Thread(target=worker.run, daemon=True)
+    thread.start()
+    try:
+        result = board.runner.test_key("RDM_API_KEY", PASTED, None)
+    finally:
+        stop.set()
+        thread.join(5)
+    assert opened == []
+    assert result == KeyResult("unknown", "[train] base_url must be an https address like https://example.com/path, "
+                                          "not 'http://example.com/ldb'")

@@ -23,6 +23,11 @@ asks before testing that; and TfL's line status for the Underground, with
 the key in TfL's app_key header (TfL answers a key it doesn't know with a
 429 saying so, which is told apart from its allowance being used up).
 
+A key is only ever sent to an https address. The [train] and [bus]
+base_url are checked as the board checks them at start: one it would
+refuse ends the test with the same words, before any request; and no
+request at all goes to an address that isn't https.
+
 A key never appears in a message: messages are built from fixed words and
 checked values only (a station code, an HTTP status), never the service's
 own text; then the keys are replaced and errors.safe_message applied anyway.
@@ -42,8 +47,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 
 from ..core import net
-from ..core.errors import safe_message
+from ..core.errors import ConfigError, safe_message
 from ..core.places import BODS_BASE_URL
+from ..settings.config import https_url
 from ..sources import darwin, tfl, transportapi
 from ..sources.disruptions import kb_url_is_placeholder
 
@@ -137,7 +143,10 @@ _UNREACHABLE = "couldn't be reached. It may be down, or there may be no internet
 
 def _call(fetch: Callable[[str, Mapping[str, str]], _Body], url: str, headers: Mapping[str, str],
           service: _Service) -> _Body:
-    """One request; a failure becomes the result it means, as an _Outcome."""
+    """One request; a failure becomes the result it means, as an _Outcome.
+    Every request carries a key, so none goes to an address that isn't https."""
+    if urlsplit(url).scheme != "https":
+        raise _Outcome(KeyResult("unknown", f"{service.owner}'s address isn't https, so the key wasn't sent."))
     try:
         return fetch(url, headers)
     except HTTPError as error:
@@ -232,6 +241,17 @@ def _https(value, default: str) -> str:
     return url
 
 
+def _base_url(config_data: Mapping, name: str, default: str) -> str:
+    """[name] base_url, checked as the board checks it at start
+    (config.https_url), so the test asks where the board would. One the
+    board would refuse ends the test with the board's own words, before
+    any key is sent."""
+    try:
+        return https_url(dict(_section(config_data, name)), "base_url", default, f"[{name}] ").rstrip("/")
+    except ConfigError as error:
+        raise _Outcome(KeyResult("unknown", str(error))) from None
+
+
 def _crs(config_data: Mapping) -> str:
     crs = _section(config_data, "train").get("crs")
     if isinstance(crs, str) and _CRS.fullmatch(crs.strip()):
@@ -240,7 +260,7 @@ def _crs(config_data: Mapping) -> str:
 
 
 def _board_url(config_data: Mapping) -> str:
-    base = _https(_section(config_data, "train").get("base_url"), darwin.DEFAULT_BASE_URL)
+    base = _base_url(config_data, "train", darwin.DEFAULT_BASE_URL)
     return f"{base}/GetDepartureBoard/{_crs(config_data)}?{urlencode({'numRows': 1})}"
 
 
@@ -298,8 +318,9 @@ def _a_train(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> str
     if not keys["RDM_API_KEY"]:
         return None
     service = _SERVICES["RDM_API_KEY"]
+    url = _board_url(config_data)  # an address the board would refuse ends the test, as it would the board
     try:
-        raw = _json(_call(fetch, _board_url(config_data), {"x-apikey": keys["RDM_API_KEY"]}, service), service)
+        raw = _json(_call(fetch, url, {"x-apikey": keys["RDM_API_KEY"]}, service), service)
         board = darwin.parse_board_rich(raw)
     except (_Outcome, ValueError):
         return None
@@ -372,7 +393,7 @@ def _bods(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyRes
 
 def _tapi(keys: Mapping[str, str], config_data: Mapping, fetch: Fetch) -> KeyResult:
     service = _SERVICES["TAPI_APP_KEY"]
-    base = _https(_section(config_data, "bus").get("base_url"), transportapi.DEFAULT_BASE_URL)
+    base = _base_url(config_data, "bus", transportapi.DEFAULT_BASE_URL)
     params = {"app_id": keys["TAPI_APP_ID"], "app_key": keys["TAPI_APP_KEY"], "live": "true", "group": "no",
               "limit": 1}
     url = f"{base}/uk/bus/stop_timetables/{_stop(config_data)}.json?{urlencode(params)}"

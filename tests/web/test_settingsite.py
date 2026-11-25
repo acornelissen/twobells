@@ -18,6 +18,7 @@ import pytest
 from tests.contrast import assert_contrast
 from tests.paths import ROOT
 from twobells.board.config import settings_from
+from twobells.core import net
 from twobells.core.walk import WalkTimes
 from twobells.dashboard.snapshot import Hub
 from twobells.settings import schema
@@ -1749,6 +1750,24 @@ def test_on_a_pi_the_test_runs_in_the_setup_service_never_here(on_a_pi):
     assert "<strong>Works:</strong> It works." in after(on_a_pi, response, cookie)
     # Saved first, so the service reads the pair as saved: no key is handed to it.
     assert on_a_pi.runner.tests == [("TAPI_APP_KEY", None, None)] and on_a_pi.here == []
+
+
+def test_a_key_test_says_why_start_up_would_refuse_an_http_address_and_sends_nothing(make, monkeypatch):
+    # Docker tests in this process, with the real key test: the board and the
+    # dashboard refuse an http base_url at start, and so does the test.
+    opened = []
+    monkeypatch.setattr(net, "urlopen", lambda request, **options: opened.append(request.full_url))
+
+    def wizard(store):
+        return SetupApi(store.target(settings_from), store.env, store.folder, install=install_named("docker"))
+
+    running = make(install="docker", config=CONFIG.replace('crs = "GLO"', 'crs = "GLO"\nbase_url = "http://example.com/ldb"'),
+                   setup=wizard)
+    response, cookie = press(running, "RDM_API_KEY", "test")
+    page = after(running, response, cookie)
+    assert ("<strong>Can't tell:</strong> [train] base_url must be an https address like "
+            "https://example.com/path, not 'http://example.com/ldb'") in page
+    assert opened == []
 
 
 def test_each_key_is_tested_at_most_once_every_ten_seconds_as_in_the_wizard(on_a_pi):

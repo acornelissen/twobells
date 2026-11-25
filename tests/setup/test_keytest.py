@@ -10,7 +10,10 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from tests.paths import FIXTURES
+from twobells.board.config import settings_from
 from twobells.core import net
+from twobells.core.errors import ConfigError
+from twobells.settings.config import https_url
 from twobells.setup import keytest
 from twobells.setup.keytest import KeyResult
 from twobells.setup.spool.folder import WAITS
@@ -106,6 +109,48 @@ def test_a_section_switched_off_is_not_asked_about():
     check("BODS_API_KEY", bods, config=config)
     box = parse_qs(urlsplit(bods.calls[0][0]).query)["boundingBox"][0]
     assert box == "-1.95200,53.44084,-1.94600,53.44684"  # the fixed point, not the route strip's stop
+
+
+HTTP_BASES = [
+    "http://api1.raildata.org.uk/ldbws",
+    "HTTP://transportapi.com/v3",
+    " http://example.com ",
+    "ftp://example.com/api",
+    "https://user:pass@example.com/api",
+    "https://exa mple.com/api",
+    "//example.com/api",
+    "example.com/api",
+    "",
+    42,
+]
+
+
+@pytest.mark.parametrize("base", HTTP_BASES)
+@pytest.mark.parametrize("name, section", [
+    ("RDM_API_KEY", "train"), ("RDM_DETAILS_API_KEY", "train"), ("TAPI_APP_ID", "bus"), ("TAPI_APP_KEY", "bus"),
+])
+def test_an_address_start_up_would_refuse_sends_no_request_and_says_why_as_start_up_does(name, section, base):
+    config = {**CONFIG, section: {**CONFIG[section], "base_url": base}}
+    fake = Fake()  # any request at all fails the test
+    result = check(name, fake, config=config)
+    assert fake.calls == []
+    with pytest.raises(ConfigError) as refused:
+        https_url(config[section], "base_url", "https://default.example", f"[{section}] ")
+    assert result == KeyResult("unknown", str(refused.value))
+    # The same words as the board's start-up.
+    data = {**CONFIG, "bus": {**CONFIG["bus"], "source": "transportapi"}}
+    data[section] = {**data[section], "base_url": base}
+    with pytest.raises(ConfigError) as started:
+        settings_from(data, SAVED)
+    assert str(started.value) == result.message
+
+
+def test_a_key_is_never_sent_to_an_address_that_isnt_https(monkeypatch):
+    # Belt and braces, where each request is sent: an address built wrong still sends nothing.
+    monkeypatch.setattr(keytest.tfl, "BASE_URL", "http://api.tfl.gov.uk")
+    fake = Fake()
+    result = check("TFL_APP_KEY", fake, env={"TFL_APP_KEY": "tfl-key-0007"})
+    assert fake.calls == [] and result.state == "unknown"
 
 
 def test_darwin_without_a_station_asks_about_glossop():
