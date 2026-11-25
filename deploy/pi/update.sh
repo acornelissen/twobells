@@ -28,6 +28,14 @@ UNITS=(twobells.service twobells.timer twobells-screen.service twobells-web.serv
 # How long the services must stay up on the new release, in seconds: a Pi
 # Zero takes a while to start the app, and a crash at start comes inside it.
 SETTLE=30
+# How long the e-paper board's run on the new release may take, in seconds,
+# before it counts as hung. Its unit stops a run itself at 120 (a colour
+# refresh takes about 20 on a Pi Zero W, and the first run after the switch
+# reads the new release off the card afresh), so this is for a unit that
+# doesn't, with room to spare.
+RENDER_WAIT=300
+# The room the board needs on the SD card to save its state, in KB.
+MIN_FREE_KB=10240
 config="" secrets=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -119,6 +127,21 @@ prune
 new_release
 build_release "$release"
 
+# Whether the SD card has room for the board to save its state, as each run
+# does. A run that can't fails, and the check of the e-paper board below
+# would blame the new release for it and undo the update.
+room_to_save() {
+  local free
+  free="$(df -Pk /var/lib/twobells | awk 'NR == 2 { print $4 }')" || return 1
+  [[ "$free" =~ ^[0-9]+$ ]] && (( free >= MIN_FREE_KB ))
+}
+if ! room_to_save; then
+  echo "The SD card is too full for the board to save its state: it needs $((MIN_FREE_KB / 1024)) MB free" >&2
+  echo "in /var/lib/twobells (df -h /var/lib/twobells says how much is). The release in use runs on as it" >&2
+  echo "was: make room (sudo apt-get clean, say), then run this again." >&2
+  exit 1
+fi
+
 # What the services run with now, to put back if they don't stay up on the
 # new release: the units and the guard's rules, the release before (switch_to
 # moves previous on), and which of the long-running services are up.
@@ -139,6 +162,13 @@ for unit in twobells-web.service twobells-screen.service; do
     watched+=("$unit")
   fi
 done
+# And the e-paper board, run once on the new release below, if its timer is
+# on: whether the board runs at all is yours, and an HDMI screen's service is
+# watched with the others instead.
+epaper=false
+if [[ "$display" != hdmi-* ]] && systemctl is-enabled --quiet twobells.timer; then
+  epaper=true
+fi
 
 # The new code goes in: the venv link moves to it in one step, so each tick
 # of the board runs one release or the other, whole.
@@ -182,6 +212,25 @@ stay_up() {
     done
   done
 }
+# Whether the e-paper board draws on the new release: its service run once
+# and waited for (a oneshot), failing if it fails or takes over RENDER_WAIT
+# seconds. A run the timer started before the switch is on the old code, and
+# a start while it goes would wait for it and take its result for this one's,
+# so that is let finish first; one that never does fails this. A run the
+# timer starts after the switch is on the new code, so if this start joins
+# one of those, the result is still the new release's.
+draws() {
+  local second state
+  for (( second = 0; second < RENDER_WAIT; second++ )); do
+    state="$(systemctl show --property=ActiveState --value twobells.service)"
+    if [[ "$state" != activating && "$state" != deactivating ]]; then
+      timeout "$RENDER_WAIT" systemctl start twobells.service
+      return
+    fi
+    sleep 1
+  done
+  return 1
+}
 # Back to the release from before, with the units and guard's rules from
 # before, and the services restarted onto them as they were.
 go_back() {
@@ -202,11 +251,34 @@ go_back() {
   systemctl restart twobells-guard.service || true
   systemctl restart twobells-fetch.path "${watched[@]}"
   echo "So the update was undone: it is back on the release from before ($(linked venv))." >&2
+  # And the e-paper board drawn by it, rather than left with what the new
+  # release drew or half drew. A run still going (a hung one, or one the
+  # timer started on the new code) is stopped first, or this start would
+  # join it. As best it can: if this fails too, it says so and goes on.
+  if $epaper; then
+    systemctl stop twobells.service || true
+    if ! timeout "$RENDER_WAIT" systemctl start twobells.service; then
+      echo "The e-paper board didn't draw on the release from before either; why: journalctl -u twobells -n 30" >&2
+    fi
+  fi
 }
 echo "Checking the services stay up on the new release ($SETTLE seconds)"
 if ! stay_up "${watched[@]}"; then
   go_back
   exit 1
+fi
+# Then the e-paper board, once (a oneshot), which goes back as a crash does if
+# it fails. That may be the panel rather than the new release (its cable, say):
+# the journal says which.
+if $epaper; then
+  echo "Drawing the e-paper board on the new release"
+  if ! draws; then
+    echo "twobells.service, the e-paper board, failed on the new release or took over $RENDER_WAIT seconds." >&2
+    echo "It may be the panel rather than the release (its cable, say); why: journalctl -u twobells -n 30" >&2
+    go_back
+    exit 1
+  fi
+  journalctl -u twobells.service -n 12 --no-pager -o cat
 fi
 
 # Says if the network guard isn't holding the web server: that needs its
@@ -244,14 +316,6 @@ systemctl enable --now twobells-timetable.path
 if query needs-timetable >/dev/null; then
   systemctl start --no-block twobells-timetable.service
   echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
-fi
-
-# One e-paper run now, rather than waiting for the timer (a oneshot: this
-# waits for it). Whether the board runs at all is yours: this never enables
-# or disables its timer or the screen's service.
-if systemctl is-enabled --quiet twobells.timer; then
-  systemctl start twobells.service || true
-  journalctl -u twobells.service -n 12 --no-pager -o cat
 fi
 
 # The release before this one is kept, to go back to; any older are removed.

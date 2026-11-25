@@ -1008,8 +1008,8 @@ def test_update_switches_to_the_new_release_only_once_it_imports_and_restarts_af
     places = [update.index(step) for step in steps]
     assert places == sorted(places)
     # The board's timer carries on throughout: the venv it runs isn't touched until
-    # the link moves, in one step.
-    assert "systemctl stop" not in update
+    # the link moves, in one step. Only going back stops anything (a run of the board on the new code).
+    assert "systemctl stop" not in update.replace(_function("update.sh", "go_back"), "")
     # A run that stops before switching removes the release it made, and nothing else.
     assert "trap finish EXIT\n" in update and "discard \"$release\"" in _function("update.sh", "finish")
 
@@ -1422,6 +1422,176 @@ def test_update_goes_back_to_what_ran_before_when_the_services_dont_stay_up():
     assert places == sorted(places)
     assert _units("update.sh") == _units("install.sh")  # puts back each unit it put in
     assert "SETTLE=30\n" in update
+
+
+# The e-paper board's run on the new release, which goes back as a crash does if it fails.
+DRAWS = re.compile(r"^draws\(\) \{\n.*?^\}$", re.M | re.S)
+EPAPER = re.compile(r"^epaper=false\nif .*?^fi$", re.M | re.S)
+GO_BACK = re.compile(r"^go_back\(\) \{\n.*?^\}$", re.M | re.S)
+
+
+def _bash(script: str, *args: str, **env: str):
+    import shutil
+    import subprocess
+
+    return subprocess.run([shutil.which("bash") or "bash", "-c", script, "bash", *args], capture_output=True,
+                          text=True, env={"PATH": "/usr/bin:/bin", **env})
+
+
+def _draws(states: str, start: int = 0, wait: int = 5, hang: bool = False) -> list[str]:
+    """Runs update.sh's draws with systemctl, sleep and timeout stood in for:
+    twobells.service's ActiveState a word a second (the last kept up from
+    there), and its start exiting `start`, or `hang`ing past timeout's
+    limit. Each timeout and start it ran, with the second it started, then
+    whether it drew."""
+    [function] = DRAWS.findall(_script("update.sh"))
+    stubs = ('tick=0\nsleep() { tick=$((tick + 1)); }\n'
+             'systemctl() {\n  local states\n  read -r -a states <<< "$STATES"\n  case "$1" in\n'
+             '    show) [[ "$*" == "show --property=ActiveState --value twobells.service" ]] || return 9\n'
+             '      echo "${states[tick]:-${states[${#states[@]} - 1]}}" ;;\n'
+             '    start) echo "start $2 at $tick"; return "$START" ;;\n    *) return 9 ;;\n  esac\n}\n'
+             'timeout() { echo "timeout $1"; shift; if [[ -n "$HANG" ]]; then return 124; fi; "$@"; }\n')
+    done = _bash(f"set -euo pipefail\nRENDER_WAIT={wait}\n{stubs}{function}\n"
+                 "if draws; then echo drew; else echo failed; fi",
+                 STATES=states, START=str(start), HANG="yes" if hang else "")
+    assert done.returncode == 0, done.stderr
+    return done.stdout.splitlines()
+
+
+@pytest.mark.parametrize("states", ["inactive", "failed", "active"])
+def test_update_runs_the_e_paper_board_once_on_the_new_release_and_waits_for_it(states):
+    # failed: an earlier tick's, which a start clears.
+    assert _draws(states) == ["timeout 5", "start twobells.service at 0", "drew"]
+
+
+@pytest.mark.parametrize("states", ["activating activating inactive", "activating deactivating failed"])
+def test_update_lets_a_run_of_the_old_code_finish_before_its_own(states):
+    # A tick the timer started before the switch runs the old code, and a
+    # start while it goes would wait for it and take its result for the new release's.
+    assert _draws(states) == ["timeout 5", "start twobells.service at 2", "drew"]
+
+
+def test_update_gives_up_on_a_run_of_the_old_code_that_never_ends():
+    assert _draws("activating", wait=5) == ["failed"]  # and never starts one of its own to judge by it
+
+
+def test_update_sees_the_e_paper_board_fail_or_hang_on_the_new_release():
+    assert _draws("inactive", start=1) == ["timeout 5", "start twobells.service at 0", "failed"]
+    assert _draws("inactive", hang=True) == ["timeout 5", "failed"]
+
+
+def test_update_waits_longer_for_the_e_paper_board_than_its_unit_does():
+    # The unit stops a hung run itself, and says so in its log; update.sh's
+    # own limit is for a unit that doesn't, with room for a slow first run.
+    [wait] = re.findall(r"^RENDER_WAIT=(\d+)$", _script("update.sh"), re.M)
+    [unit] = _unit("twobells.service")["TimeoutStartSec"]
+    assert int(wait) >= 2 * int(unit)
+
+
+@pytest.mark.parametrize("display, enabled, epaper", [
+    ("", True, True),  # an Inky, unless the settings say; or ones that can't be read
+    ("waveshare-10in85g", True, True),
+    ("hdmi-1280x400", True, False),  # a screen's service is watched with the others instead
+    ("waveshare-10in85g", False, False),  # the board is yours to turn on
+])
+def test_update_checks_the_e_paper_board_only_where_its_timer_runs_it(display, enabled, epaper):
+    [block] = EPAPER.findall(_script("update.sh"))
+    stub = 'systemctl() { [[ "$*" == "is-enabled --quiet twobells.timer" && "$ENABLED" == yes ]]; }\n'
+    done = _bash(f'set -euo pipefail\ndisplay="$1"\n{stub}{block}\necho "$epaper"', display,
+                 ENABLED="yes" if enabled else "no")
+    assert (done.returncode, done.stdout) == (0, f"{str(epaper).lower()}\n")
+
+
+def test_update_goes_back_when_the_e_paper_board_fails_on_the_new_release():
+    update = _script("update.sh")
+    # Decided before the switch, as the services watched are.
+    assert update.index(EPAPER.findall(update)[0]) < update.index('switch_to "$release"\n')
+    # Once the services stay up, and before anything else is turned on.
+    check = ('if $epaper; then\n  echo "Drawing the e-paper board on the new release"\n'
+             "  if ! draws; then\n")
+    steps = ['if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', check, "    go_back\n    exit 1\n",
+             "\nsay_if_unguarded\n", "\nsystemctl enable --now twobells-timetable.timer\n"]
+    places = [update.index(step) for step in steps]
+    assert places == sorted(places)
+    said = update[places[1]:places[2]]
+    # Which service failed, where to see why, and that it may be the panel.
+    assert "twobells.service" in said and "journalctl -u twobells -n 30" in said and "panel" in said
+    # That run is the only one, but going back's: none at the end, whatever it does, as before.
+    assert update.count("systemctl start twobells.service") == 2
+    for function in ("draws", "go_back"):
+        assert _function("update.sh", function).count('timeout "$RENDER_WAIT" systemctl start twobells.service') == 1
+
+
+def _go_back(epaper: bool, fails: bool, tmp_path: Path):
+    """Runs update.sh's go_back with everything it changes stood in for, each
+    call said in order: `epaper` as update.sh found it, and the release
+    from before's run of the board failing if `fails`."""
+    [function] = GO_BACK.findall(_script("update.sh"))
+    stubs = ('switch_back() { echo "switch_back $*"; }\nlinked() { echo 0.5.3-aaaaaa; }\n'
+             'install() { echo "install $*"; }\ntimeout() { echo "timeout $1"; shift; "$@"; }\n'
+             'systemctl() { echo "systemctl $*"; if [[ "$1" == start && -n "$FAILS" ]]; then return 1; fi; }\n')
+    setting = (f'PREFIX=/opt/twobells release=0.6.0-bbbbbb before=0.5.0-zzzzzz saved="{tmp_path}"\n'
+               f"UNITS=(twobells.service twobells.timer)\nwatched=(twobells-fetch.service)\n"
+               f"epaper={str(epaper).lower()}\nRENDER_WAIT=300\n")
+    return _bash(f"set -euo pipefail\n{setting}{stubs}{function}\ngo_back\necho went back", FAILS="yes" if fails else "")
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_going_back_draws_the_e_paper_board_again_on_the_release_from_before(tmp_path, fails):
+    done = _go_back(True, fails, tmp_path)
+    # As best it can: if that fails too it says so, and the rest stands.
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.splitlines() == [
+        "switch_back 0.6.0-bbbbbb 0.5.0-zzzzzz", "systemctl daemon-reload", "systemctl restart twobells-guard.service",
+        "systemctl restart twobells-fetch.path twobells-fetch.service",
+        # A run still going (a hung one, or the timer's on the new code) is stopped first, or the start would join it.
+        "systemctl stop twobells.service", "timeout 300", "systemctl start twobells.service", "went back"]
+    assert "back on the release from before (0.5.3-aaaaaa)" in done.stderr
+    assert ("journalctl -u twobells -n 30" in done.stderr) == fails
+
+
+def test_going_back_leaves_the_board_alone_without_the_e_paper_timer(tmp_path):
+    done = _go_back(False, False, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert "twobells.service" not in done.stdout
+
+
+def test_update_never_stops_or_starts_the_boards_timer():
+    # Whatever happens, the timer is left as it was: on if it was, and off if not.
+    for line in _script("update.sh").splitlines():
+        if "systemctl" in line and "twobells.timer" in line and not line.lstrip().startswith("#"):
+            assert "systemctl is-enabled --quiet twobells.timer" in line, line
+
+
+# Room on the SD card for the board to save its state, looked at before the switch.
+ROOM = re.compile(r"^room_to_save\(\) \{\n.*?^\}$", re.M | re.S)
+
+
+@pytest.mark.parametrize("df, room", [
+    ("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 30000000 20000000 512000 98% /\n", True),
+    ("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 30000000 29990000 10240 100% /\n", True),
+    ("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 30000000 29990000 10239 100% /\n", False),
+    ("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 30000000 30000000 0 100% /\n", False),
+    ("Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1 1 - - /\n", False),  # can't be told
+    (None, False),  # df failed
+])
+def test_update_needs_room_on_the_card_for_the_board_to_save_its_state(df, room):
+    [function] = ROOM.findall(_script("update.sh"))
+    stub = ('df() { [[ "$*" == "-Pk /var/lib/twobells" ]] || return 9; '
+            'if [[ -z "$SAID" ]]; then return 1; fi; printf "%s" "$SAID"; }\n')
+    done = _bash(f"set -euo pipefail\nMIN_FREE_KB=10240\n{stub}{function}\n"
+                 "if room_to_save; then echo room; else echo none; fi", SAID=df or "")
+    assert (done.returncode, done.stdout) == (0, "room\n" if room else "none\n")
+
+
+def test_update_stops_before_the_switch_on_a_card_too_full_to_save_the_boards_state():
+    # A run that can't save its state fails, and would be blamed on the new release.
+    update = _script("update.sh")
+    stop = 'if ! room_to_save; then\n'
+    assert update.index(NEW_RELEASE) < update.index(stop) < update.index('switch_to "$release"\n')
+    block = update[update.index(stop):update.index("fi\n", update.index(stop))]
+    assert "exit 1" in block and "/var/lib/twobells" in block
+    assert re.search(r"^MIN_FREE_KB=10240$", update, re.M)
 
 
 @pytest.mark.parametrize("name", ["install.sh", "update.sh", "upgrade.sh", "releases.sh"])
