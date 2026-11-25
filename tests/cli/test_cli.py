@@ -1197,6 +1197,18 @@ def test_starting_again_runs_the_same_command_on_the_same_port_without_the_brows
                                      "--no-browser", "--port", "8091"])]
 
 
+def test_starting_again_and_again_adds_the_port_and_no_browser_once(monkeypatch):
+    # A process started again has them on its own command line already.
+    from twobells.cli import serve
+
+    ran = []
+    again = ["--no-browser", "--port", "8091"]
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "serve", "--port", "8090", *again, *again])
+    monkeypatch.setattr(os, "execv", lambda path, argv: ran.append(argv))
+    serve._start_again(8091)
+    assert ran == [[sys.executable, "-m", "twobells", "serve", "--port", "8090", *again]]
+
+
 class Stopped:
     """A server that stops as soon as it starts, as for Ctrl+C."""
 

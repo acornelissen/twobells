@@ -185,8 +185,13 @@ def _start_again(port: int) -> None:
     """Replace this process with a fresh one, started the same way, on the
     same port and without opening the browser again. Nothing of the old one
     is left: every thread, the lock and the listening socket go with it.
-    Inside Docker the process stays the container's main one throughout."""
-    argv = [sys.executable, *sys.orig_argv[1:], "--no-browser", "--port", str(port)]
+    Inside Docker the process stays the container's main one throughout.
+    A process started again ends with what it adds already: those copies
+    go first, so the command line doesn't grow with every start."""
+    given = sys.orig_argv[1:]
+    while len(given) >= 3 and given[-3:-1] == ["--no-browser", "--port"]:
+        given = given[:-3]
+    argv = [sys.executable, *given, "--no-browser", "--port", str(port)]
     sys.stdout.flush()
     sys.stderr.flush()
     os.execv(sys.executable, argv)  # noqa: S606 - starts this same program afresh, no shell involved
