@@ -17,6 +17,7 @@ import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from ..core.errors import ConfigError
 from ..core.polling import parse_window
@@ -215,6 +216,24 @@ def text(section: dict, key: str, default: str, where: str = "") -> str:
     if not isinstance(value, str):
         raise ConfigError(f"{where}{key} must be text in quotes, not {value!r}")
     return value
+
+
+def https_url(section: dict, key: str, default: str, where: str = "") -> str:
+    """An https address for a feed that will be sent a key, without spaces
+    round it; ConfigError otherwise, so a typo never sends a key in clear."""
+    value = section.get(key, default)
+    if not isinstance(value, str):
+        raise ConfigError(f"{where}{key} must be an https address in quotes, not {value!r}")
+    url = value.strip()
+    try:
+        parts = urlsplit(url)
+        parts.port  # noqa: B018 - raises ValueError for a port that isn't a number
+    except ValueError:
+        parts = None
+    if (parts is None or parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+            or any(c.isspace() or not c.isprintable() for c in url)):
+        raise ConfigError(f"{where}{key} must be an https address like https://example.com/path, not {value!r}")
+    return url
 
 
 def flag(section: dict, key: str, default: bool, where: str = "") -> bool:

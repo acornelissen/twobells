@@ -26,6 +26,7 @@ from ..settings.config import (
     board_modes,
     flag,
     holiday_division,
+    https_url,
     state_dir,
     switched_on,
     table,
@@ -128,7 +129,7 @@ def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> 
         crs=crs,
         filter_crs=text(section, "filter_crs", "", where) or None,  # "" is the page's "no filter"
         rows=whole(section, "rows", defaults["rows"], where),
-        base_url=text(section, "base_url", DARWIN_BASE_URL, where),
+        base_url=https_url(section, "base_url", DARWIN_BASE_URL, where),
     )
     stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
     return SourceConfig(source, policy, stale_after)
@@ -151,7 +152,7 @@ def _transportapi(section: dict, env: Mapping[str, str], stops: dict[str, str]) 
         stops=stops,
         rows=whole(section, "rows", BOARD_DEFAULTS["bus"]["rows"], "[bus] "),
         directions=texts(section, "directions", "[bus] ") or None,
-        base_url=text(section, "base_url", TAPI_BASE_URL, "[bus] "),
+        base_url=https_url(section, "base_url", TAPI_BASE_URL, "[bus] "),
     )
 
 

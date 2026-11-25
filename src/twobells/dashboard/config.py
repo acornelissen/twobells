@@ -37,7 +37,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import IO, Protocol
-from urllib.parse import urlsplit
 
 from ..board.config import settings_from
 from ..core import files
@@ -46,7 +45,7 @@ from ..core.polling import Window, parse_window
 from ..core.walk import WalkTimes
 from ..settings import modes as mode_list
 from ..settings import show as show_items
-from ..settings.config import flag, switched_on, table, texts, whole
+from ..settings.config import flag, https_url, switched_on, table, texts, whole
 from ..settings.schema import ENGLAND_AND_WALES, bus_source
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource, BusBoard
@@ -143,23 +142,6 @@ def _host(name: str) -> str:
     return host
 
 
-def _feed_url(section: dict, key: str, default: str) -> str:
-    """An https address for a feed that will be sent a key; ConfigError otherwise."""
-    value = section.get(key, default)
-    if not isinstance(value, str):
-        raise ConfigError(f"{_WHERE}{key} must be an https address in quotes, not {value!r}")
-    url = value.strip()
-    try:
-        parts = urlsplit(url)
-        parts.port  # noqa: B018 - raises ValueError for a port that isn't a number
-    except ValueError:
-        parts = None
-    if (parts is None or parts.scheme != "https" or not parts.hostname or parts.username or parts.password
-            or any(c.isspace() or not c.isprintable() for c in url)):
-        raise ConfigError(f"{_WHERE}{key} must be an https address like https://example.com/path, not {value!r}")
-    return url
-
-
 def allowed_hosts(data: dict) -> frozenset[str]:
     """[dashboard] allowed_hosts alone, checked: for the settings, which
     answer to them even when the rest of [dashboard] doesn't load."""
@@ -195,7 +177,7 @@ def dashboard_options(data: dict) -> DashboardOptions:
         late_minutes_bus=_ranged(section, "late_minutes_bus", 2, 1, _MAX_LATE),
         history_days=_ranged(section, "history_days", 90, 1, _MAX_HISTORY_DAYS),
         allowed_hosts=frozenset(_host(h) for h in texts(section, "allowed_hosts", _WHERE)),
-        kb_incidents_url=_feed_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER),
+        kb_incidents_url=https_url(section, "kb_incidents_url", KB_URL_PLACEHOLDER, _WHERE),
         row_strips=flag(section, "row_strips", True, _WHERE),
         show=show_items.shown(data, "dashboard"),
         leave_modes=mode_list.leave(data, "dashboard") if "leave_modes" in section else None,

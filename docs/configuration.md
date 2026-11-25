@@ -15,7 +15,7 @@ The [setup wizard](setup-wizard.md) and the [settings](settings.md) cover nearly
 ## What only config.toml sets
 
 - **The type of display** (`display`), and the original Inky pHAT's colour (`panel_colour`): see [Displays](displays.md).
-- **Addresses:** `[train] base_url` and `[bus] base_url`, and `[dashboard] allowed_hosts`, the extra names the dashboard and settings answer to.
+- **Addresses:** `[train] base_url` and `[bus] base_url`, and `[dashboard] allowed_hosts`, the extra names the dashboard and settings answer to. Each `base_url` is sent your key, so it must be a plain `https://` address: the board won't start with any other.
 - **Where the store is:** `state_file`, or `[dashboard] state_dir` (see [below](#where-things-are-kept)).
 - **Where bus times come from:** `[bus] source` and `operators`, and the stop list for the bus position page (`[bus.routes]`). No settings page shows them: the setup wizard saves them for you, or set them here. See [Bus times](buses.md) and [The bus position page](displays.md#the-bus-position-page).
 - **How TransportAPI stands in, and the bus page's checks:** `[bus] fallback_windows`, `fallback_interval_minutes` and `position_interval_seconds` (see [Bus times](buses.md#transportapi-as-a-stand-in)).

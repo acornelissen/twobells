@@ -452,6 +452,23 @@ def test_addresses_can_still_be_set_in_config_toml(tmp_path):
     assert load_config(path, ENV).board.sources[0].source._base_url == "https://example.test/rail"
 
 
+@pytest.mark.parametrize("url", ['"http://example.test/rail"', '"https://user:pw@example.test/rail"',
+                                 '"ftp://example.test"', '"https://"', '"https://example.test/a b"', "42",
+                                 '"https://example.test:port/rail"', '"http://127.0.0.1:8080/rail"'])
+@pytest.mark.parametrize("section", ["train", "bus"])
+def test_addresses_that_will_be_sent_a_key_must_be_plain_https(tmp_path, section, url):
+    line = f"base_url = {url}\n"
+    text = TRAIN + line + BUS if section == "train" else TRAIN + BUS.replace("[bus.stops]", line + "[bus.stops]")
+    with pytest.raises(ConfigError, match=rf"\[{section}\] base_url must be an https address"):
+        load_config(write(tmp_path, text), ENV)
+
+
+def test_the_bus_address_is_kept_when_it_is_https(tmp_path):
+    line = 'base_url = " https://example.test/v3 "\n'
+    path = write(tmp_path, BUS.replace("[bus.stops]", line + "[bus.stops]"))
+    assert load_config(path, ENV).board.sources[0].source._base_url == "https://example.test/v3"
+
+
 def test_broken_overlay_is_a_config_error(tmp_path):
     path = _with_state(tmp_path, "")
     (tmp_path / "state").mkdir()
