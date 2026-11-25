@@ -1632,6 +1632,66 @@ def test_back_forward_then_next_adds_no_duplicate_entry_and_one_in_page_back_goe
     assert found["shown"] == ["step-station"] and found["at"] == 1
 
 
+TO_STOPS = TO_STATION + """
+    $("station-none").checked = true;
+    $("station-GLO").checked = false;
+    $("filter").value = "";
+    click("station-next");
+    await settle();
+"""
+
+
+@needs_node
+def test_browser_forward_after_back_with_nothing_edited_moves_on():
+    found = run_wizard(TO_STOPS + """
+        window.history.back();
+        window.history.forward();
+        console.log(JSON.stringify({ shown: shown(), at }));
+    """, trams=None)
+    assert found == {"shown": ["step-stops"], "at": 2}
+
+
+@needs_node
+def test_browser_forward_after_an_edit_on_the_step_is_ignored_and_the_entries_forward_stop_matching():
+    found = run_wizard(TO_STOPS + """
+        window.history.back();                     // to station
+        $("station-none").checked = false;         // an input edited
+        $("station-GLO").checked = true;
+        window.history.forward();
+        const forward = { shown: shown(), step: state.step };
+        window.history.back();                     // home
+        window.history.forward();                  // station: fine, it is behind the edit
+        window.history.forward();                  // stops again: the edit made it stale
+        console.log(JSON.stringify({ forward, shown: shown() }));
+    """, trams=None)
+    assert found["forward"] == {"shown": ["step-station"], "step": "station"}
+    assert found["shown"] == ["step-station"]
+
+
+@needs_node
+def test_browser_forward_after_a_choice_that_is_not_an_input_is_ignored():
+    # A map pick or a button changes the wizard's state without an input event.
+    found = run_wizard(TO_STATION + """
+        window.history.back();
+        state.home = { lat: 53.5, lon: -2.0, label: "the point you picked on the map", country: "" };
+        window.history.forward();
+        const afterHome = { shown: shown(), step: state.step };
+        click("home-next");
+        await settle();
+        $("station-none").checked = true;
+        $("station-GLO").checked = false;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        window.history.back();
+        state.station = { crs: "MAN", name: "Manchester Piccadilly" };
+        window.history.forward();
+        console.log(JSON.stringify({ afterHome, shown: shown() }));
+    """, trams=None)
+    assert found["afterHome"] == {"shown": ["step-home"], "step": "home"}
+    assert found["shown"] == ["step-station"]
+
+
 @needs_node
 def test_next_after_browser_back_replaces_the_entries_forward_of_it():
     found = run_wizard(TO_STATION + """

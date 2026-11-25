@@ -65,6 +65,24 @@ export function numberSteps() {
 const visited = []; // the steps shown on this page, one for each history entry made, by position
 let position = 0; // the position of the step shown: its place in visited, and the n in its entry's state
 
+// What the person has chosen as it stands: the step's own fields and the
+// answers kept in state, so a change by a map pick or a button shows as well
+// as one typed. Compared when the step is left by the browser, to tell
+// whether the steps after it still follow from what it says.
+const ANSWERS = ["home", "station", "stationChoice", "filter", "stops", "trams", "labels", "tramsTicked", "showPicked",
+  "modesTicked", "walkMinutes", "chosenViews", "railLater"];
+let seen = ""; // answers() as the step shown was arrived at
+
+function answers(step) {
+  const fields = [...$(`step-${step}`).querySelectorAll("input, select, textarea")]
+    .map((el) => [el.id, el.value, el.checked === true]);
+  const kept = ANSWERS.map((name) => state[name]);
+  return JSON.stringify([fields, kept], (key, value) => {
+    if (value instanceof Map || value instanceof Set) return [...value];
+    return value;
+  });
+}
+
 export function go(step, { focus = true, entry = true } = {}) {
   for (const name of STEPS) $(`step-${name}`).hidden = name !== step;
   const at = STEPS.indexOf(step);
@@ -88,6 +106,7 @@ export function go(step, { focus = true, entry = true } = {}) {
     visited.push(step);
   }
   state.step = step;
+  seen = answers(step);
   guard(step);
   if (focus) $(`${step}-heading`).focus();
 }
@@ -105,6 +124,13 @@ function popped(event) {
     const { step } = state;
     window.history.pushState({ step, n: position }, "");
     return;
+  }
+  // Choices changed on this step: the steps after it were made for the old
+  // ones, so their entries match nothing and Forward cannot reach them.
+  const now = answers(state.step);
+  if (now !== seen) {
+    visited.length = position + 1;
+    seen = now;
   }
   const entry = event.state;
   const step = entry && entry.step;
