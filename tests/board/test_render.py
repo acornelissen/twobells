@@ -1589,3 +1589,49 @@ def test_a_board_of_buses_alone_has_no_trains_section(monkeypatch):
     render(BoardView("Glossop", (buses,), "07:03"), PALETTE)
     assert "TRAINS" not in drawn and "No trains" not in drawn
     assert [t for t in drawn if t in "12345"] == ["1", "2", "3", "4", "5"]  # 5 buses, where 2 shared the board
+
+
+# The no-rail-key line is drawn whole, never fitted: it must fit every panel in every look that draws it.
+
+# Where the line is too wide today: (panel, look, text size). The smallest panel's text sizes 13 to 16 and
+# the pHAT's 16 are offered in the settings; the owner decides whether to reword or to cut it there. Shrinking
+# the wording so one fits fails the last assertion below until it is taken off this list.
+NO_KEY_DOES_NOT_FIT = {("inky-phat-v1", "plain", size) for size in (13, 14, 15, 16)} | {("inky-phat", "plain", 16)}
+
+
+def no_key_widths():
+    """(panel, look, text size) -> (where the line ends, the room to the edge), for every panel and the looks
+    that draw it."""
+    from twobells.board.names import themes_for
+    from twobells.board.panel import PANELS
+    from twobells.board.render import PAD, TEXT_SIZE
+    from twobells.board.sign import MARGIN, item_size, sign_layout
+    from twobells.settings import schema
+    from twobells.sources.darwin import TRAINS_NEED_KEY
+
+    sizes = [int(value) for value, _ in next(f for f in schema.fields() if f.key == "text_size").options]
+    view = BoardView("GLO", (Section("Trains", (), TRAINS_NEED_KEY),), "07:00")
+    found = {}
+    for panel in PANELS.values():
+        scale = plain_scale(panel)
+        for look in themes_for(panel.epaper):
+            if look == "sign":
+                width = panel.width // panel.scale
+                [item] = [i for i in sign_layout(view, width, panel.height // panel.scale).items
+                          if i.text == TRAINS_NEED_KEY]
+                found[panel.name, look, TEXT_SIZE] = (item.x + item_size(item)[0], width - MARGIN)
+                continue
+            # The tft and split-flap looks draw it as the plain look does, at its standard size.
+            for size in sizes if look == "plain" else [TEXT_SIZE]:
+                need = drawn_length(load_fonts(scale, size).regular, TRAINS_NEED_KEY)
+                found[panel.name, look, size] = (PAD * scale + need, panel.width - PAD * scale)
+    return found
+
+
+def test_the_no_rail_key_line_fits_every_panel_in_every_look_that_draws_it():
+    widths = no_key_widths()
+    assert {look for _, look, _ in widths} == {"plain", "sign", "tft", "flap"}
+    assert {panel for panel, _, _ in widths} >= {"inky-phat", "inky-phat-v1"}
+    too_wide = {key for key, (end, room) in widths.items() if end > room}
+    assert too_wide - NO_KEY_DOES_NOT_FIT == set()
+    assert too_wide >= NO_KEY_DOES_NOT_FIT  # a rewording that fits one: take it off the list

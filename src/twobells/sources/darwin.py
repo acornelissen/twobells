@@ -613,8 +613,9 @@ def _get_details(url: str, headers: dict) -> dict:
 
 
 # What the board and the dashboard say while trains are on and there is no rail
-# key. Short enough for the smallest e-paper board's one line.
-TRAINS_NEED_KEY = "Add the rail key in Settings > Keys for trains."
+# key, under the Trains heading. Short enough for the smallest e-paper board's
+# one line at the standard text size (tests/board/test_render.py measures it).
+TRAINS_NEED_KEY = "Add the rail key in Settings > Keys"
 
 
 class NoKeyTrains:
