@@ -189,6 +189,36 @@ def test_naptan_gives_names_and_positions():
     assert stops["1000DGHS3404"][0] == "Arundel Street"
 
 
+GRID_NAPTAN = (
+    "ATCOCode,CommonName,Indicator,Easting,Northing,Longitude,Latitude\n"
+    "1000DGHS0900,Henry Street,Stop A,403420,394080,-1.948999,53.44384\n"
+    "1000DGRID001,Grid Only,Opp,403420,394080,,\n"
+    "1000DNAN0001,Not A Number,,,,nan,nan\n"
+    "1000DINF0001,Infinite,,inf,inf,inf,-inf\n"
+    "1000DOFF0001,Off The Map,,900000,1400000,-80.0,10.0\n"
+    "1000DNONE001,Nowhere,,,,,\n"
+    "1000DSHORT01\n"
+    "1000DGHS3404,Arundel Street,adj,,,-1.95326,53.443519\n"
+)
+
+
+def test_a_naptan_row_with_only_a_grid_reference_is_converted():
+    found = parse_naptan(GRID_NAPTAN, {"1000DGRID001", HENRY_A})
+    name, lat, lon = found["1000DGRID001"]
+    assert name == "Grid Only"
+    assert (lat, lon) == pytest.approx((53.44348, -1.94998), abs=1e-5)
+    assert found[HENRY_A] == ("Henry Street", 53.44384, -1.948999)  # its latitude and longitude, given
+
+
+def test_a_naptan_row_without_a_usable_position_costs_only_itself():
+    bad = {"1000DNAN0001", "1000DINF0001", "1000DOFF0001", "1000DNONE001", "1000DSHORT01"}
+    found = parse_naptan(GRID_NAPTAN, bad | {HENRY_A, "1000DGHS3404"}, with_indicator=True)
+    assert found == {
+        HENRY_A: ("Henry Street", 53.44384, -1.948999, "Stop A"),
+        "1000DGHS3404": ("Arundel Street", 53.443519, -1.95326, "adj"),
+    }
+
+
 def test_printed_block_is_valid_config():
     atcos, _, _ = strip_before(patterns(TXC, "341"), HENRY_A, walk_minutes=2)
     block = route_toml("341", "A", atcos, parse_naptan(NAPTAN, set(atcos)), "341, 7 min of travel")

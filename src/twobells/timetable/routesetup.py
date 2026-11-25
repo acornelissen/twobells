@@ -23,7 +23,8 @@ from xml.etree.ElementTree import Element
 from ..core import bounded, safexml
 from ..core.errors import redact_keys
 from ..core.net import get_bytes
-from ..core.places import BODS_BASE_URL
+from ..core.osgb import grid_to_latlon
+from ..core.places import BODS_BASE_URL, finite_number, uk_position
 
 if TYPE_CHECKING:
     from ..settings.installs import Install
@@ -426,13 +427,34 @@ def parse_naptan(text: str, wanted: set[str], with_indicator: bool = False) -> d
 
 def _naptan_rows(lines: IO[str], wanted: set[str], with_indicator: bool) -> dict[str, tuple]:
     """parse_naptan over a file of NaPTAN's CSV, a line at a time: one longer
-    than MAX_NAPTAN_LINE is left out, never held whole."""
+    than MAX_NAPTAN_LINE is left out, never held whole. A row without a name
+    or a usable position is left out too, costing only itself."""
     found = {}
     for row in csv.DictReader(bounded.lines(lines, MAX_NAPTAN_LINE)):
-        if row.get("ATCOCode") in wanted:
-            place = (row["CommonName"].strip(), float(row["Latitude"]), float(row["Longitude"]))
-            found[row["ATCOCode"]] = (*place, (row.get("Indicator") or "").strip()) if with_indicator else place
+        if row.get("ATCOCode") not in wanted:
+            continue
+        name, position = row.get("CommonName"), _naptan_position(row)
+        if not isinstance(name, str) or position is None:
+            continue
+        place = (name.strip(), *position)
+        indicator = row.get("Indicator")
+        sign = indicator.strip() if isinstance(indicator, str) else ""
+        found[row["ATCOCode"]] = (*place, sign) if with_indicator else place
     return found
+
+
+def _naptan_position(row: dict) -> tuple[float, float] | None:
+    """A NaPTAN row's latitude and longitude, or, as some areas give only
+    that, its grid reference converted; None if neither is usable or it is
+    outside the UK. setup.lookups.naptan_position reads it the same way."""
+    position = uk_position(row.get("Latitude"), row.get("Longitude"), strings=True)
+    if position is not None:
+        return position
+    easting = finite_number(row.get("Easting"), strings=True)
+    northing = finite_number(row.get("Northing"), strings=True)
+    if easting is None or northing is None or not (0 <= easting <= 800_000 and 0 <= northing <= 1_300_000):
+        return None
+    return uk_position(*grid_to_latlon(easting, northing))
 
 
 def route_toml(line: str, label: str, atcos: list[str], stops: dict[str, tuple[str, float, float]], note: str) -> str:
