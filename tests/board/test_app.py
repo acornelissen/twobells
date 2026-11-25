@@ -1995,6 +1995,23 @@ def test_a_budgeted_fetch_is_saved_as_spent_before_it_is_made():
     assert (trains.calls, buses.calls) == (1, 1)
 
 
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_screen_saves_a_budgeted_fetch_as_spent_before_it_is_made(scrolling):
+    # One rule for the timer and a running screen: the spend is on disk before the lookup goes out.
+    trains, buses, board, display, state = setup(bus_budget=28)
+    seen = []
+
+    class Store:
+        def save(self, saved):
+            seen.append((buses.calls, saved.get("budgets", {}).get("bus", {}).get("used")))
+
+    wall = WallClock(1000.0)
+    run_loop(board, state, ScrollingScreen() if scrolling else FakeScreen(), endless(THU_0700, 1), 1, ticks=3,
+             sleep=wall.sleep, store=Store(), frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall)
+    assert seen[0] == (0, 1)  # saved as spent, then fetched
+    assert buses.calls == 1
+
+
 def test_a_budgeted_fetch_whose_spend_cant_be_saved_is_not_made():
     # The e-paper timer reads the state afresh each minute: a spend it can't
     # save is forgotten, and would otherwise be spent again on every run.
