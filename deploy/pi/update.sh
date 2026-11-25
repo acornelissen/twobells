@@ -38,6 +38,9 @@ RENDER_WAIT=300
 # files (inodes), which a card can run out of with room to spare.
 MIN_FREE_KB=10240
 MIN_FREE_INODES=1000
+# How long the check of whether the card takes a file may take, in seconds:
+# writing 1 MB takes well under one.
+PROBE_WAIT=30
 config="" secrets=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -247,8 +250,18 @@ draws() {
 # unit's state is read strictly, and one still running (a hung run, whose
 # result is an earlier one's) never counts. The file, 1 MB of zeros, is
 # removed whether or not it went in.
+#
+# Only the card's own refusal counts: the probe exits 3 when mktemp or the
+# write fails saying the card is full (or out of files, or over a quota) or
+# read-only, as they say it in the C locale. Anything else, a folder the
+# services' user may not write to, runuser failing, or the probe hanging,
+# isn't known to be the card, so the update goes back. The services' user
+# owns the folder, and could put a FIFO in place of the file before the
+# write opens it (sh can't write through the file mktemp made), so the probe
+# is given PROBE_WAIT seconds, then killed 5 seconds after if it ignores
+# being asked to stop.
 card_refused_save() {
-  local said line active="" result="" status=""
+  local said line active="" result="" status="" code=0
   said="$(systemctl show --property=ActiveState --property=Result --property=ExecMainStatus twobells.service)" \
     || return 1
   while IFS= read -r line; do
@@ -262,7 +275,20 @@ card_refused_save() {
     return 1
   fi
   # shellcheck disable=SC2016 # expanded by the sh it starts, as the services' user
-  ! runuser -u twobells -- sh -c 'f="$(mktemp /var/lib/twobells/.update-check.XXXXXX)" || exit 1; head -c 1048576 /dev/zero >"$f"; ok=$?; rm -f "$f"; exit "$ok"' 9<&- 2>/dev/null
+  timeout --kill-after=5 "$PROBE_WAIT" runuser -u twobells -- env LC_ALL=C sh -c '
+    refused() {
+      case "$1" in
+        *"No space left on device"* | *"Read-only file system"* | *"Disk quota exceeded"*) exit 3 ;;
+      esac
+      exit 1
+    }
+    f="$(mktemp /var/lib/twobells/.update-check.XXXXXX 2>&1)" || refused "$f"
+    said="$(head -c 1048576 /dev/zero 2>&1 >"$f")"
+    ok=$?
+    rm -f "$f"
+    [ "$ok" -eq 0 ] || refused "$said"
+  ' 9<&- || code=$?
+  (( code == 3 ))
 }
 # Back to the release from before, with the units and guard's rules from
 # before, and the services restarted onto them as they were.

@@ -1608,18 +1608,23 @@ REFUSED = re.compile(r"^card_refused_save\(\) \{\n.*?^\}$", re.M | re.S)
 FAILED_74 = "ActiveState=failed\nResult=exit-code\nExecMainStatus=74\n"
 
 
-def _card_refused_save(shown: str | None, writable: bool):
-    """Runs update.sh's card_refused_save with systemctl and runuser stood in
-    for: systemctl show saying `shown` (None: it fails), and a file written
-    in the state folder as the services' user going in if `writable`. What
-    it found, and each command it ran."""
+REFUSED_BY_THE_CARD = 3  # the probe's exit when the card itself refused the file
+
+
+def _card_refused_save(shown: str | None, probe: int = REFUSED_BY_THE_CARD, hang: bool = False):
+    """Runs update.sh's card_refused_save with systemctl, timeout and runuser
+    stood in for: systemctl show saying `shown` (None: it fails), the probe
+    run as the services' user exiting `probe`, or timeout giving up on it if
+    `hang`. What it found, and each command it ran."""
     [function] = REFUSED.findall(_script("update.sh"))
-    # Each command said on 3, a copy of stderr that the probe's own 2>/dev/null leaves alone.
-    stubs = ('exec 3>&2\n'
-             'systemctl() { echo "systemctl $*" >&3; if [[ -z "$SHOWN" ]]; then return 1; fi; printf "%s" "$SHOWN"; }\n'
-             'runuser() { echo "runuser $*" >&3; [[ -n "$WRITABLE" ]]; }\n')
-    done = _bash(f"set -euo pipefail\n{stubs}{function}\nif card_refused_save; then echo card; else echo release; fi",
-                 SHOWN=shown or "", WRITABLE="yes" if writable else "")
+    stubs = ('systemctl() { echo "systemctl $*" >&2; if [[ -z "$SHOWN" ]]; then return 1; fi; printf "%s" "$SHOWN"; }\n'
+             'timeout() { echo "timeout $1 $2" >&2; if [[ -n "$HANG" ]]; then return 124; fi; shift 2; "$@"; }\n'
+             # Its words but the script, then where the script writes.
+             'runuser() { echo "runuser ${*:1:7}" >&2; if [[ "$8" == *" /var/lib/twobells/"* ]]; then\n'
+             '  echo "in the state folder" >&2; fi; return "$PROBE"; }\n')
+    done = _bash(f"set -euo pipefail\nPROBE_WAIT=30\n{stubs}{function}\n"
+                 "if card_refused_save; then echo card; else echo release; fi",
+                 SHOWN=shown or "", PROBE=str(probe), HANG="yes" if hang else "")
     assert done.returncode == 0, done.stderr
     return done.stdout.strip(), done.stderr.splitlines()
 
@@ -1628,18 +1633,51 @@ def test_a_board_that_drew_but_couldn_t_save_on_an_unwritable_card_isn_t_the_rel
     from twobells.cli.run import UNSAVED
 
     assert FAILED_74.endswith(f"={UNSAVED}\n")  # run.py's exit for a run that drew but couldn't save
-    found, ran = _card_refused_save(FAILED_74, writable=False)
+    found, ran = _card_refused_save(FAILED_74)
     assert found == "card"
     assert ran[0] == ("systemctl show --property=ActiveState --property=Result --property=ExecMainStatus "
                       "twobells.service")
-    # Tried as the services' user, in the state folder, a file as big as a state, not handed the lock.
-    probe = shlex.split(ran[1])
-    assert probe[:4] == ["runuser", "-u", "twobells", "--"] and "/var/lib/twobells/" in ran[1]
+    # Bounded, with a kill for one that ignores being asked to stop.
+    assert ran[1] == "timeout --kill-after=5 30"
+    # Tried as the services' user, in the C locale its errors are read in, in the state folder, not handed the lock.
+    assert ran[2:] == ["runuser -u twobells -- env LC_ALL=C sh -c", "in the state folder"]
+    assert re.search(r"^PROBE_WAIT=30$", _script("update.sh"), re.M)
 
 
-def test_a_board_that_couldn_t_save_on_a_card_that_takes_a_file_is_the_release_s_fault():
-    # A release whose saving is broken exits 74 too; the card taking a file tells them apart.
-    assert _card_refused_save(FAILED_74, writable=True)[0] == "release"
+@pytest.mark.parametrize("probe, hang", [
+    (0, False),  # the card took the file: a release whose saving is broken exits 74 too
+    (1, False),  # refused for another reason (the folder not the services' user's, say), or runuser failed
+    (126, False), (127, False), (137, False),  # runuser couldn't run it, or it was killed
+    (0, True),  # it hung (a FIFO swapped in for its file, say): timeout gave up on it
+])
+def test_a_probe_that_doesn_t_say_the_card_refused_is_the_release_s_fault(probe, hang):
+    # Nothing but the card's own refusal keeps the new release: not knowing goes back.
+    assert _card_refused_save(FAILED_74, probe, hang)[0] == "release"
+
+
+def _probe_script() -> str:
+    [function] = REFUSED.findall(_script("update.sh"))
+    [probe] = re.findall(r"runuser -u twobells -- env LC_ALL=C sh -c '([^']*)' 9<&-", function)
+    return probe
+
+
+def _run_probe(folder: Path, fakes: dict[str, str] | None = None, path: Path | None = None):
+    """The probe's sh -c, run for real with `folder` for /var/lib/twobells,
+    and the commands in `fakes` (name: script) put first on PATH in `path`."""
+    import shutil
+    import subprocess
+
+    bins = ""
+    if fakes:
+        assert path is not None
+        path.mkdir()
+        for name, body in fakes.items():
+            (path / name).write_text(f"#!/bin/sh\n{body}\n")
+            (path / name).chmod(0o755)
+        bins = f"{path}:"
+    return subprocess.run([shutil.which("sh") or "/bin/sh", "-c", _probe_script().replace("/var/lib/twobells",
+                                                                                          str(folder))],
+                          capture_output=True, text=True, env={"PATH": f"{bins}/usr/bin:/bin", "LC_ALL": "C"})
 
 
 @pytest.mark.parametrize("shown", [
@@ -1654,25 +1692,77 @@ def test_a_board_that_couldn_t_save_on_a_card_that_takes_a_file_is_the_release_s
     None,  # systemctl failed
 ])
 def test_any_other_failure_of_the_board_is_the_release_s(shown):
-    found, ran = _card_refused_save(shown, writable=False)
+    found, ran = _card_refused_save(shown)
     assert found == "release"
-    assert not [line for line in ran if line.startswith("runuser")]  # nothing tried unless it was 74
+    assert not [line for line in ran if line.startswith(("runuser", "timeout"))]  # nothing tried unless it was 74
 
 
 def test_the_card_s_probe_writes_a_states_worth_and_always_cleans_up(tmp_path):
     # Its sh -c, run for real in a folder standing in for /var/lib/twobells.
-    [function] = REFUSED.findall(_script("update.sh"))
-    [probe] = re.findall(r"runuser -u twobells -- sh -c '([^']*)' 9<&-", function)
-    script = probe.replace("/var/lib/twobells", str(tmp_path))
-    assert _bash(f"sh -c '{script}'").returncode == 0
+    done = _run_probe(tmp_path)
+    assert (done.returncode, done.stdout, done.stderr) == (0, "", "")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_the_probe_doesn_t_blame_the_card_for_a_folder_it_may_not_write_to(tmp_path):
     import os
 
     if os.geteuid() == 0:
-        return  # root writes into a folder whatever its mode
-    (tmp_path / "readonly").mkdir(mode=0o500)
-    assert _bash(f"sh -c '{probe.replace('/var/lib/twobells', str(tmp_path / 'readonly'))}'").returncode != 0
-    assert list((tmp_path / "readonly").iterdir()) == []
+        pytest.skip("root writes into a folder whatever its mode")
+    (tmp_path / "theirs").mkdir(mode=0o500)  # as a state folder of root's would be to the services' user
+    done = _run_probe(tmp_path / "theirs")
+    assert done.returncode not in (0, REFUSED_BY_THE_CARD)
+    assert list((tmp_path / "theirs").iterdir()) == []
+
+
+# What mktemp and head say (in the C locale) when the card refuses, as the probe reads them.
+FULL = "No space left on device"  # out of room, or out of files
+READ_ONLY = "Read-only file system"
+
+
+@pytest.mark.parametrize("said, refused", [
+    (FULL, True), (READ_ONLY, True), ("Disk quota exceeded", True),
+    ("Permission denied", False), ("Input/output error", False),
+])
+def test_the_probe_blames_the_card_only_for_its_own_refusals(tmp_path, said, refused):
+    expected = REFUSED_BY_THE_CARD if refused else 1
+    # mktemp refused...
+    made = _run_probe(tmp_path / "state", {"mktemp": f'echo "mktemp: failed to create file via template: {said}" >&2'
+                                                    "\nexit 1"}, tmp_path / "bin1")
+    assert made.returncode == expected, made.stderr
+    # ...or the write did, and the file was still removed.
+    (tmp_path / "state").mkdir()
+    wrote = _run_probe(tmp_path / "state", {"head": f"echo \"head: error writing 'standard output': {said}\" >&2"
+                                                    "\nexit 1"}, tmp_path / "bin2")
+    assert wrote.returncode == expected, wrote.stderr
+    assert list((tmp_path / "state").iterdir()) == []
+
+
+def test_a_probe_that_hangs_and_ignores_being_asked_to_stop_is_killed(tmp_path):
+    # A compromised services' user owns the state folder, and could swap the
+    # probe's file for a FIFO, so the write never opens: run for real, the
+    # probe is given up on after PROBE_WAIT and killed 5 seconds later.
+    import shutil
+    import subprocess
+    import time
+
+    timeout = shutil.which("timeout", path="/usr/bin:/bin")
+    if timeout is None:
+        pytest.skip("needs GNU timeout, as on the Pi")
+    fakes = tmp_path / "bin"
+    fakes.mkdir()
+    runuser = fakes / "runuser"
+    runuser.write_text('#!/bin/sh\ntrap "" TERM\nwhile :; do sleep 1; done\n')
+    runuser.chmod(0o755)
+    [function] = REFUSED.findall(_script("update.sh"))
+    stub = 'systemctl() { printf "%s" "$SHOWN"; }\n'
+    started = time.monotonic()
+    done = subprocess.run([shutil.which("bash") or "bash", "-c", f"set -euo pipefail\nPROBE_WAIT=1\n{stub}{function}\n"
+                           "if card_refused_save; then echo card; else echo release; fi"],
+                          capture_output=True, text=True, timeout=30,
+                          env={"PATH": f"{fakes}:/usr/bin:/bin", "SHOWN": FAILED_74})
+    assert (done.returncode, done.stdout) == (0, "release\n"), done.stderr
+    assert time.monotonic() - started < 15
 
 
 def _go_back(epaper: bool, fails: bool, tmp_path: Path):
