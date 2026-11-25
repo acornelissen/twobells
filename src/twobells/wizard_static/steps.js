@@ -1,7 +1,7 @@
 // Moving between steps. The new step's heading takes focus, so a screen
 // reader starts there and keyboard users carry on from the top. Each step is
-// a history entry carrying only its name, so the browser's Back moves one
-// step back.
+// a history entry carrying only its name and its position, so the browser's
+// Back and Forward move one step.
 
 import { $, h, fill } from "../dashboard_static/dom.js";
 import { icon } from "../dashboard_static/icons.js";
@@ -62,7 +62,8 @@ export function numberSteps() {
   });
 }
 
-const visited = []; // the steps shown on this page, one for each history entry made
+const visited = []; // the steps shown on this page, one for each history entry made, by position
+let position = 0; // the position of the step shown: its place in visited, and the n in its entry's state
 
 export function go(step, { focus = true, entry = true } = {}) {
   for (const name of STEPS) $(`step-${name}`).hidden = name !== step;
@@ -75,9 +76,15 @@ export function go(step, { focus = true, entry = true } = {}) {
   }
   document.title = `${TITLES[step]}: ${state.title}`;
   if (entry && step !== state.step) {
-    // The page as loaded is the first entry; each step moved on to adds one.
-    if (visited.length) window.history.pushState({ step }, "");
-    else window.history.replaceState({ step }, "");
+    // The page as loaded is the first entry; each step moved on to adds one,
+    // and drops what was forward of the step it was moved on from.
+    if (visited.length) {
+      position += 1;
+      visited.length = position;
+      window.history.pushState({ step, n: position }, "");
+    } else {
+      window.history.replaceState({ step, n: 0 }, "");
+    }
     visited.push(step);
   }
   state.step = step;
@@ -85,21 +92,30 @@ export function go(step, { focus = true, entry = true } = {}) {
   if (focus) $(`${step}-heading`).focus();
 }
 
-// Browser Back (or a back gesture) to a step this page showed earlier goes
-// there, as the Back button does. Forward, and a step from before a reload,
-// whose choices are gone, are left alone: going forward would skip the checks
-// Next makes. After saving there is no way back, and while a save runs Back
-// puts the entry back, so the wizard stays on Finish with its progress.
+// Browser Back and Forward (or a gesture) go to the step the entry names, when
+// this page showed that step at that position: the state is input, so the
+// name and the position must both match what the page recorded. Forward then
+// only returns to a step already passed, never past the checks Next makes, and
+// an entry from before a reload, whose choices are gone, matches nothing. After
+// saving there is no way back: Back goes on out past the wizard's entries in
+// one move. While a save runs, a move puts the entry back, so the wizard stays
+// on Finish with its progress.
 function popped(event) {
   if (state.saving) {
     const { step } = state;
-    window.history.pushState({ step }, "");
+    window.history.pushState({ step, n: position }, "");
     return;
   }
-  const step = event.state && event.state.step;
-  const at = visited.lastIndexOf(step);
-  if (state.step === "done" || at < 0 || at >= visited.length - 1) return;
-  visited.length = at + 1;
+  const entry = event.state;
+  const step = entry && entry.step;
+  const n = entry && entry.n;
+  if (!Number.isInteger(n) || n < 0 || n >= visited.length || visited[n] !== step) return;
+  if (state.step === "done") {
+    if (n < position) window.history.go(-(n + 1));
+    return;
+  }
+  if (step === "done" || !shownSteps().includes(step)) return;
+  position = n;
   go(step, { entry: false });
 }
 
@@ -109,7 +125,7 @@ export function setUpHistory() {
 
 // The Back button: one entry back where that is the step it names, else a step of its own.
 export function stepBack(step) {
-  if (visited.length > 1 && visited[visited.length - 2] === step) window.history.back();
+  if (position > 0 && visited[position - 1] === step) window.history.back();
   else go(step);
 }
 

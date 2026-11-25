@@ -744,6 +744,7 @@ globalThis.window = {
     replaceState: (given) => { pages[at] = given; },
     back: () => goTo(at - 1),
     forward: () => goTo(at + 1),
+    go: (delta) => goTo(at + delta),
   },
 };
 const guarded = () => windowListeners.some(([type]) => type === "beforeunload");
@@ -1587,7 +1588,8 @@ def test_each_step_gets_one_history_entry_with_only_its_name_and_back_goes_one_s
         console.log(JSON.stringify({ forward, station, home }));
     """, trams=None)
     # The first entry is the page as loaded, given the first step's name; one more for each step moved on to.
-    assert found["forward"]["pages"] == [{"step": "home"}, {"step": "station"}, {"step": "stops"}]
+    assert found["forward"]["pages"] == [
+        {"step": "home", "n": 0}, {"step": "station", "n": 1}, {"step": "stops", "n": 2}]
     assert found["forward"]["at"] == 2 and found["forward"]["shown"] == ["step-stops"]
     # Back moves one step back, the heading taking focus as the Back button's does, the choices kept.
     assert found["station"]["shown"] == ["step-station"] and found["station"]["focus"] == "station-heading"
@@ -1598,13 +1600,88 @@ def test_each_step_gets_one_history_entry_with_only_its_name_and_back_goes_one_s
 
 
 @needs_node
-def test_going_forward_again_in_the_browser_does_not_skip_a_steps_checks():
+def test_browser_forward_after_back_shows_the_step_back_left_with_its_heading_focused():
     found = run_wizard(TO_STATION + """
         window.history.back();
+        const home = { shown: shown(), at };
         window.history.forward();
-        console.log(JSON.stringify({ shown: shown(), step: state.step }));
+        console.log(JSON.stringify({ home, shown: shown(), step: state.step, at, focus: document.activeElement.id }));
     """)
-    assert found == {"shown": ["step-home"], "step": "home"}
+    assert found["home"] == {"shown": ["step-home"], "at": 0}
+    assert found["shown"] == ["step-station"] and found["step"] == "station" and found["at"] == 1
+    assert found["focus"] == "station-heading"
+
+
+@needs_node
+def test_back_forward_then_next_adds_no_duplicate_entry_and_one_in_page_back_goes_one_step():
+    found = run_wizard(TO_STATION + """
+        $("station-none").checked = true;
+        $("station-GLO").checked = false;
+        $("filter").value = "";
+        window.history.back();
+        window.history.forward();
+        click("station-next");
+        await settle();
+        const onStops = { shown: shown(), at, pages: structuredClone(pages) };
+        for (const [type, fn] of $("step-stops").querySelector("[data-back]").listeners) if (type === "click") fn();
+        console.log(JSON.stringify({ onStops, shown: shown(), at }));
+    """, trams=None)
+    assert found["onStops"]["pages"] == [
+        {"step": "home", "n": 0}, {"step": "station", "n": 1}, {"step": "stops", "n": 2}]
+    assert found["onStops"]["at"] == 2
+    assert found["shown"] == ["step-station"] and found["at"] == 1
+
+
+@needs_node
+def test_next_after_browser_back_replaces_the_entries_forward_of_it():
+    found = run_wizard(TO_STATION + """
+        window.history.back();
+        click("home-next");
+        await settle();
+        console.log(JSON.stringify({ pages, at, shown: shown() }));
+    """)
+    assert found["pages"] == [{"step": "home", "n": 0}, {"step": "station", "n": 1}]
+    assert found["at"] == 1 and found["shown"] == ["step-station"]
+
+
+@needs_node
+def test_a_forged_or_out_of_range_history_state_is_ignored():
+    found = run_wizard(TO_STATION + """
+        const forged = [
+          { step: "keys", n: 1 }, { step: "station", n: 7 }, { step: "station", n: -1 }, { step: "station", n: 0.5 },
+          { step: "home", n: 1 }, { step: "constructor", n: 0 }, { step: "__proto__", n: 0 }, { n: 1 },
+          { step: ["station"], n: 1 }, { step: "station", n: "1" }, "station", 1, null, undefined,
+          { step: "done", n: 1 },
+        ];
+        const seen = [];
+        for (const entry of forged) {
+          pages[at + 1] = entry;
+          goTo(at + 1);
+          seen.push([shown(), state.step]);
+          at -= 1; // the browser is put back on the station entry
+        }
+        console.log(JSON.stringify({ seen }));
+    """)
+    assert found["seen"] == [[["step-station"], "station"]] * 15
+
+
+@needs_node
+def test_after_done_one_browser_back_leaves_the_wizard_instead_of_being_swallowed():
+    found = run_wizard("""
+        click("stops-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        const done = { shown: shown(), at, pages: structuredClone(pages) };
+        window.history.back();
+        console.log(JSON.stringify({ done, shown: shown(), at }));
+    """, "?step=stops", walk={"walk": {}})
+    assert found["done"]["shown"] == ["step-done"] and found["done"]["at"] == 3
+    assert found["done"]["pages"][-1] == {"step": "done", "n": 3}
+    # Back from Done goes on past the wizard's own entries (the first is entry 0) in one move.
+    assert found["shown"] == ["step-done"] and found["at"] == -1
 
 
 @needs_node
@@ -1628,7 +1705,7 @@ def test_the_in_page_back_button_goes_back_without_adding_an_entry():
         console.log(JSON.stringify({ shown: shown(), pages, at }));
     """)
     assert found["shown"] == ["step-home"] and found["at"] == 0
-    assert found["pages"][0] == {"step": "home"}
+    assert found["pages"][0] == {"step": "home", "n": 0}
 
 
 @needs_node
@@ -1706,14 +1783,15 @@ def test_browser_back_during_a_running_save_keeps_the_wizard_on_finish_and_in_st
     assert found["cancelHidden"] is False
     # The entry Back left is put back, so the browser's entries still match the steps shown.
     assert found["at"] == found["before"]["at"]
-    assert found["pages"][found["at"]] == {"step": "finish"}
+    assert found["pages"][found["at"]] == {"step": "finish", "n": 2}
     assert found["pages"] == found["before"]["pages"]
 
 
 def test_only_the_steps_name_goes_in_the_history_state():
     text = _js("steps.js")
-    assert re.findall(r"pushState\(([^,)]*)", text) == ["{ step }", "{ step }"]  # a step moved on to, an entry put back
-    assert re.findall(r"replaceState\(([^,)]*)", text) == ["{ step }"]
+    # Only the step's name and its position: no answers, keys or labels. A step moved on to, an entry put back.
+    assert re.findall(r"pushState\(([^;]*), \"\"\)", text) == ["{ step, n: position }", "{ step, n: position }"]
+    assert re.findall(r"replaceState\(([^;]*), \"\"\)", text) == ["{ step, n: 0 }"]
     assert "location.hash" not in _all_js()
 
 
