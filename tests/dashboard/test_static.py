@@ -2935,6 +2935,39 @@ def test_a_focused_row_that_has_gone_hands_the_focus_to_its_board_s_heading():
 
 
 @needs_node
+def test_focus_is_not_left_on_a_button_reused_for_another_departure_when_its_own_row_is_hidden():
+    # A departure sorts in before the focused one, which moves into a row behind "Show later
+    # departures"; the positional patch reuses the focused button for another departure. A browser
+    # cannot focus what is not rendered, so refocus must not pick it.
+    found = run_js(_boards() + """
+        import { focusKey, refocus } from "./dom.js";
+        globalThis.CSS = { escape: (text) => text };
+        document.body.append(h("h2", { id: "trains-heading", tabindex: "-1" }, "Trains"));
+        const opens = () => bodyRows("trains-board").map((tr) => byClass(tr, "open")[0]);
+        const moved = structuredClone(snapshot);
+        const extra = structuredClone(moved.trains.rows[3]);
+        extra.id = "abcdefabcdef0123";
+        moved.trains.rows.splice(4, 0, extra);
+        const trial = (fallback) => {
+          renderTrains(snapshot, alerts);
+          const target = opens()[4];
+          target.focus();
+          const key = focusKey();
+          renderTrains(moved, alerts);
+          const keyed = opens().find((b) => b.dataset.focusKey === key);
+          const hiddenRow = keyed.parentNode.parentNode.hasAttribute("hidden");
+          refocus(key, fallback);
+          return { hiddenRow, id: document.activeElement.id || null, onReused: document.activeElement === target,
+                   onKeyed: document.activeElement === keyed };
+        };
+        console.log(JSON.stringify({ withHeading: trial("trains-heading"), without: trial(null) }));
+    """)
+    assert found["withHeading"] == {"hiddenRow": True, "id": "trains-heading", "onReused": False, "onKeyed": False}
+    assert found["without"]["hiddenRow"] is True
+    assert found["without"]["onReused"] is False and found["without"]["onKeyed"] is False
+
+
+@needs_node
 def test_split_flap_tiles_stay_put_while_their_words_are_the_same():
     found = run_js("""
         document.documentElement = { dataset: { theme: "flap" } };

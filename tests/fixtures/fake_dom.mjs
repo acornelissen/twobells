@@ -154,6 +154,7 @@ class FakeElement extends FakeNode {
   get validity() { return { badInput: false }; }
   addEventListener(type, fn) { this.listeners.push([type, fn]); }
   focus() { document.activeElement = this; }
+  blur() { if (document.activeElement === this) document.activeElement = document.body; }
   get classList() {
     const names = () => (this.getAttribute("class") || "").split(" ").filter(Boolean);
     const set = (list) => this.setAttribute("class", list.join(" "));

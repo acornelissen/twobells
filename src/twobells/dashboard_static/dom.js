@@ -155,12 +155,18 @@ export function focusKey() {
 
 // Puts the focus back on the element with the key. When there is none (its
 // row has gone) and `fallback` is an element's id, the focus goes there
-// instead of being lost.
+// instead of being lost. An element that is not drawn (hidden, or inside
+// something hidden, such as the rows behind "Show later departures") can't
+// take focus: the positional patch has then reused the focused button for
+// another departure, so the fallback is used, or with none the focus is let go.
 export function refocus(key, fallback = null) {
   if (!key) return;
-  const el = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`)
-    || (fallback && document.getElementById(fallback));
+  let el = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`);
+  const undrawn = Boolean(el && el.closest("[hidden]"));
+  if (undrawn) el = null;
+  el = el || (fallback && document.getElementById(fallback));
   if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+  else if (!el && undrawn) document.activeElement?.blur?.();
 }
 
 // Modal dialogs: showModal() for the focus trap and Escape, focus moved to the
