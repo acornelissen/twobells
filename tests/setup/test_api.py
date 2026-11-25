@@ -1,6 +1,7 @@
 """The setup wizard's JSON handlers, with setup's lookups and the search job faked."""
 
 import json
+import re
 import tomllib
 from datetime import datetime
 from typing import ClassVar
@@ -1480,3 +1481,17 @@ def test_finishing_with_london_stops_saves_them_and_their_walks(board):
 def test_finishing_refuses_london_stops_that_aren_t_right(board, trams):
     status, body = board.handle("finish", {**TRAINS_ONLY, "trams": trams})
     assert status == 400 and body["field"] == "trams", body
+
+
+# What the wizard's page asks for by itself: begin and saved as it opens, job
+# every few seconds while a search runs. None of them is the owner's doing.
+BACKGROUND_STEPS = {"begin", "saved", "job"}
+
+
+def test_only_the_steps_the_owner_sets_off_keep_the_session_alive(board):
+    assert not setupapi.OWNER_STEPS & BACKGROUND_STEPS
+    # Every step is one or the other, and so is every step the page calls, so a new one is a choice made here.
+    assert set(board.names) == setupapi.OWNER_STEPS | BACKGROUND_STEPS
+    scripts = (ROOT / "src/twobells/wizard_static").glob("*.js")
+    called = {name for script in scripts for name in re.findall(r'call\("([a-z]+)"', script.read_text())}
+    assert called and called <= setupapi.OWNER_STEPS | BACKGROUND_STEPS

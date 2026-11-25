@@ -164,10 +164,38 @@ def test_a_session_in_use_is_extended_from_its_last_use():
     sessions = Sessions(clock)
     token, session = sessions.create()
     clock.now += SESSION_SECONDS - 1
-    assert sessions.get(token) is session
+    assert sessions.get(token, renew=True) is session
     assert session.expires == clock.now + SESSION_SECONDS
     clock.now += SESSION_SECONDS - 1  # long past 12 hours from signing in, but used since
     assert sessions.get(token) is session
+
+
+def test_finding_a_session_without_renewing_it_never_extends_it():
+    # What a page fetches by itself (a stylesheet, a poll) finds the session
+    # but isn't use: a tab left open can't keep it alive.
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    first = session.expires
+    for _ in range(SESSION_SECONDS // SESSION_RENEW_SECONDS - 1):
+        clock.now += SESSION_RENEW_SECONDS
+        assert sessions.get(token) is session
+        assert session.expires == first
+    clock.now = first
+    assert sessions.get(token) is None
+    assert sessions.get(token, renew=True) is None  # gone: nothing brings it back
+
+
+def test_a_lookup_without_renewing_still_holds_to_the_cap():
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    started = clock.now
+    while clock.now + SESSION_SECONDS < started + MAX_SESSION_SECONDS:
+        clock.now += SESSION_SECONDS - 60
+        assert sessions.get(token, renew=True) is session
+    clock.now = started + MAX_SESSION_SECONDS
+    assert sessions.get(token) is None
 
 
 def test_a_session_is_extended_at_most_once_in_a_while():
@@ -176,9 +204,9 @@ def test_a_session_is_extended_at_most_once_in_a_while():
     token, session = sessions.create()
     first = session.expires
     clock.now += SESSION_RENEW_SECONDS - 1
-    assert sessions.get(token).expires == first  # too soon: nothing to write
+    assert sessions.get(token, renew=True).expires == first  # too soon: nothing to write
     clock.now += 1
-    assert sessions.get(token).expires == clock.now + SESSION_SECONDS
+    assert sessions.get(token, renew=True).expires == clock.now + SESSION_SECONDS
 
 
 def test_no_session_lasts_longer_than_the_cap_however_much_it_is_used():
@@ -188,12 +216,12 @@ def test_no_session_lasts_longer_than_the_cap_however_much_it_is_used():
     started = clock.now
     while clock.now < started + MAX_SESSION_SECONDS - SESSION_RENEW_SECONDS:
         clock.now += SESSION_RENEW_SECONDS
-        assert sessions.get(token) is session
+        assert sessions.get(token, renew=True) is session
         assert session.expires <= started + MAX_SESSION_SECONDS
     clock.now = started + MAX_SESSION_SECONDS - 1
-    assert sessions.get(token) is session
+    assert sessions.get(token, renew=True) is session
     clock.now += 1
-    assert sessions.get(token) is None
+    assert sessions.get(token, renew=True) is None
 
 
 def test_the_cookie_lasts_as_long_as_its_session_has_left():
@@ -996,10 +1024,10 @@ def test_an_extended_session_is_written_rarely_and_outlives_a_restart(tmp_path, 
     monkeypatch.setattr(files, "write_atomic", lambda *args, **kwargs: (writes.append(1), real(*args, **kwargs)))
     for _ in range(60):  # a page a minute for an hour: nothing to write, as the SD card wears
         clock.now += 59
-        assert sessions.get(token) is not None
+        assert sessions.get(token, renew=True) is not None
     assert writes == []
     clock.now += SESSION_RENEW_SECONDS
-    assert sessions.get(token) is not None
+    assert sessions.get(token, renew=True) is not None
     assert len(writes) == 1
     clock.now += SESSION_SECONDS - 1  # long after the first expiry: the restart keeps the extension
     assert kept(tmp_path, clock).get(token) is not None
@@ -1011,7 +1039,7 @@ def test_the_cap_on_a_sessions_life_outlives_a_restart(tmp_path):
     started = clock.now
     while clock.now < started + MAX_SESSION_SECONDS:
         clock.now += SESSION_SECONDS - 1
-        found = kept(tmp_path, clock).get(token)  # a new process each time
+        found = kept(tmp_path, clock).get(token, renew=True)  # a new process each time
         assert (found is not None) == (clock.now < started + MAX_SESSION_SECONDS)
 
 

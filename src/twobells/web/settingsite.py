@@ -376,18 +376,18 @@ class SettingsSite:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path the site owns. A POST's
         body is read from `stream` only once its origin is known to be ours.
-        A signed-in browser's session is extended as it is used, and its
-        cookie sent again to match."""
-        return self._pages.keep_signed_in(headers, self._answer(method, path, query, headers, client, stream))
-
-    def _answer(self, method: str, path: str, query: str, headers: Headers, client: str,
-                stream: BufferedIOBase) -> Reply:
+        A signed-in browser's session is extended, and its cookie sent again
+        to match, only by what the owner does: a GET of one of the pages
+        (the tabs, the wizard's), a save from a tab and the wizard's
+        setupapi.OWNER_STEPS. Each route that does says so (_used); the
+        stylesheet, scripts, files and the wizard's polls don't, so a tab
+        left open lets the session run out."""
         if path.startswith(SETUP_API):
             refused = self._pages.wizard_cross_site(headers)
             if refused is not None:
                 return refused
         if method in ("GET", "HEAD"):
-            return self._get(path, query, headers)
+            return self._get(method, path, query, headers)
         if method != "POST":
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD, POST"})
         if not same_origin(headers):
@@ -406,7 +406,9 @@ class SettingsSite:
             refused = self._pages.wizard_refusal(headers)
             if refused is not None:
                 return refused
-            return self._pages.wizard_step(path[len(SETUP_API):], body)
+            step = path[len(SETUP_API):]
+            reply = self._pages.wizard_step(step, body)
+            return self._used(headers, reply) if step in setupapi.OWNER_STEPS else reply
         if headers.get_content_type() != "application/x-www-form-urlencoded":
             return Reply(400, b"Bad request")
         try:
@@ -425,12 +427,16 @@ class SettingsSite:
         if tab == "overview":  # it only shows
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
         if tab == "keys":
-            return self._pages.key_form(fields, headers, self._keys, self._title(tab), TAB_PATHS[tab],
-                                        here=NEXT_NAMES[tab])
+            return self._used(headers, self._pages.key_form(fields, headers, self._keys, self._title(tab),
+                                                            TAB_PATHS[tab], here=NEXT_NAMES[tab]))
         if tab is not None:
-            return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab],
-                                    here=NEXT_NAMES[tab])
+            return self._used(headers, self._pages.save(fields, headers, self._forms[tab], self._title(tab),
+                                                        TAB_PATHS[tab], here=NEXT_NAMES[tab]))
         return Reply(404, b"Not Found")
+
+    def _used(self, headers: Headers, reply: Reply) -> Reply:
+        """`reply` to something the owner did: it extends their session (FormPages.keep_signed_in)."""
+        return self._pages.keep_signed_in(headers, reply)
 
     def _tab(self, path: str) -> str | None:
         """The tab at `path`, if it is shown."""
@@ -439,14 +445,18 @@ class SettingsSite:
                 return tab
         return None
 
-    def _get(self, path: str, query: str, headers: Headers) -> Reply:
+    def _get(self, method: str, path: str, query: str, headers: Headers) -> Reply:
+        """A GET or HEAD. Only a GET of a page is the owner opening it, so only that extends the session."""
+        opened = method == "GET"
         tab = self._tab(path)
         if tab == "overview":  # drawn for this request: the wall tablet's address is the one the browser used
-            return self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
+            reply = self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
+            return self._used(headers, reply) if opened else reply
         if tab is not None:
             page = self._keys if tab == "keys" else self._forms[tab]
-            return self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"),
-                                             here=NEXT_NAMES[tab])
+            reply = self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"),
+                                              here=NEXT_NAMES[tab])
+            return self._used(headers, reply) if opened else reply
         if path == PREFIX + "/":
             return redirect(PREFIX)
         if path == PREFIX + "/login":
@@ -466,7 +476,9 @@ class SettingsSite:
                 step = _query(query).get("step")
                 return redirect(PREFIX + "/login?next=setup" + (f"&step={step}" if step in SETUP_STEPS else ""))
             body, content_type = self._files.get("", (b"", None))
-            return Reply(200, body, content_type) if content_type else Reply(404, b"Not Found")
+            if not content_type:
+                return Reply(404, b"Not Found")
+            return self._used(headers, Reply(200, body, content_type)) if opened else Reply(200, body, content_type)
         if path == SETUP_API + "session":
             return self._pages.wizard_session(headers)
         # The wizard's own files need no session: the page and its API do.

@@ -77,7 +77,8 @@ dom.js, icons.js, basemap.js, Leaflet and Inter under dashboard_static/, so
 the page's relative imports resolve. The API is at <prefix>api/<name>, POST with a JSON
 body, CSRF token in the X-CSRF-Token header; and the host's own GET
 <prefix>api/session answers {"csrf": token} for a signed-in session. Send the
-page and its files with PAGE_HEADERS.
+page and its files with PAGE_HEADERS. Only OWNER_STEPS, and opening the
+page, should extend the session.
 """
 
 from __future__ import annotations
@@ -117,6 +118,13 @@ from .lookups import Place, SetupError, Station, Stop
 log = logging.getLogger(__name__)
 
 MAX_BODY = 16 * 1024  # the biggest request, finish with keys, is about 2 kB
+# The steps the owner sets off, by pressing a button or moving to a step:
+# the host counts them as using the session, so they keep it alive. The rest
+# the page asks for by itself (begin and saved as it opens, job every few
+# seconds while a search runs), so a page left open doesn't. A new step is
+# in neither until it is put here.
+OWNER_STEPS = frozenset({"postcode", "address", "stations", "station", "stops", "trams", "walk", "start", "cancel",
+                         "finish", "testkey"})
 MAX_DEPTH = 6
 STATIONS_SHOWN = 5
 STATIONS_WITHIN_KM = 40

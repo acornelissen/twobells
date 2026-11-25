@@ -41,7 +41,7 @@ log = logging.getLogger(__name__)
 MIN_PASSWORD = 10
 # What every way of setting the password says of one on the bundled list (see common_password).
 TOO_COMMON = "That's one of the most common passwords. Choose another."
-# A session ends this long after it was last used (see Sessions.get), and
+# A session ends this long after it was last used (see Sessions.get: opening a page, a save), and
 # never later than MAX_SESSION_SECONDS after signing in, however much it is
 # used. Use extends it only once SESSION_RENEW_SECONDS have gone since it was
 # last extended, so the sessions file (on a Pi's SD card) is rarely written.
@@ -239,11 +239,14 @@ class Sessions:
             self._save()
             return token, session
 
-    def get(self, token: str | None) -> Session | None:
+    def get(self, token: str | None, *, renew: bool = False) -> Session | None:
         """The live session for `token`, or None if there isn't one or it has
-        expired. Finding it is using it: once SESSION_RENEW_SECONDS have gone
+        expired. Only with `renew`, for what the owner does (opening a page,
+        a save), is finding it using it: once SESSION_RENEW_SECONDS have gone
         since it was last extended, it is extended to SESSION_SECONDS from
-        now, up to MAX_SESSION_SECONDS from signing in."""
+        now, up to MAX_SESSION_SECONDS from signing in. Without, as for what
+        a page fetches by itself, it runs out as it would have, so a tab
+        left open can't keep it alive."""
         if not token:
             return None
         with self._lock:
@@ -258,7 +261,7 @@ class Sessions:
                 return None
             session.csrf = _form_token(token)  # not in the file: made again from the token
             extended = min(now + SESSION_SECONDS, session.started + MAX_SESSION_SECONDS)
-            if extended >= session.expires + SESSION_RENEW_SECONDS:
+            if renew and extended >= session.expires + SESSION_RENEW_SECONDS:
                 session.expires = extended
                 self._save()
             return session

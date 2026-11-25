@@ -562,15 +562,17 @@ class FormPages:
         return redirect(where + "?saved")
 
     def keep_signed_in(self, headers: Headers, reply: Reply) -> Reply:
-        """`reply`, with the session cookie sent again when the request came
-        with a live session and the reply sets no cookie of its own: finding
-        the session extends it (Sessions.get), and the cookie lasts as long
-        as it has left. Signing out, a new password or a session run out
-        send none, so nothing brings an ended session back."""
+        """`reply` to something the owner did (opened a page, saved), which
+        extends the session the request came with (Sessions.get's renew),
+        with the session cookie sent again to last as long as it has left.
+        Not when the reply sets a cookie of its own: signing out, a new
+        password or a session run out send none, so nothing brings an ended
+        session back. The host calls it only for such requests: every other
+        lookup leaves the session to run out."""
         if "Set-Cookie" in reply.headers:
             return reply
         token = self._token(headers)
-        session = self._sessions.get(token)
+        session = self._sessions.get(token, renew=True)
         if token is None or session is None:
             return reply
         cookie = self._sessions.cookie(token, session)

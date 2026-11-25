@@ -23,7 +23,7 @@ from twobells.dashboard.snapshot import Hub
 from twobells.settings import schema
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
-from twobells.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
+from twobells.setup.api import OWNER_STEPS, PAGE_HEADERS, RateLimit, SetupApi, TooSoon, static_files
 from twobells.setup.keytest import KeyResult
 from twobells.setup.lookups import SetupError
 from twobells.web import netguard, settingsite
@@ -372,13 +372,71 @@ def test_using_the_settings_keeps_the_browser_signed_in(signed):
     assert not (response.getheader("Set-Cookie") or "").startswith("settings_session=")
 
 
-def test_the_wizards_api_keeps_the_browser_signed_in_too(signed):
+def test_the_wizards_page_and_the_steps_the_owner_takes_keep_the_browser_signed_in(signed):
     cookie, _ = signed.sign_in()
     signed.clock.now += SESSION_SECONDS - 60
-    response, _ = signed("GET", "/settings/setup/api/session", cookie=cookie)
+    response, _ = signed("GET", "/settings/setup/", cookie=cookie)
     assert response.status == 200 and response.getheader("Set-Cookie").startswith(cookie + ";")
+    csrf = signed.csrf(cookie)
+    for step in OWNER_STEPS:
+        signed.clock.now += SESSION_SECONDS - 60
+        response, _ = signed("POST", f"/settings/setup/api/{step}", cookie=cookie,
+                             headers={"X-CSRF-Token": csrf}, json_body={})
+        assert response.getheader("Set-Cookie").startswith(cookie + ";"), step
     signed.clock.now += SESSION_SECONDS - 60
-    assert signed("GET", "/settings/setup/", cookie=cookie)[0].status == 200
+    assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+
+
+def test_what_a_page_asks_for_by_itself_never_keeps_the_browser_signed_in(signed):
+    # A tab left open fetches its files and polls, but nobody is there: the
+    # session runs out SESSION_SECONDS after the owner last opened a page or saved.
+    cookie, _ = signed.sign_in()
+    csrf = signed.csrf(cookie)
+    signed.clock.now += SESSION_SECONDS - 120
+    background = [
+        ("GET", "/settings/style.css", None),
+        ("GET", "/settings/settings.js", None),
+        ("GET", "/settings/setup/wizard_static/wizard.js", None),
+        ("GET", "/settings/setup/api/session", None),
+        ("HEAD", "/settings/general", None),
+        ("GET", "/settings/login", None),
+        ("GET", "/settings/reset", None),
+        ("GET", "/settings/nowhere", None),
+        ("POST", "/settings", None),
+        *(("POST", f"/settings/setup/api/{step}", {}) for step in ("begin", "saved", "job", "nosuchstep")),
+    ]
+    for method, path, payload in background:
+        response, _ = signed(method, path, cookie=cookie, headers={"X-CSRF-Token": csrf}, json_body=payload,
+                             body={"csrf": csrf} if method == "POST" and payload is None else None)
+        assert not (response.getheader("Set-Cookie") or "").startswith("settings_session="), path
+    # The dashboard's page and API, beside the settings, don't either.
+    for path in ("/", "/api/snapshot", "/healthz"):
+        signed("GET", path, cookie=cookie)
+    signed.clock.now += 120
+    for method, path, payload in background:  # and once it has run out, none of them is let in as signed in
+        response, text = signed(method, path, cookie=cookie, headers={"X-CSRF-Token": csrf}, json_body=payload,
+                                body={"csrf": csrf} if method == "POST" and payload is None else None)
+        assert not (response.getheader("Set-Cookie") or "").startswith("settings_session="), path
+        assert csrf not in text, path
+    assert signed("GET", "/settings/setup/api/session", cookie=cookie)[0].status == 401
+    response, _ = signed("POST", "/settings/setup/api/job", cookie=cookie, headers={"X-CSRF-Token": csrf},
+                         json_body={})
+    assert response.status == 401
+    assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
+def test_a_page_asking_for_its_files_past_the_cap_is_not_signed_in(signed):
+    cookie, _ = signed.sign_in()
+    csrf = signed.csrf(cookie)
+    started = signed.clock.now
+    while signed.clock.now + SESSION_SECONDS - 60 < started + MAX_SESSION_SECONDS:
+        signed.clock.now += SESSION_SECONDS - 60
+        assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+    signed.clock.now = started + MAX_SESSION_SECONDS
+    assert signed("GET", "/settings/setup/api/session", cookie=cookie)[0].status == 401
+    response, _ = signed("POST", "/settings/setup/api/job", cookie=cookie, headers={"X-CSRF-Token": csrf},
+                         json_body={})
+    assert response.status == 401
 
 
 def test_signing_out_after_a_long_session_still_ends_it(signed):
