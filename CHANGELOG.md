@@ -60,6 +60,7 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 - The web server now reads no more of a request than 96 kB of line, headers and body, answers one that goes past with "Request Header Fields Too Large" (431) or "Content Too Large" (413), and closes the connection. Before, one device on the network could send megabytes of headers over its 16 connections until a Pi's web service ran out of memory and restarted.
 - The web server now refuses a `Host` header with anything but ASCII letters, digits and hyphens, or with anything but a port after the name.
 - The web server no longer looks up the computer's own name as it starts, which on a Pi could ask the router's DNS.
+- On a Pi, the web server's network guard now refuses name lookups (DNS, and DNS over TLS or QUIC), so a compromised web server can't send what it holds out through the router's DNS.
 - `[train] base_url` and `[bus] base_url` must now be https addresses. The board won't start with an http one, which would send your key in clear, and a key test now says the same and sends nothing, on the Keys page, in the wizard and through a Pi's fetch service.
 - The dashboard, which needs no sign-in, no longer shows a failing feed's raw error text (addresses, resolver errors or internal hints) to anyone on the network.
 - The install and update scripts no longer import Python modules from the folder they are run from, as root, and set their own umask, so the app is readable by the services however `sudo` is set up.
