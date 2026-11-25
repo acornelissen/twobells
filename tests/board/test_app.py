@@ -2252,3 +2252,16 @@ def test_a_mark_on_a_source_never_fetched_stays_until_one_is():
     assert run_once(board, state, display, at("09:10")).view.section("train").stale
     state["sources"]["train"]["last_success"] = "2026-10-08T09:05:00"  # an older release's success
     assert not run_once(board, state, display, at("09:20")).view.section("train").stale
+
+
+def test_no_key_trains_never_take_on_a_mark_the_keyed_trains_left():
+    from twobells.sources.darwin import NoKeyTrains
+
+    trains, board, display, state = failing_into_the_close()
+    run_once(board, state, display, at("09:10"))
+    assert "not_updating" in state["sources"]["train"]
+    # The rail key removed: the no-key line can't be out of date.
+    board = Board(title="GLO", sources=[SourceConfig(NoKeyTrains(), morning(2), stale_after=timedelta(minutes=6))],
+                  modes=("train",))
+    assert not run_once(board, state, display, at("12:00")).view.section("train").stale
+    assert "not_updating" not in state["sources"]["train"]

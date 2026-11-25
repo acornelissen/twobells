@@ -292,7 +292,12 @@ def _is_stale(config: SourceConfig, entry: dict, now: datetime, untrusted: bool 
     fetch succeeds, as nothing has come since. It is saved with the
     last_success it was made against (none, if nothing ever came), so a
     success by any version of the board, one from before the mark included,
-    ends it; this one's _poll also clears it."""
+    ends it; this one's _poll also clears it. A source that never asks
+    anything (no rail key yet) is never marked, nor keeps one left by the
+    source it stands in for."""
+    if not getattr(config.source, "fetches", True):
+        entry.pop(NOT_UPDATING, None)
+        return False
     if not config.policy.is_active(now):
         mark = entry.get(NOT_UPDATING)
         return untrusted or (isinstance(mark, dict) and mark.get("last_success") == entry.get("last_success"))
