@@ -86,7 +86,7 @@ new_release() {
 # install). Each command names the release's own venv, never the venv link.
 build_release() {
   local venv="$PREFIX/releases/$1/venv"
-  python3 -m venv --system-site-packages "$venv"
+  python3 -I -m venv --system-site-packages "$venv"
   build="$(mktemp -d)"
   cp -a "$REPO/." "$build/"
   rm -rf "$build/build" "$build"/src/*.egg-info
@@ -99,8 +99,9 @@ build_release() {
   # The code is built with the hashed setuptools, not one fetched for the build.
   "$venv/bin/pip" install --quiet --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
   "$venv/bin/pip" install --quiet --no-deps --no-build-isolation "$build"
-  # -I: as root, never import an inky.py or numpy.py from the current folder.
-  # The system site packages still load.
+  # -I, here and making the venv above: as root, never import an inky.py,
+  # numpy.py or venv.py from the current folder. The system site packages
+  # still load.
   "$venv/bin/python" -I -c "import twobells.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
     || { echo "A dependency is missing; see the error above" >&2; return 1; }
 }

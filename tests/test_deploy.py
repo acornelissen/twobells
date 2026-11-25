@@ -532,7 +532,7 @@ def test_each_release_gets_the_pis_pypi_packages_and_is_checked_to_import_before
     build = _function("releases.sh", "build_release")
     assert build.startswith('  local venv="$PREFIX/releases/$1/venv"\n')
     # Made as install.sh always made the venv: Debian's python3, seeing Debian's packages.
-    assert build.index('python3 -m venv --system-site-packages "$venv"\n') == build.index("\n") + 3
+    assert build.index('python3 -I -m venv --system-site-packages "$venv"\n') == build.index("\n") + 3
     pinned = '--require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"'
     # A new release may pin another inky, so each release gets the one it names.
     pi = build.index(f'"$venv/bin/pip" install --quiet {pinned}')
@@ -1307,13 +1307,14 @@ def test_update_goes_back_to_what_ran_before_when_the_services_dont_stay_up():
 
 @pytest.mark.parametrize("name", ["install.sh", "update.sh", "upgrade.sh", "releases.sh"])
 def test_python_run_as_root_never_imports_from_the_current_folder(name):
-    # python -c puts the current folder first on sys.path: run from /tmp, a
-    # planted inky.py or numpy.py would be imported as root. -I leaves it out
-    # (and PYTHON* variables), and the system site packages still load.
-    runs = re.findall(r"python3?\"?((?: -[A-Za-z]+)*) -c ", _script(name))
+    # python -c and python -m put the current folder first on sys.path: run
+    # from /tmp, a planted inky.py, numpy.py or venv.py would be imported as
+    # root. -I leaves it out (and PYTHON* variables), and the system site
+    # packages still load.
+    runs = re.findall(r"python3?\"?((?: -[A-Za-z]+)*) -[cm] ", _script(name))
     assert all("-I" in flags.split() for flags in runs), (name, runs)
-    # The version check and the import check.
-    assert len(runs) == (2 if name == "releases.sh" else 0), (name, runs)
+    # The version check, making the venv and the import check.
+    assert len(runs) == (3 if name == "releases.sh" else 0), (name, runs)
 
 
 @pytest.mark.parametrize("name", ["install.sh", "update.sh"])
