@@ -20,6 +20,7 @@ from ..board.names import DISPLAY_PANELS
 from ..board.scroll import SCROLL_FRAME_S
 from ..board.speaker import Speaker
 from ..board.state import StateStore
+from ..board.unsaved import KeptRender
 from ..board.view import SetupView
 from ..core.errors import ConfigError
 from ..settings.config import needs_setup
@@ -29,6 +30,9 @@ from .common import as_owner, load_settings, local_now, open_store, setup_url, s
 
 # Exit code asking systemd (Restart=on-failure) to start the board again.
 RESTART = 75
+# Exit code of a single run that drew but couldn't save the state (EX_IOERR),
+# so systemd marks the unit failed: a full or read-only SD card.
+UNSAVED = 74
 # Until the board is set up (or while its view is off), how often a running
 # screen checks whether it has been (or is back on).
 SETUP_CHECK_S = 5
@@ -99,15 +103,43 @@ def _run(args) -> int:
     # A fresh install (nothing fetched yet, though the set-me-up page may have
     # been drawn) fetches everything once, so the panel isn't blank until the
     # next poll window opens.
+    prime = "sources" not in state
+    # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
+    return _single(store, state, lambda: run_once(settings.board, state, display, local_now(settings.timezone),
+                                                  prime=prime, save=lambda kept: _save(store, kept)))
+
+
+def _single(store: StateStore, state: dict, draw) -> int:
+    """A single run, the e-paper timer's: `draw` it, then save the state, even
+    if drawing failed, as what was fetched and the bus budget spent on it
+    must not be lost. 0, or UNSAVED if the state couldn't be saved.
+
+    While it can't be, the last redraw is kept in memory instead
+    (board/unsaved.py), so the next minute's run, reading the state afresh,
+    doesn't take the panel to show something else and draw it again. It is
+    forgotten before each save, and kept again only after one that fails
+    with the board drawn, so one that is there is never older than the state
+    on the card; a draw that failed may have left the panel half drawn, and
+    keeps nothing, so the next run draws."""
+    kept = KeptRender.here()
+    if kept is not None:
+        drawn = kept.read()
+        if drawn is not None:
+            state["last_render"] = drawn
     try:
-        # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
-        result = run_once(settings.board, state, display, local_now(settings.timezone),
-                          prime="sources" not in state, save=lambda kept: _save(store, kept))
-    finally:
-        # Even if drawing failed: what was fetched, and the bus budget spent on it, must not be lost.
+        result = draw()
+    except BaseException:
+        if kept is not None:
+            kept.forget()
         _save(store, state)
+        raise
+    if kept is not None:
+        kept.forget()
+    saved = _save(store, state)
+    if not saved and kept is not None:
+        kept.keep(state.get("last_render"))
     logging.info("rendered=%s", result.rendered)
-    return 0
+    return 0 if saved else UNSAVED
 
 
 def _save(store: StateStore, state: dict) -> bool:
@@ -275,12 +307,7 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
     state = store.load()
     zone = ZoneInfo(settings.timezone)
     if not args.loop:
-        try:
-            result = run_once(board, state, display, local_now(settings.timezone))
-        finally:
-            _save(store, state)
-        logging.info("rendered=%s", result.rendered)
-        return 0
+        return _single(store, state, lambda: run_once(board, state, display, local_now(settings.timezone)))
     tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
     try:
         run_loop(

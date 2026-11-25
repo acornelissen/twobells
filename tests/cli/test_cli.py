@@ -615,9 +615,91 @@ def test_a_timer_run_whose_state_cant_be_saved_spends_none_of_the_bus_budget(pro
     monkeypatch.setattr(StateStore, "save", full)
     monkeypatch.setattr(run, "local_now", lambda tz: datetime(2026, 10, 8, 7, 10))  # Thursday, in the window
     for _ in range(3):
-        assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == 0  # drawn, and warned of
+        assert main(["run", *args, "--png", str(tmp_path / "out.png")]) == run.UNSAVED  # drawn, and warned of
     assert calls == []
     assert "No space left" in caplog.text
+
+
+def _drawn_on_a_full_card(tmp_path, monkeypatch):
+    """_run_setup with every save of the state failing, counting the panel's redraws."""
+    from twobells.board.displays.display import PngDisplay
+    from twobells.board.state import StateStore
+
+    args, calls = _run_setup(tmp_path, monkeypatch)
+    drawn = []
+    monkeypatch.setattr(PngDisplay, "show", lambda self, image: drawn.append(1))
+
+    def full(self, state):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(StateStore, "save", full)
+    return args, drawn
+
+
+def test_a_timer_run_on_a_full_card_draws_then_fails_and_remembers_the_redraw_in_memory(tmp_path, monkeypatch):
+    from twobells.cli import run
+
+    folder = tmp_path / "run"
+    folder.mkdir(mode=0o700)
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(folder))  # twobells.service's /run/twobells
+    args, drawn = _drawn_on_a_full_card(tmp_path, monkeypatch)
+    for _ in range(3):
+        assert main(args) == run.UNSAVED  # so systemd marks the unit failed
+    assert drawn == [1]  # once, not every minute
+    assert json.loads((folder / "last-render.json").read_text())["page"] == "departures"
+    assert not (tmp_path / "state.json").exists()
+    monkeypatch.undo()  # the card can be written again
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(folder))
+    args, _ = _run_setup(tmp_path, monkeypatch)
+    assert main(args) == 0
+    assert not (folder / "last-render.json").exists()  # the state has it now
+    assert json.loads((tmp_path / "state.json").read_text())["last_render"]["page"] == "departures"
+
+
+def test_a_timer_run_on_a_full_card_off_the_pi_still_fails(tmp_path, monkeypatch):
+    from twobells.cli import run
+
+    monkeypatch.delenv("RUNTIME_DIRECTORY", raising=False)  # Docker or a desktop: no folder in memory
+    args, drawn = _drawn_on_a_full_card(tmp_path, monkeypatch)
+    for _ in range(2):
+        assert main(args) == run.UNSAVED
+    assert drawn == [1, 1]  # nothing remembered, as before
+
+
+def test_a_redraw_kept_in_memory_that_isnt_one_is_drawn_over(tmp_path, monkeypatch):
+    from twobells.cli import run
+
+    folder = tmp_path / "run"
+    folder.mkdir(mode=0o700)
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(folder))
+    args, drawn = _drawn_on_a_full_card(tmp_path, monkeypatch)
+    assert main(args) == run.UNSAVED
+    kept = json.loads((folder / "last-render.json").read_text())
+    (folder / "last-render.json").write_text(json.dumps({**kept, "page": "elsewhere"}))
+    assert main(args) == run.UNSAVED
+    assert drawn == [1, 1]
+
+
+def test_a_timer_run_whose_draw_fails_keeps_no_redraw_in_memory(tmp_path, monkeypatch):
+    from twobells.board.displays.display import PngDisplay
+
+    folder = tmp_path / "run"
+    folder.mkdir(mode=0o700)
+    monkeypatch.setenv("RUNTIME_DIRECTORY", str(folder))
+    args, drawn = _drawn_on_a_full_card(tmp_path, monkeypatch)
+    assert main(args) != 0
+    assert (folder / "last-render.json").exists()
+
+    def broken(self, image):
+        raise OSError("GPIO busy")
+
+    monkeypatch.setattr(PngDisplay, "show", broken)
+    kept = json.loads((folder / "last-render.json").read_text())
+    # Something else drawn, an hour ago.
+    (folder / "last-render.json").write_text(json.dumps({**kept, "signature": "b" * 64, "at": "2026-10-10T11:00:00"}))
+    with pytest.raises(OSError, match="GPIO busy"):
+        main(args)
+    assert not (folder / "last-render.json").exists()  # the panel may be half drawn: the next run draws
 
 
 def _stopped_while_drawing(monkeypatch):
