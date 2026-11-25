@@ -329,7 +329,19 @@ def test_the_guard_lets_the_web_server_reach_only_the_home_network():
     assert [line.strip() for line in _block(rules, f"set {GUARD_SET} {{").strip().splitlines()] == [
         "type cgroupsv2"]
     web_out = [line.strip() for line in _block(rules, "chain web_out {").strip().splitlines()]
-    assert web_out == ["ip daddr @home4 accept", "ip6 daddr @home6 accept", "reject with icmpx admin-prohibited"]
+    # No name lookups first, to any address: the router's DNS, or a resolver
+    # on the Pi itself (127.0.0.0/8 is home), would carry them out to the
+    # internet. Plain DNS and DNS over TLS or QUIC, TCP and UDP. Not mDNS
+    # (5353): its multicast addresses aren't home, so the last line refuses it.
+    assert web_out == ["meta l4proto { tcp, udp } th dport { 53, 853 } reject with icmpx admin-prohibited",
+                       "ip daddr @home4 accept", "ip6 daddr @home6 accept", "reject with icmpx admin-prohibited"]
+
+
+def test_the_guide_says_what_the_guard_s_dns_rule_leaves_open():
+    # So the docs don't claim more than the rule does.
+    guide = (ROOT / "docs" / "security.md").read_text()
+    for said in ("port 53", "853", "AF_UNIX", "systemd-resolved", "any other port", "systemd 252"):
+        assert said in guide, said
 
 
 def test_the_guard_holds_the_same_addresses_as_the_unit():

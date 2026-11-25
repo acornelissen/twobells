@@ -58,6 +58,12 @@ table inet twobells_web {
 	}
 
 	chain web_out {
+		# No name lookups, to any address: the router's DNS, or a resolver on
+		# this Pi (127.0.0.0/8 is home), would carry them out to the internet.
+		# Nothing the server does looks one up. Plain DNS, and DNS over TLS or
+		# QUIC. mDNS (5353) goes to multicast addresses, which aren't home, so
+		# the last line refuses it already.
+		meta l4proto { tcp, udp } th dport { 53, 853 } reject with icmpx admin-prohibited
 		ip daddr @home4 accept
 		ip6 daddr @home6 accept
 		reject with icmpx admin-prohibited
