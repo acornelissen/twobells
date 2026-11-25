@@ -32,11 +32,14 @@ encodes it: ASCII JSON on one line, safe in an event stream.
 
 Versions. The mirror counts its own: it goes up whenever the file's run or
 version changes, so a fetch service started again (a new run, its hub's
-versions from 1 again) never repeats a version a browser has seen.
+versions from its own start, behind if the clock is) never repeats a
+version a browser has seen. It starts, as a hub does, at
+snapshot.first_version, so a web server started again doesn't either.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -50,7 +53,7 @@ from zoneinfo import ZoneInfo
 
 from ..core.walk import WalkTimes
 from ..dashboard.collector import HEALTHY_AGE
-from ..dashboard.snapshot import PARTS, Hub, encode
+from ..dashboard.snapshot import PARTS, Hub, encode, first_version
 from ..settings import modes as mode_list
 from ..settings import show as show_items
 from ..setup.spool.checks import CLOCK_SKEW_S, Refused, check_dict, check_int, check_num, check_obj, check_str, parse
@@ -228,7 +231,9 @@ class SnapshotMirror:
         self._changed = threading.Condition(self._lock)
         placeholder = Hub(title, walk, tz=ZoneInfo(timezone) if timezone else None, row_strips=row_strips,
                           show=show, scrolling=scrolling, leave=leave)
-        self._version, self._body = placeholder.current()
+        shown = json.loads(placeholder.current()[1])
+        self._version = shown["version"] = first_version(clock())  # its own, from when this run started
+        self._body = encode(shown).encode("ascii")
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}
         self._area: dict | None = None

@@ -20,7 +20,7 @@ Contents:
 
 ## `GET /api/snapshot`
 
-Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
+Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches. The version is a whole number that goes up by one with each change. Each time the server starts, it starts from the time then in milliseconds (13 digits), so it is above any version from before and an ETag or event id kept from before a restart never matches.
 
 ```json
 {

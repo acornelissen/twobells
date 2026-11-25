@@ -887,6 +887,15 @@ def encode(value) -> str:
     return json.dumps(value, separators=(",", ":"), allow_nan=False)
 
 
+def first_version(now: float) -> int:
+    """Where a run's versions start: `now`, in seconds since 1970, as
+    milliseconds. A run's versions go up by one a change, far fewer than one
+    a millisecond, so each run's start above the last run's, and an ETag or
+    event id a browser kept from before a restart never names a snapshot of
+    this run. 13 digits: an event id, and a number a browser holds exactly."""
+    return int(now * 1000)
+
+
 class SnapshotSource(Protocol):
     """What the web server reads the snapshot from: the Hub the pollers
     publish to, in the same process (Docker, a desktop), or on a Pi a mirror
@@ -940,7 +949,7 @@ class Hub:
         self._part_lookups: dict[str, dict[str, dict]] = {part: {} for part in PARTS}
         self._lookups: dict[str, dict] = {}
         self._previous: dict[str, dict] = {}
-        self._version = 0
+        self._version = first_version(self._clock().timestamp())
         self._canonical: str | None = None
         self._body = b""
         self._rebuilt = 0.0  # _rebuild, below, sets it

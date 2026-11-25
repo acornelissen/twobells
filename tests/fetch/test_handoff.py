@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import time
+from datetime import UTC, datetime
 
 import pytest
 
@@ -39,8 +40,9 @@ def spool(tmp_path):
     return found
 
 
-def published_hub(bus="Hyde"):
-    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}))
+def published_hub(bus="Hyde", started=None):
+    """A hub with two bus polls published; with `started`, its clock stands there."""
+    hub = Hub("Glossop", WalkTimes(train=10, bus={"A": 8}), clock=None if started is None else lambda: started)
     hub.publish("buses", {"rows": [{"id": OLD_ID}]}, {OLD_ID: {"bus": {"id": OLD_ID}}})
     hub.publish("buses", {"rows": [{"id": BUS_ID, "destination": bus}]},
                 {BUS_ID: {"bus": {"id": BUS_ID, "destination": bus}, "history": HISTORY}})
@@ -160,11 +162,12 @@ def test_hub_to_file_to_mirror_gives_the_same_snapshot_bar_the_version(spool):
 
 
 def test_before_the_first_file_an_empty_snapshot_shows(spool):
-    mirror = mirror_of(spool)
+    mirror = mirror_of(spool, Clock())
     assert mirror.check() is False
     version, body = mirror.current()
     shown = json.loads(body)
-    assert version == shown["version"] == 1 and shown["title"] == "Glossop" and shown["buses"] is None
+    assert version == shown["version"] == 1_800_000_000_000  # when it started, in milliseconds since 1970
+    assert shown["title"] == "Glossop" and shown["buses"] is None
     assert mirror.lookup(BUS_ID) is None and mirror.get("area") is None
     assert mirror.age() == float("inf") and not mirror.healthy()
 
@@ -286,12 +289,28 @@ def test_the_version_goes_up_across_a_fetch_service_restart(spool):
     again.write()  # a new run of the same hub: a new version
     mirror.check()
     assert mirror.current()[0] == seen + 1
-    restarted = published_hub()  # a lower hub version than the first's
+    restarted = published_hub(started=datetime(2020, 1, 1, tzinfo=UTC))  # behind, as a Pi's clock can be at boot
     assert restarted.version < first.version
     clock.now += 1
     SnapshotWriter(restarted, spool, lambda: True, clock=clock).write()
     mirror.check()
     assert mirror.current()[0] == seen + 2
+
+
+def test_a_web_server_started_again_starts_its_versions_above_the_last_one_s(spool):
+    """Each mirror counted from 1, so after the web server started again a
+    browser's ETag or event id from before named another snapshot."""
+    clock = Clock()
+    last = mirror_of(spool, clock)
+    for bus in ("Hyde", "Ashton", "Stockport"):
+        clock.now += 1
+        SnapshotWriter(published_hub(bus), spool, lambda: True, clock=clock).write()
+        assert last.check() is True
+    clock.now += 1
+    again = mirror_of(spool, clock)
+    again.check()
+    assert again.current()[0] > last.current()[0] > 1_800_000_000_000
+    assert json.loads(again.current()[1])["version"] == again.current()[0]
 
 
 def test_a_heartbeat_with_nothing_new_keeps_the_version_but_its_time(spool):

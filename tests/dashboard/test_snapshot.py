@@ -1027,8 +1027,13 @@ class Clock:
         return self.mono
 
 
-def hub(**kwargs):
-    stamps = iter(datetime(2026, 10, 9, 7, 0, tzinfo=LONDON) + timedelta(seconds=n) for n in range(10_000))
+STARTED = datetime(2026, 10, 9, 7, 0, tzinfo=LONDON)
+# A hub's first version: one past when it started, in milliseconds since 1970.
+FIRST = int(STARTED.timestamp() * 1000) + 1
+
+
+def hub(started=STARTED, **kwargs):
+    stamps = iter(started + timedelta(seconds=n) for n in range(10_000))
     return Hub("Glossop", WALK, clock=lambda: next(stamps), **kwargs)
 
 
@@ -1041,7 +1046,7 @@ def test_the_first_snapshot_has_every_section_empty():
     body = snapshot(h)
     assert list(body) == ["version", "generated_at", "title", "walk", "quiet", "row_strips", "scrolling", "show",
                           "leave_modes", "trains", "buses", "metro", "weather", "disruptions", "timetable_changes"]
-    assert body["version"] == 1 and body["title"] == "Glossop"
+    assert body["version"] == FIRST and body["title"] == "Glossop"
     assert body["walk"] == {"train": 10, "bus": {"A": 8, "B": 6}, "metro": {}}
     assert body["quiet"] is False and body["row_strips"] is True and body["scrolling"] is True
     assert body["show"] == list(show.keys("dashboard"))  # everything, without a list
@@ -1052,15 +1057,28 @@ def test_the_first_snapshot_has_every_section_empty():
 
 def test_the_version_goes_up_only_when_the_content_changes():
     h = hub()
-    assert h.publish("trains", {"rows": [1]}) == 2
+    assert h.publish("trains", {"rows": [1]}) == FIRST + 1
     first = snapshot(h)
-    assert h.publish("trains", {"rows": [1]}) == 2  # same content: same version
+    assert h.publish("trains", {"rows": [1]}) == FIRST + 1  # same content: same version
     again = snapshot(h)
     assert again["generated_at"] != first["generated_at"]  # but rebuilt, with the time
-    assert h.publish("buses", {"rows": []}) == 3
-    assert h.version == 3
+    assert h.publish("buses", {"rows": []}) == FIRST + 2
+    assert h.version == FIRST + 2
     with pytest.raises(ValueError):
         h.publish("ferries", {})
+
+
+def test_each_run_s_versions_start_above_the_last_run_s():
+    """Versions started at 1 each time the server started, so an ETag or an
+    event id a browser kept from the last run named another snapshot of this
+    one: it was told 304, or its stream skipped the first event, and the
+    page kept the old snapshot."""
+    last = hub()
+    for n in range(50):
+        last.publish("weather", {"n": n})
+    again = hub(started=STARTED + timedelta(seconds=1))
+    assert again.version > last.version == FIRST + 50
+    assert isinstance(again.version, int) and again.version < 10**15  # an event id, and exact in a browser
 
 
 def test_the_snapshot_says_whether_the_calling_at_line_may_scroll():
@@ -1089,12 +1107,12 @@ def test_the_snapshot_says_what_the_page_shows_in_the_registry_s_order():
 def test_a_refresh_says_whether_a_quiet_window_is_on_and_only_a_change_is_new():
     h = hub()
     h.refresh(quiet=True)
-    assert snapshot(h)["quiet"] is True and h.version == 2
+    assert snapshot(h)["quiet"] is True and h.version == FIRST + 1
     h.refresh(quiet=True)
     h.refresh()  # without quiet, it stays as it was
-    assert snapshot(h)["quiet"] is True and h.version == 2
+    assert snapshot(h)["quiet"] is True and h.version == FIRST + 1
     h.refresh(quiet=False)
-    assert snapshot(h)["quiet"] is False and h.version == 3
+    assert snapshot(h)["quiet"] is False and h.version == FIRST + 2
 
 
 def test_the_snapshot_is_one_line_of_ascii_json():
@@ -1108,14 +1126,14 @@ def test_the_snapshot_is_one_line_of_ascii_json():
 def test_wait_times_out_with_the_same_version():
     h = hub()
     started = time.monotonic()
-    assert h.wait(1, 0.05) == 1
+    assert h.wait(FIRST, 0.05) == FIRST
     assert time.monotonic() - started < 1
 
 
 def test_wait_returns_at_once_for_an_older_version():
     h = hub()
     h.publish("trains", {"rows": [1]})
-    assert h.wait(1, 5) == 2
+    assert h.wait(FIRST, 5) == FIRST + 1
 
 
 def test_wait_wakes_on_a_publish():
@@ -1123,7 +1141,7 @@ def test_wait_wakes_on_a_publish():
     timer = threading.Timer(0.05, lambda: h.publish("weather", {"rain": None}))
     timer.start()
     started = time.monotonic()
-    assert h.wait(1, 5) == 2
+    assert h.wait(FIRST, 5) == FIRST + 1
     assert time.monotonic() - started < 2
     timer.join()
 
@@ -1132,7 +1150,7 @@ def test_close_wakes_waiters():
     h = hub()
     threading.Timer(0.05, h.close).start()
     started = time.monotonic()
-    assert h.wait(1, 5) == 1
+    assert h.wait(FIRST, 5) == FIRST
     assert time.monotonic() - started < 2 and h.closed
 
 
@@ -1166,7 +1184,7 @@ def test_export_has_the_snapshot_its_lookups_and_the_area_taken_together():
     h.put("area", {"vehicles": []})
     found = h.export()
     assert set(found) == {"version", "snapshot", "lookups", "previous", "area"}
-    assert found["version"] == 3 and found["snapshot"] == snapshot(h)
+    assert found["version"] == FIRST + 2 and found["snapshot"] == snapshot(h)
     assert (found["lookups"], found["previous"], found["area"]) == ({"bbbb": {"bus": 2}}, {"aaaa": {"bus": 1}},
                                                                     {"vehicles": []})
     h.put("area", None)
