@@ -24,7 +24,7 @@ import { KEEP, leaveShow } from "./presets.js";
 import { note } from "./say.js";
 import { state } from "./state.js";
 import { enterStation, setUpStation } from "./station.js";
-import { LEAVE, go, numberSteps } from "./steps.js";
+import { LEAVE, go, numberSteps, setUpHistory, stepBack } from "./steps.js";
 import { enterStops, setUpStops } from "./stops.js";
 import { TRAM_CODE, setUpTrams, tramKind } from "./trams.js";
 import { leaveViews } from "./views.js";
@@ -142,9 +142,10 @@ function setUpSteps() {
     button.addEventListener("click", () => {
       if (button.getAttribute("aria-disabled") === "true") return;
       if (button.dataset.back === LEAVE) window.location.assign(state.back);
-      else go(button.dataset.back);
+      else stepBack(button.dataset.back);
     });
   }
+  setUpHistory();
   setUpHome();
   setUpStation();
   setUpStops();

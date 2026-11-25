@@ -723,7 +723,30 @@ const build = (node) => {
 };
 document.body.append(...TREE.map(build));
 const assigned = [];
-globalThis.window = { location: { search: SEARCH, assign: (url) => { assigned.push(url); } } };
+// A window that keeps its listeners, and a history of entries with the state each was given, as
+// a browser's: pushState drops what is forward of here, back() goes one entry back and says so.
+const windowListeners = [];
+const pages = [null];
+let at = 0;
+const goTo = (index) => {
+  at = index;
+  for (const [type, fn] of [...windowListeners]) if (type === "popstate") fn({ state: pages[at] });
+};
+globalThis.window = {
+  location: { search: SEARCH, assign: (url) => { assigned.push(url); } },
+  addEventListener: (type, fn) => windowListeners.push([type, fn]),
+  removeEventListener: (type, fn) => {
+    const found = windowListeners.findIndex(([t, f]) => t === type && f === fn);
+    if (found >= 0) windowListeners.splice(found, 1);
+  },
+  history: {
+    pushState: (given) => { pages.length = at + 1; pages.push(given); at += 1; },
+    replaceState: (given) => { pages[at] = given; },
+    back: () => goTo(at - 1),
+    forward: () => goTo(at + 1),
+  },
+};
+const guarded = () => windowListeners.some(([type]) => type === "beforeunload");
 const answers = ANSWERS;
 const sent = [];
 globalThis.fetch = async (url, init) => {
@@ -1535,3 +1558,192 @@ def test_without_london_s_stops_the_wizard_leaves_tfl_s_key_out():
         console.log(JSON.stringify({ shown: shown(), tflKey: !$("key-TFL_APP_KEY-field").hidden }));
     """, trams={"trams": NEAR_TRAMS}, station=FILTER_MAN, begin=BEGIN_TFL)
     assert found == {"shown": ["step-keys"], "tflKey": False}
+
+
+# History: one entry for each step, so Back moves one step; and a warning before
+# a reload or leaving throws the choices away.
+
+TO_STATION = """
+state.home = { lat: 53.462, lon: -1.966, label: "SK13 1AH", country: "" };
+click("home-next");
+await settle();
+"""
+
+
+@needs_node
+def test_each_step_gets_one_history_entry_with_only_its_name_and_back_goes_one_step_back():
+    found = run_wizard(TO_STATION + """
+        $("station-none").checked = true;
+        $("station-GLO").checked = false;
+        $("filter").value = "";
+        click("station-next");
+        await settle();
+        const forward = { pages: structuredClone(pages), at, shown: shown() };
+        window.history.back();
+        const station = { shown: shown(), focus: document.activeElement.id, title: document.title, step: state.step,
+                          none: $("station-none").checked };
+        window.history.back();
+        const home = { shown: shown(), focus: document.activeElement.id, step: state.step };
+        console.log(JSON.stringify({ forward, station, home }));
+    """, trams=None)
+    # The first entry is the page as loaded, given the first step's name; one more for each step moved on to.
+    assert found["forward"]["pages"] == [{"step": "home"}, {"step": "station"}, {"step": "stops"}]
+    assert found["forward"]["at"] == 2 and found["forward"]["shown"] == ["step-stops"]
+    # Back moves one step back, the heading taking focus as the Back button's does, the choices kept.
+    assert found["station"]["shown"] == ["step-station"] and found["station"]["focus"] == "station-heading"
+    assert found["station"]["step"] == "station" and found["station"]["title"].startswith("Station:")
+    assert found["station"]["none"] is True
+    assert found["home"]["shown"] == ["step-home"] and found["home"]["focus"] == "home-heading"
+    assert found["home"]["step"] == "home"
+
+
+@needs_node
+def test_going_forward_again_in_the_browser_does_not_skip_a_steps_checks():
+    found = run_wizard(TO_STATION + """
+        window.history.back();
+        window.history.forward();
+        console.log(JSON.stringify({ shown: shown(), step: state.step }));
+    """)
+    assert found == {"shown": ["step-home"], "step": "home"}
+
+
+@needs_node
+def test_a_step_this_page_never_showed_is_ignored_on_back():
+    # After a reload the browser still has the earlier entries, but the choices are gone.
+    found = run_wizard("""
+        pages.unshift({ step: "walk" });
+        pages.unshift({ step: "constructor" });
+        at = 2;
+        goTo(1);
+        goTo(0);
+        console.log(JSON.stringify({ shown: shown(), step: state.step }));
+    """)
+    assert found == {"shown": ["step-home"], "step": "home"}
+
+
+@needs_node
+def test_the_in_page_back_button_goes_back_without_adding_an_entry():
+    found = run_wizard(TO_STATION + """
+        for (const [type, fn] of $("step-station").querySelector("[data-back]").listeners) if (type === "click") fn();
+        console.log(JSON.stringify({ shown: shown(), pages, at }));
+    """)
+    assert found["shown"] == ["step-home"] and found["at"] == 0
+    assert found["pages"][0] == {"step": "home"}
+
+
+@needs_node
+def test_leaving_is_asked_about_from_the_first_step_past_home_until_saved():
+    found = run_wizard("""
+        const atHome = guarded();
+        state.home = { lat: 53.462, lon: -1.966, label: "SK13 1AH", country: "" };
+        click("home-next");
+        await settle();
+        const station = guarded();
+        window.history.back();
+        const backHome = guarded();
+        click("home-next");
+        await settle();
+        const asks = windowListeners.filter(([type]) => type === "beforeunload").length;
+        console.log(JSON.stringify({ atHome, station, backHome, asks }));
+    """)
+    assert found == {"atHome": False, "station": True, "backHome": False, "asks": 1}
+
+
+@needs_node
+def test_the_warning_asks_the_way_the_settings_pages_do_and_goes_when_saved():
+    found = run_wizard("""
+        click("stops-next");
+        await settle();
+        const first = guarded();
+        const event = { prevented: false, preventDefault() { this.prevented = true; } };
+        windowListeners.find(([type]) => type === "beforeunload")[1](event);
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ first, prevented: event.prevented, returnValue: event.returnValue,
+                                     done: shown(), after: guarded() }));
+    """, "?step=stops", walk={"walk": {}})
+    assert found == {"first": True, "prevented": True, "returnValue": True, "done": ["step-done"], "after": False}
+
+
+@needs_node
+def test_a_shortcuts_first_step_is_not_guarded_and_the_done_step_ignores_back():
+    found = run_wizard("""
+        const first = guarded();
+        click("stops-next");
+        await settle();
+        const second = guarded();
+        click("walk-next");
+        await settle();
+        click("save");
+        await settle();
+        window.history.back();
+        console.log(JSON.stringify({ first, second, shown: shown(), after: guarded() }));
+    """, "?step=stops", walk={"walk": {}})
+    assert found == {"first": False, "second": True, "shown": ["step-done"], "after": False}
+
+
+def test_only_the_steps_name_goes_in_the_history_state():
+    text = _js("steps.js")
+    assert re.findall(r"pushState\(([^,)]*)", text) == ["{ step }"]
+    assert re.findall(r"replaceState\(([^,)]*)", text) == ["{ step }"]
+    assert "location.hash" not in _all_js()
+
+
+# Walk times typed stay when the stops are changed (WCAG 3.3.7); each stop's label names its stop.
+
+
+@needs_node
+def test_walk_times_typed_are_kept_when_the_stops_are_changed_and_asked_for_only_new_places():
+    found = run_wizard("""
+        const fire = (el, kind) => { for (const [type, fn] of el.listeners) if (type === kind) fn({ currentTarget: el }); };
+        click("stops-next");
+        await settle();
+        $("walk-0").value = "9";  // stop A's walk, corrected from 3
+        fire($("walk-0"), "input");
+        for (const [type, fn] of $("step-walk").querySelector("[data-back]").listeners) if (type === "click") fn();
+        const box = $("stops-list").querySelectorAll('input[type="checkbox"]')[1];
+        box.checked = true;
+        fire(box, "change");
+        click("stops-next");
+        await settle();
+        const rows = [...$("walk-list").querySelectorAll("input")].map((input) => [input.id, input.value]);
+        const hints = [...$("walk-list").querySelectorAll(".hint")].map((p) => p.textContent);
+        console.log(JSON.stringify({ rows, hints, asked: asked("walk") }));
+    """, "?step=stops", walk={"walk": {"1800SB12342": {"minutes": 5, "source": "route"}}})
+    assert found["rows"] == [["walk-0", "9"], ["walk-1", "5"], ["walk-2", ""]]
+    assert "Yours" in found["hints"][0]
+    # Only places not answered for are worked out; the one typed is left alone.
+    assert [ask["stop_atcos"] for ask in found["asked"]] == [["1800SB99999"], ["1800SB12342", "1800SB99999"]]
+
+
+@needs_node
+def test_a_walk_time_typed_then_emptied_stays_empty_when_the_stops_change():
+    found = run_wizard("""
+        const fire = (el, kind) => { for (const [type, fn] of el.listeners) if (type === kind) fn({ currentTarget: el }); };
+        click("stops-next");
+        await settle();
+        $("walk-0").value = "";
+        fire($("walk-0"), "input");
+        for (const [type, fn] of $("step-walk").querySelector("[data-back]").listeners) if (type === "click") fn();
+        const box = $("stops-list").querySelectorAll('input[type="checkbox"]')[1];
+        box.checked = true;
+        fire(box, "change");
+        click("stops-next");
+        await settle();
+        console.log(JSON.stringify($("walk-0").value));
+    """, "?step=stops", walk={"walk": {}})
+    assert found == ""
+
+
+@needs_node
+def test_each_stops_label_box_is_named_for_its_stop():
+    found = run_wizard("""
+        const names = [...$("stops-list").querySelectorAll("label")]
+          .filter((label) => label.getAttribute("for").endsWith("-label"))
+          .map((label) => label.textContent);
+        console.log(JSON.stringify(names));
+    """, "?step=stops")
+    assert found == ["Label on the board for Station Road, Stop A", "Label on the board for Station Road, Stop B",
+                     "Label on the board for Stop code 1800SB99999"]

@@ -1,6 +1,6 @@
 // Step 3: bus stops.
 
-import { $, h, fill, str, num, list, obj } from "../dashboard_static/dom.js";
+import { $, h, fill, str, num, list, obj, vh } from "../dashboard_static/dom.js";
 import { call } from "./api.js";
 import { L, addHome, fit, isOpen, mapFor, pin, setUpMapToggle } from "./maps.js";
 import { note, refuse, say, setError, shout } from "./say.js";
@@ -57,7 +57,7 @@ function drawStops() {
         h("label", { for: id }, h("span", { class: "num" }, `${i + 1}.`), ` ${stopName(stop)}`)),
       h("p", { class: "hint about", id: `${id}-about` }, `${about.join(", ")}.`),
       h("div", { class: "field nested", id: `${id}-label-box`, hidden: !ticked },
-        h("label", { for: `${id}-label` }, `Label on the ${state.noun}`),
+        h("label", { for: `${id}-label` }, `Label on the ${state.noun}`, vh(` for ${stopName(stop)}`)),
         h("p", { class: "hint", id: `${id}-label-hint` }, "1 to 3 letters or digits."),
         h("p", { class: "error", id: `${id}-label-error`, hidden: true }),
         label));

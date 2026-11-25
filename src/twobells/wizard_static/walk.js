@@ -56,6 +56,20 @@ function keepSavedWalks() {
   }
 }
 
+// What was typed in the boxes now drawn, by place: the minutes, or null for a
+// box emptied. Kept when the places change, so a correction isn't lost by
+// going back to change a stop.
+function typedWalks() {
+  const typed = new Map();
+  state.walk.forEach((walk, i) => {
+    const input = $(`walk-${i}`);
+    if (!input || walk.source !== "edited") return;
+    const raw = input.value.trim();
+    typed.set(walk.key, raw === "" || !Number.isFinite(Number(raw)) ? null : Number(raw));
+  });
+  return typed;
+}
+
 export async function enterWalk() {
   go("walk");
   // A shortcut asks only about its own part.
@@ -64,12 +78,16 @@ export async function enterWalk() {
   const trams = state.only ? [] : state.chosenTrams;
   const key = JSON.stringify([homeKey(), station && station.crs, stops.map((s) => s.atco), trams.map((t) => t.code)]);
   if (state.walkFor === key) return; // keep what was typed
+  const typed = typedWalks();
   state.walk = [];
   if (station) state.walk.push({ key: station.crs, what: `${station.name} station` });
   for (const stop of stops) state.walk.push({ key: stop.atco, what: `stop ${stop.label}, ${stopName(stop)}` });
   for (const tram of trams) state.walk.push({ key: tram.code, what: tram.place || `${tram.name} tram stop` });
   for (const walk of state.walk) Object.assign(walk, { minutes: null, source: "none" });
   if (state.only) keepSavedWalks();
+  for (const walk of state.walk) {
+    if (typed.has(walk.key)) Object.assign(walk, { minutes: typed.get(walk.key), source: "edited" });
+  }
   const asking = state.walk.filter((walk) => walk.source === "none").map((walk) => walk.key);
   fill($("walk-list"));
   if (asking.length && state.home) {

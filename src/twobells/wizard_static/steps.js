@@ -1,5 +1,7 @@
 // Moving between steps. The new step's heading takes focus, so a screen
-// reader starts there and keyboard users carry on from the top.
+// reader starts there and keyboard users carry on from the top. Each step is
+// a history entry carrying only its name, so the browser's Back moves one
+// step back.
 
 import { $, h, fill } from "../dashboard_static/dom.js";
 import { icon } from "../dashboard_static/icons.js";
@@ -60,7 +62,9 @@ export function numberSteps() {
   });
 }
 
-export function go(step, { focus = true } = {}) {
+const visited = []; // the steps shown on this page, one for each history entry made
+
+export function go(step, { focus = true, entry = true } = {}) {
   for (const name of STEPS) $(`step-${name}`).hidden = name !== step;
   const at = STEPS.indexOf(step);
   for (const item of $("progress").children) {
@@ -70,8 +74,53 @@ export function go(step, { focus = true } = {}) {
     item.classList.toggle("done", index < at);
   }
   document.title = `${TITLES[step]}: ${state.title}`;
+  if (entry && step !== state.step) {
+    // The page as loaded is the first entry; each step moved on to adds one.
+    if (visited.length) window.history.pushState({ step }, "");
+    else window.history.replaceState({ step }, "");
+    visited.push(step);
+  }
   state.step = step;
+  guard(step);
   if (focus) $(`${step}-heading`).focus();
+}
+
+// Browser Back (or a back gesture) to a step this page showed earlier goes
+// there, as the Back button does. Forward, and a step from before a reload,
+// whose choices are gone, are left alone: going forward would skip the checks
+// Next makes. After saving there is no way back.
+function popped(event) {
+  const step = event.state && event.state.step;
+  const at = visited.lastIndexOf(step);
+  if (state.step === "done" || at < 0 || at >= visited.length - 1) return;
+  visited.length = at + 1;
+  go(step, { entry: false });
+}
+
+export function setUpHistory() {
+  window.addEventListener("popstate", popped);
+}
+
+// The Back button: one entry back where that is the step it names, else a step of its own.
+export function stepBack(step) {
+  if (visited.length > 1 && visited[visited.length - 2] === step) window.history.back();
+  else go(step);
+}
+
+// Asks before leaving, as the settings pages do, from the first step past the
+// start until the setup is saved: leaving or reloading throws the choices away.
+let warning = false;
+
+function ask(event) {
+  event.preventDefault();
+  event.returnValue = true; // older browsers ask only when this is set
+}
+
+function guard(step) {
+  const choices = step !== "done" && step !== shownSteps()[0];
+  if (choices && !warning) window.addEventListener("beforeunload", ask);
+  if (!choices && warning) window.removeEventListener("beforeunload", ask);
+  warning = choices;
 }
 
 // One action at a time per button: a second press while the first is still
