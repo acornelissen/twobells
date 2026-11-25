@@ -4,6 +4,59 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+Fixes from a review of the whole app: the board keeps going on a full SD card and after a restart, bus times are right in more awkward cases, a Pi update can be undone, and the settings and the setup wizard no longer lose what you typed.
+
+### Added
+
+- The setup wizard's Keys step has **Carry on without the rail key**, for while Rail Data Marketplace approval is pending. Until you add the key in Settings > Keys, the board and the dashboard say so instead of showing trains, and nothing asks the rail service.
+- The wizard asks before you leave or reload once you have made choices, until it is saved.
+- A **Scrolling text** button beside **Look** at the bottom of the dashboard stops the calling-at line scrolling in this browser, and starts it again. It is left out where no look scrolls, on a wall tablet, and when the settings have scrolling off.
+
+### Changed
+
+- On a Pi each release is installed in a folder of its own, and the one before is kept: `/opt/twobells/venv` is now a link to the release in use, and `/opt/twobells/previous` to the one before. Your first update moves the existing install into `/opt/twobells/releases` by itself. If a service crashes on the new release, `update.sh` goes back to the one before and says so.
+- `update.sh` no longer stops the board's timer while it works: the release in use isn't touched until the switch.
+- The settings keep you signed in while you use them: a browser is signed out after 12 hours without opening a settings page, and a week after signing in at most. Signing in takes you back to the settings page you were on.
+- Browser Back in the wizard moves back one step.
+- Trains set up with no rail key now load (they used to stop the board with a missing-key error). The Overview and Keys page show the key as needed.
+- A feed that fails now shows one plain sentence on the dashboard ("The service refused the key; check it in Settings > Keys", "Can't reach the service", "The service is having trouble", or no timetable yet) instead of the error's own text. The settings Overview shows the same sentence for the dashboard's feeds; the exact error is in the log.
+- A release now runs the tests on Python 3.11, 3.12 and 3.13, as CI does, and nothing is built or published unless all three pass. The release's wheel is dated by the tagged commit, so the same tag builds the same wheel.
+
+### Fixed
+
+- An HDMI screen no longer stays black on the Set me up, Board off or reset code page after it restarts.
+- A full or read-only SD card no longer stops a screen. The board keeps showing departures and says once in its log that it can't save. It makes no TransportAPI lookup it can't record as spent, so the daily budget holds.
+- A damaged bus budget, forecast, departure or bus position in the board's saved state no longer stops the board or fills the log: it is dropped when the board starts, with one warning.
+- A spent TransportAPI budget is warned of once, not on every check.
+- The e-paper board no longer rewrites its unchanged state file every minute.
+- `update.sh` no longer installs over the code in use. A power cut part way through can no longer leave the Pi without the app, and a release that fails its checks is removed while the old one runs on.
+- A bus whose tracker sends its time an hour ahead, or any time more than two minutes ahead, is no longer shown about an hour late.
+- A bus stop that NaPTAN gives only as a grid reference is now placed on the map, and one stop NaPTAN can't place no longer loses the positions of all the others.
+- One broken timetable file that names your stop is now skipped, and the bus timetable is built from the rest. A timetable with odd numbers in it (such as "²", or thousands of digits) is refused cleanly.
+- A bus that sends only its ticket machine's journey code is now shown live on journeys that run every day.
+- With TransportAPI, a late bus that leaves after midnight is no longer listed before buses due earlier.
+- A save after your sign-in had run out lost the changes without a word: the sign-in page now says they weren't saved, and takes you back to the page. A settings page opened before you last signed in answered a save with a bare "Forbidden" line; it now says the page was out of date, with a link to open it again.
+- The settings pages' header, tabs and footer were inside the page's main content, with no way to skip them. Each page now starts with a "Skip to main content" link, and the header, tabs and footer are landmarks of their own.
+- Walk times you typed in the wizard are no longer lost when you go back and change the stops, and each bus stop's label box names its stop for screen readers.
+- The dashboard's departure boards no longer rebuild every row on each update, so a screen reader keeps its place and a focused departure stays focused. If the focused departure has gone, focus moves to the board's heading.
+- In the Split-flap look on a phone, a long destination wraps between tiles instead of running into the status and Leave columns.
+- **Show on map** in the area dialog now scrolls the map into view on a phone.
+- After the server restarted, a dashboard could keep showing the old departures, because the new snapshot reused a version number the browser already had.
+- A key test that finished after the key was replaced, from another tab or the setup wizard, no longer shows the new key as tested.
+- Starting a new bus search just as the last one finished finding its roads no longer fails silently.
+- `serve` no longer adds `--no-browser --port` to its command line again each time it restarts.
+
+### Security
+
+- The web server now drops a request whose line, headers and body come to more than 96 kB. Before, one device on the network could send megabytes of headers over its 16 connections until a Pi's web service ran out of memory and restarted.
+- The web server now refuses a `Host` header with anything but ASCII letters, digits and hyphens, or with anything but a port after the name.
+- `[train] base_url` and `[bus] base_url` must now be https addresses. The board won't start with an http one, which would send your key in clear.
+- The dashboard, which needs no sign-in, no longer shows a failing feed's raw error text (addresses, resolver errors or internal hints) to anyone on the network.
+- The install and update scripts no longer import Python modules from the folder they are run from, as root, and set their own umask, so the app is readable by the services however `sudo` is set up.
+- The timetable, e-paper and screen services are locked down further: native system calls only, other users' processes hidden, and a limit on their threads.
+- The monthly NaPTAN refresh now rebuilds and tests with a read-only token. Only a separate job, which runs none of the project's code, can open the pull request, and it accepts nothing from the build but the four expected data files.
+- CI and the release now install Python, uv, ruff and node only as `mise.lock` pins them by checksum, and fail if a tool isn't pinned.
+
 ## [0.5.3] - 2026-10-21
 
 The punctuality sheet keeps to a departure's own kind of day and every day kept, and the documentation is checked through against the code.
