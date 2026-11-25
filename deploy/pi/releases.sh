@@ -28,7 +28,18 @@ take_lock() {
     echo "  sudo apt-get install util-linux" >&2
     return 1
   fi
-  : >>"$LOCK"
+  # Only root may open it: anyone who could would hold it (flock works on a
+  # file open only to read) and keep every run out until the Pi restarts. So
+  # it is made 0600 from the start, and one an earlier release made open to
+  # all is closed up. Anything there but a plain file of root's (a link,
+  # say) isn't used, nor followed.
+  if [[ -L "$LOCK" ]] || { [[ -e "$LOCK" ]] && [[ ! -f "$LOCK" || ! -O "$LOCK" ]]; }; then
+    echo "$LOCK isn't a plain file of root's, so it can't be trusted as the lock." >&2
+    echo "See what it is (ls -l $LOCK), remove it, then run this again." >&2
+    return 1
+  fi
+  (umask 077 && : >>"$LOCK")
+  chmod 600 "$LOCK"
   exec 9<"$LOCK"
   if ! flock --nonblock 9; then
     echo "Another install.sh or update.sh is running. Let it finish, then run this again." >&2

@@ -1343,6 +1343,70 @@ def test_the_lock_is_held_to_the_end_of_the_run_and_its_file_never_replaced(tmp_
     assert _locked(lock)[0] == 0 and lock.stat().st_ino == inode
 
 
+def test_the_lock_is_root_s_alone_to_open(tmp_path):
+    # Anyone who could open it could hold it (flock works on a file open only
+    # to read) and keep every install.sh and update.sh out until the Pi restarts.
+    import stat
+
+    _flock()
+    lock = tmp_path / "twobells-deploy.lock"
+    assert _locked(lock, "umask 022\ntake_lock\necho took it")[:2] == (0, "took it\n")
+    assert stat.S_IMODE(lock.stat().st_mode) == 0o600
+    # One made open to all by an earlier release is closed up, in place.
+    lock.chmod(0o644)
+    inode = lock.stat().st_ino
+    assert _locked(lock, "umask 022\ntake_lock\necho took it")[0] == 0
+    assert (stat.S_IMODE(lock.stat().st_mode), lock.stat().st_ino) == (0o600, inode)
+
+
+@pytest.mark.parametrize("kind", ["link", "dangling link", "folder"])
+def test_a_lock_that_isn_t_a_plain_file_is_refused(tmp_path, kind):
+    # /run is root's alone, so nobody else can put one there: belt and braces.
+    _flock()
+    lock, target = tmp_path / "twobells-deploy.lock", tmp_path / "elsewhere"
+    if kind == "link":
+        target.write_text("")
+        target.chmod(0o644)
+    if kind == "folder":
+        lock.mkdir()
+    else:
+        lock.symlink_to(target)
+    code, out, err = _locked(lock)
+    assert (code, out) == (1, "")
+    assert f"{lock} isn't a plain file of root's" in err
+    # Nothing followed: no file made, nor one's mode changed, where a link points.
+    assert (oct(target.stat().st_mode & 0o777) if target.exists() else None) == ("0o644" if kind == "link" else None)
+
+
+def test_no_other_user_can_open_the_lock_and_one_of_theirs_is_refused():
+    # As install.sh and update.sh run: as root (the Docker run). nobody stands
+    # for the services' user, which a compromised web server runs as.
+    import os
+    import pwd
+    import shutil
+    import subprocess
+    import tempfile
+
+    _flock()
+    runuser = shutil.which("runuser", path="/usr/sbin:/sbin:/usr/bin:/bin")
+    if os.geteuid() != 0 or runuser is None:
+        pytest.skip("needs root and runuser, as install.sh and update.sh run")
+    folder = Path(tempfile.mkdtemp(dir="/tmp"))
+    try:
+        folder.chmod(0o755)  # others may look in, as in /run
+        lock = folder / "twobells-deploy.lock"
+        assert _locked(lock, "umask 022\ntake_lock\necho took it")[0] == 0
+        held = subprocess.run([runuser, "-u", "nobody", "--", "flock", "--nonblock", "--shared", str(lock), "true"],
+                              capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        assert held.returncode != 0 and "Permission denied" in held.stderr
+        # A lock file of another user's isn't trusted.
+        os.chown(lock, pwd.getpwnam("nobody").pw_uid, -1)
+        code, _, err = _locked(lock)
+        assert code == 1 and f"{lock} isn't a plain file of root's" in err
+    finally:
+        shutil.rmtree(folder)
+
+
 def test_without_flock_install_and_update_stop_saying_how_to_get_it(tmp_path):
     lock = tmp_path / "twobells-deploy.lock"
     code, out, err = _locked(lock, path=str(tmp_path / "nothing"))
@@ -1357,8 +1421,10 @@ def test_the_lock_is_where_only_root_can_make_it():
     [path] = re.findall(r"^LOCK=(\S+)$", _script("releases.sh"), re.M)
     assert Path(path).parent == Path("/run")
     lock = _function("releases.sh", "take_lock")
-    # Made if missing, never replaced or removed; opened only to read, and held on until the shell exits.
-    assert ': >>"$LOCK"\n  exec 9<"$LOCK"\n  if ! flock --nonblock 9; then\n' in lock
+    # Made if missing, root's alone, never replaced or removed; opened only to
+    # read, and held on until the shell exits.
+    assert ('(umask 077 && : >>"$LOCK")\n  chmod 600 "$LOCK"\n  exec 9<"$LOCK"\n'
+            "  if ! flock --nonblock 9; then\n") in lock
     for script in ("install.sh", "update.sh", "releases.sh"):
         text = _script(script)
         assert not re.search(r'(rm|install|mv|ln)\b[^\n]*"\$LOCK"', text), script
