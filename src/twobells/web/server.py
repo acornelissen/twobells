@@ -9,7 +9,8 @@ address, and so are event streams; a request's line, headers and body
 must all arrive within REQUEST_DEADLINE_S, and come to no more than
 MAX_REQUEST_BYTES. So a misbehaving client, or one sending its request a
 byte at a time, can't use up the threads, nor one sending huge headers
-the memory.
+the memory. One past its deadline is dropped unanswered; one past its
+bytes is answered 431 or 413, with nothing more of it read.
 
 Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
@@ -28,6 +29,7 @@ else the settings site's.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import hashlib
 import html
@@ -214,7 +216,8 @@ def _matches(header: str | None, etag: str) -> bool:
 
 class _TooBig(TimeoutError):
     """A request past its byte budget. A TimeoutError, as one past its
-    deadline is, so http.server closes the connection unanswered."""
+    deadline is, so http.server stops handling it; the handler then answers
+    it (431 or 413) and closes the connection."""
 
 
 class _Reads(io.RawIOBase):
@@ -239,6 +242,7 @@ class _Reads(io.RawIOBase):
             raise TimeoutError("request not in by its deadline")
         room = self._handler.unread
         if room <= 0:
+            self._handler.too_big = True
             raise _TooBig("request past its byte budget")
         self._connection.settimeout(min(self._timeout, left))
         try:
@@ -255,6 +259,8 @@ class _Handler(BaseHTTPRequestHandler):
     server: DashboardServer
     deadline = 0.0  # when this request must be in by, on time.monotonic()
     unread = 0  # the bytes this request may still send
+    too_big = False  # whether it tried to send more
+    headers_in = False  # whether its line and headers were all read
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
 
     def setup(self) -> None:
@@ -265,12 +271,33 @@ class _Handler(BaseHTTPRequestHandler):
     def handle_one_request(self) -> None:
         # http.server reads the request line and headers here, and the
         # handler any body; past the deadline or the byte budget a read
-        # raises TimeoutError, on which http.server closes the connection
-        # unanswered. HTTP/1.0: one request a connection, so what the
-        # buffer read ahead is this request's.
+        # raises TimeoutError, on which http.server stops, with nothing
+        # sent. Past the deadline it closes the connection unanswered; past
+        # the budget it is told why first. HTTP/1.0: one request a
+        # connection, so what the buffer read ahead is this request's.
         self.deadline = time.monotonic() + self.server.request_seconds
         self.unread = MAX_REQUEST_BYTES
+        self.too_big = self.headers_in = False
+        self.command = self.requestline = ""  # until the request line is read, as the answer looks at them
         super().handle_one_request()
+        if self.too_big:
+            self._too_big(413 if self.headers_in else 431)
+
+    def parse_request(self) -> bool:
+        parsed = super().parse_request()  # raises _TooBig, as any read, past the budget
+        self.headers_in = True
+        return parsed
+
+    def _too_big(self, status: int) -> None:
+        """The answer to a request past its byte budget, its headers (431)
+        or its body (413): a fixed phrase, nothing of the request, and the
+        connection closed. Nothing more of it is read; a browser gone by
+        now is no fault."""
+        self.close_connection = True
+        self.request_version = "HTTP/1.0"  # as send_error: the request's own may not have been read
+        with contextlib.suppress(OSError):  # the browser went away, or stopped reading
+            self._send(status, HTTPStatus(status).phrase.encode(), extra={"Connection": "close"},
+                       security=self._security_for(None))
 
     def version_string(self) -> str:
         return "twobells"  # no Python or OS version for anyone probing

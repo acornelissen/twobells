@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 from datetime import UTC, datetime
+from http import HTTPStatus
 
 import pytest
 
@@ -15,6 +16,7 @@ from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
+from twobells.web import server as server_module
 from twobells.web import settingsite
 from twobells.web.formpages import MAX_FORM_BODY
 from twobells.web.server import (
@@ -903,22 +905,123 @@ def send_and_read(sock, data):
     return reply
 
 
-def test_headers_past_the_request_byte_budget_are_dropped_unanswered_and_no_more_is_read(static_dir):
+def refusal(reply):
+    """(status line, headers by lower-case name, body) of a reply that closes the connection."""
+    head, _, body = reply.partition(b"\r\n\r\n")
+    status, *lines = head.decode("latin-1").split("\r\n")
+    return status, {name.lower(): value for name, _, value in (line.partition(": ") for line in lines)}, body
+
+
+def assert_refused(reply, status, phrase):
+    """`reply` is the short plain answer to an over-limit request: our headers, nothing of the request's."""
+    line, headers, body = refusal(reply)
+    assert line == f"HTTP/1.0 {status} {phrase}"
+    assert headers["connection"] == "close" and headers["content-type"] == "text/plain; charset=utf-8"
+    assert headers["content-length"] == str(len(body)) and body == phrase.encode()
+    assert headers["cache-control"] == "no-store"
+    for name, value in SECURITY.items():
+        assert headers[name.lower()] == value, name
+    assert b"MARK" not in reply  # nothing of what was sent
+
+
+def test_headers_past_the_request_byte_budget_are_refused_with_431_and_no_more_is_read(static_dir):
     """The audit's case: http.server takes 100 header lines of 64 KiB, about
     6.5 MB a request, all read and parsed before the outsider check, so 16
     such connections from one device took a test server from 51 MB to 440 MB
     (a Pi's unit has MemoryMax=128M). What the server reads, its reader's
-    read-ahead included, stays within MAX_REQUEST_BYTES."""
+    read-ahead included, stays within MAX_REQUEST_BYTES; then it says why, and closes."""
     running = start(static_dir)
-    line = b"X-A: " + b"a" * (64 * 1024 - 7) + b"\r\n"  # 64 KiB, the longest line http.server takes
+    line = b"X-A: MARK" + b"a" * (64 * 1024 - 11) + b"\r\n"  # 64 KiB, the longest line http.server takes
     try:
         sock, counted = counted_from(running)
         with sock:
             # With Host and the blank line, the 100 lines http.server takes: it read and answered them all.
             reply = send_and_read(sock, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n" + line * 98 + b"\r\n")
-        assert reply == b""
+        assert_refused(reply, 431, "Request Header Fields Too Large")
         assert counted.taken <= MAX_REQUEST_BYTES < 128 * 1024
         assert running.request("/healthz")[1] == b"ok"  # and the server still answers
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("path", ["/settings/login", "/settings/setup/api/begin", "/api/snapshot"])
+def test_a_body_past_the_request_byte_budget_is_refused_with_413_and_no_more_is_read(static_dir, path):
+    # Each part within its own limit, but not both: long headers, then the largest body the path takes.
+    running = start(static_dir)
+    largest = settingsite.max_body(path) if settingsite.owns(path) else MAX_FORM_BODY
+    body = b"a=MARK" + b"b" * (largest - 6)
+    request = form_post(path, body)
+    pad = b"X-Pad: " + b"a" * 1000 + b"\r\n"
+    head, blank, _ = request.partition(b"\r\n\r\n")
+    lines = (MAX_REQUEST_BYTES - len(head) - largest // 2) // len(pad)
+    request = head + b"\r\n" + pad * lines + blank[2:] + body
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, request)
+        if path == "/api/snapshot":  # the dashboard's API takes no POST, so reads no body
+            assert refusal(reply)[0] == "HTTP/1.0 405 Method Not Allowed"
+        else:
+            assert_refused(reply, 413, HTTPStatus(413).phrase)
+        assert counted.taken <= MAX_REQUEST_BYTES
+        assert running.request("/healthz")[1] == b"ok"
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("path", ["/settings/login", "/settings/setup/api/begin"])
+def test_a_length_past_the_cap_is_refused_with_413_before_any_body_is_sent(static_dir, path):
+    running = start(static_dir)
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            head = form_post(path, b"").replace(b"Content-Length: 0", b"Content-Length: 1000000000")
+            sock.sendall(head)
+            reply = b""
+            while chunk := sock.recv(65536):  # answered with nothing more sent
+                reply += chunk
+        line, headers, _ = refusal(reply)
+        assert line.startswith("HTTP/1.0 413 ") and headers["connection"] == "close"
+        assert counted.taken == len(head)
+    finally:
+        running.close()
+
+
+def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir):
+    """A browser posting too much keeps sending as the server stops reading:
+    the answer still reaches it, and the server lets go within its deadline."""
+    running = start(static_dir, limits={"request_seconds": 3})
+    try:
+        request = form_post("/settings/login", b"a=" + b"b" * (MAX_FORM_BODY - 2), MAX_REQUEST_BYTES // 2)
+        with socket.create_connection(("127.0.0.1", running.port), timeout=10) as sock:
+            began = time.monotonic()
+            reply = send_and_read(sock, request + b"x" * (4 * 1024 * 1024))  # and on, well past the request
+        assert_refused(reply, 413, HTTPStatus(413).phrase)
+        assert time.monotonic() - began < 5
+        assert running.request("/healthz")[1] == b"ok"
+    finally:
+        running.close()
+
+
+def test_a_client_gone_before_its_refusal_is_let_go_quietly(static_dir, monkeypatch, caplog):
+    caplog.set_level("DEBUG")
+    real = server_module._Handler._head
+
+    def gone(self, status, *args, **kwargs):
+        if status in (413, 431):
+            raise BrokenPipeError("the browser went away")
+        return real(self, status, *args, **kwargs)
+
+    monkeypatch.setattr(server_module._Handler, "_head", gone)
+    running = start(static_dir)
+    line = b"X-A: " + b"a" * (64 * 1024 - 7) + b"\r\n"
+    try:
+        sock, _ = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n" + line * 3 + b"\r\n")
+        assert reply == b""
+        assert running.request("/healthz")[1] == b"ok"
+        assert not [record for record in caplog.records if record.levelname in ("WARNING", "ERROR")]
     finally:
         running.close()
 
