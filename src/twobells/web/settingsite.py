@@ -448,8 +448,10 @@ class SettingsSite:
         return None
 
     def _get(self, method: str, path: str, query: str, headers: Headers) -> Reply:
-        """A GET or HEAD. Only a GET of a page is the owner opening it, so only that extends the session."""
-        opened = method == "GET"
+        """A GET or HEAD. Only a GET of a page the browser opened itself is
+        the owner opening it (opened_by_browser), so only that extends the
+        session; the page is served the same either way."""
+        opened = method == "GET" and opened_by_browser(headers)
         tab = self._tab(path)
         if tab == "overview":  # drawn for this request: the wall tablet's address is the one the browser used
             reply = self._pages.settings_page(headers, Overview(self, headers.get("Host")), self._title(tab))
@@ -593,6 +595,29 @@ class SettingsSite:
             log.warning("Can't tell whether the dashboard is updating: %s", type(error).__name__)
             return False
 
+
+
+# What a browser says of a page it opens itself (typed, a bookmark, a link
+# or a redirect from this site), by its Fetch Metadata headers. Without
+# them (an older browser, curl) it is taken as opened too.
+_OPENED_BY = {
+    "Sec-Fetch-Site": ("same-origin", "none"),
+    "Sec-Fetch-Mode": ("navigate",),
+    "Sec-Fetch-Dest": ("document",),
+}
+
+
+def opened_by_browser(headers: Headers) -> bool:
+    """Whether a page's GET is the browser opening it, not another page
+    fetching it: each Fetch Metadata header absent, or sent once with one
+    of the plain values in _OPENED_BY, exactly. Another web page on the
+    same address, on another port, is the same site, so its <img> of a
+    page comes with the session's cookie: it says same-site and image."""
+    for name, allowed in _OPENED_BY.items():
+        values = headers.get_all(name)
+        if values is not None and (len(values) != 1 or values[0] not in allowed):
+            return False
+    return True
 
 
 def _query(query: str) -> dict[str, str]:

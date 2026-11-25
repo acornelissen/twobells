@@ -480,6 +480,63 @@ def test_a_form_with_its_token_keeps_the_browser_signed_in_even_when_refused(sig
     assert signed("GET", "/settings", cookie=cookie)[0].status == 200
 
 
+def framed_get(running, path, pairs, cookie):
+    """GET with exactly these extra (name, value) header pairs, repeats and all."""
+    conn = http.client.HTTPConnection("127.0.0.1", running.port, timeout=10)
+    conn.putrequest("GET", path, skip_host=True, skip_accept_encoding=True)
+    conn.putheader("Host", f"localhost:{running.port}")
+    conn.putheader("Cookie", cookie)
+    for name, value in pairs:
+        conn.putheader(name, value)
+    conn.endheaders()
+    response = conn.getresponse()
+    text = response.read().decode()
+    conn.close()
+    return response, text
+
+
+# What a browser sends opening a page itself: typed, from a bookmark, a link or a redirect here.
+OPENED = [
+    [],  # a browser too old to say, or curl
+    [("Sec-Fetch-Site", "none"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "document")],
+    [("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "document"),
+     ("Sec-Fetch-User", "?1")],
+    [("Sec-Fetch-Site", "same-origin")],
+]
+# What another page fetches of it, or anything not plainly one of those.
+FETCHED = [
+    [("Sec-Fetch-Site", "same-site"), ("Sec-Fetch-Mode", "no-cors"), ("Sec-Fetch-Dest", "image")],  # another port's <img>
+    [("Sec-Fetch-Site", "same-site"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "document")],
+    [("Sec-Fetch-Site", "cross-site"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "document")],
+    [("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Mode", "cors"), ("Sec-Fetch-Dest", "empty")],  # a fetch()
+    [("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Mode", "no-cors"), ("Sec-Fetch-Dest", "script")],
+    [("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Dest", "iframe")],
+    [("Sec-Fetch-Mode", "no-cors")],
+    [("Sec-Fetch-Dest", "image")],
+    [("Sec-Fetch-Site", "Same-Origin")],
+    [("Sec-Fetch-Site", "same-origin "), ("Sec-Fetch-Mode", "navigate,")],
+    [("Sec-Fetch-Site", "same-origin, none")],
+    [("Sec-Fetch-Site", "")],
+    [("Sec-Fetch-Site", "none"), ("Sec-Fetch-Site", "none")],
+    [("Sec-Fetch-Mode", "navigate"), ("Sec-Fetch-Mode", "navigate")],
+]
+
+
+@pytest.mark.parametrize("path", ["/settings/general", "/settings/setup/"])
+def test_only_opening_a_page_keeps_the_browser_signed_in_not_another_page_fetching_it(signed, path):
+    cookie, _ = signed.sign_in()
+    for pairs in OPENED:
+        signed.clock.now += SESSION_SECONDS - 60
+        response, _ = framed_get(signed, path, pairs, cookie)
+        assert response.status == 200 and renewed(response, cookie), pairs
+    signed.clock.now += SESSION_SECONDS - 120
+    for pairs in FETCHED:
+        response, text = framed_get(signed, path, pairs, cookie)
+        assert response.status == 200 and not renewed(response, cookie), pairs  # served all the same
+    signed.clock.now += 120
+    assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
 def test_signing_out_after_a_long_session_still_ends_it(signed):
     cookie, csrf = signed.sign_in()
     signed.clock.now += SESSION_SECONDS - 60
