@@ -3,6 +3,10 @@
 # the date fails here, not at the next push). Nothing here publishes anything or
 # holds a write token. The jobs run the same mise tasks as a laptop does
 # (mise.toml), so "it passes here" means the same thing in both places.
+#
+# data.yml also calls it, for the commit of the pull request it opened (a pull
+# request opened with a workflow's own token starts no CI). Called, every job
+# checks out that commit, and has no more than the caller's read-only token.
 name: CI
 
 on:
@@ -11,11 +15,19 @@ on:
   pull_request:
   schedule:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_call:
+    inputs:
+      ref:
+        description: The full SHA of the commit to test
+        type: string
+        required: true
 
 permissions: {}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Called, github.ref is the caller's (main), so the commit names the group:
+  # a push to main mustn't queue behind or cancel a refresh's run.
+  group: ci-${{ inputs.ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -35,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
@@ -60,6 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
@@ -82,6 +96,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
         with:
@@ -120,6 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:

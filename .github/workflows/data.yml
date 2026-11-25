@@ -3,20 +3,26 @@
 # itself changed, opens a pull request for review. It never pushes to main.
 # A refresh that only moves the "downloaded <date>" header line is dropped.
 #
-# Two jobs, so that nothing which downloads or runs code holds a write token:
+# Four jobs, so that nothing which downloads or runs code holds a write token:
 #   build    read-only: rebuilds, tests against the new data and hands the
 #            changed files on as an artefact
 #   propose  only if the data changed: checks the artefact holds nothing but
 #            the expected CSV files, then opens the pull request. It runs no
 #            project code, no mise and no pip.
+#   ci       only if a pull request is open: ci.yml, read-only, on the pull
+#            request's commit
+#   report   puts ci's result on that commit as the "CI" status. It may set
+#            statuses and nothing else, checks nothing out and runs no
+#            project code.
 #
 # One-time setup by the repo owner:
 #   Settings > Actions > General > Workflow permissions: tick "Allow GitHub
 #   Actions to create and approve pull requests", or the PR step fails.
 #
 # A pull request opened with the workflow's own token doesn't start CI (a
-# GitHub rule against loops). The suite runs here before the PR is opened;
-# to run CI on the PR as well, close and reopen it.
+# GitHub rule against loops), so this run calls CI itself. The checks of a
+# called workflow belong to the commit this run started on (main), not to
+# the pull request's, so report puts the result where the pull request shows it.
 name: Refresh NaPTAN data
 
 on:
@@ -93,6 +99,11 @@ jobs:
     permissions:
       contents: write # push the PR branch (never main)
       pull-requests: write # open the PR
+    outputs:
+      # The open pull request (none if there is no change to propose) and
+      # its commit as pushed: ci tests that commit and report marks it.
+      pull-request: ${{ steps.pr.outputs.pull-request-number }}
+      sha: ${{ steps.pr.outputs.pull-request-head-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -136,6 +147,7 @@ jobs:
       # Rather than gh pr create: it pushes the branch with its own scoped
       # auth (checkout keeps no credentials) and makes signed commits.
       - name: Open a pull request
+        id: pr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
           branch: data/naptan-refresh
@@ -154,4 +166,49 @@ jobs:
 
             Before merging, skim the diff: stations added or gone, positions
             that jumped, bus areas that vanished. CI does not start on its
-            own for this PR; close and reopen it to run CI.
+            own for this PR: the workflow run calls it and puts the result
+            on the PR's commit as the "CI" status.
+
+  ci:
+    # Runs the tests on what the pull request holds, so it gets no more than
+    # a read-only token (a called workflow's jobs can't have more than this
+    # job grants), and no secret is passed to it.
+    name: CI on the pull request
+    needs: propose
+    if: needs.propose.outputs.pull-request != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.propose.outputs.sha }}
+
+  report:
+    # Every outcome is reported, a failed or cancelled run as well, on the
+    # commit ci tested, never on whatever the branch holds by then.
+    name: Report CI on the pull request
+    needs: [propose, ci]
+    if: always() && needs.propose.outputs.pull-request != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write # the commit status, nothing else
+    steps:
+      - name: Set the CI status on the pull request's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.propose.outputs.sha }}
+          RESULT: ${{ needs.ci.result }}
+        run: |
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The pull request's commit is not a full SHA"
+            exit 1
+          fi
+          case "$RESULT" in
+            success) state=success description="Passed in the data refresh run" ;;
+            failure) state=failure description="Failed in the data refresh run" ;;
+            *) state=error description="Did not finish in the data refresh run" ;;
+          esac
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state="$state" -f context=CI -f description="$description" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
+          echo "CI $state on $SHA"

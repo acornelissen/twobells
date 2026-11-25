@@ -1594,7 +1594,7 @@ def test_ci_and_the_release_install_only_the_tools_mise_lock_pins():
 
 def test_the_data_refresh_holds_its_write_token_only_where_nothing_but_the_pull_request_runs():
     jobs = _jobs(DATA_REFRESH)
-    assert list(jobs) == ["build", "propose"]
+    assert list(jobs) == ["build", "propose", "ci", "report"]
     assert "\npermissions: {}\n" in DATA_REFRESH
     # build downloads NaPTAN, the toolchain and the dev tools, and runs the tests: it may only read.
     build, propose = jobs["build"], jobs["propose"]
@@ -1679,6 +1679,102 @@ def test_the_data_refresh_refuses_an_artefact_holding_anything_else(tmp_path, na
 def test_the_data_refresh_refuses_an_empty_artefact(tmp_path):
     result = _check_artefact(tmp_path)
     assert result.returncode != 0 and result.stdout.startswith("::error::")
+
+
+def test_ci_called_tests_the_commit_it_is_given_in_every_job_with_a_read_only_token():
+    on = CI[CI.index("\non:\n"):CI.index("\npermissions:")]
+    # Pushes to main, pull requests and the weekly run start it as before; data.yml calls it with a commit.
+    assert on.startswith("\non:\n  push:\n    branches: [main]\n  pull_request:\n  schedule:\n")
+    called = on[on.index("\n  workflow_call:\n"):]
+    assert "\n      ref:\n" in called and "\n        type: string\n" in called and "\n        required: true\n" in called
+    jobs = _jobs(CI)
+    assert list(jobs) == ["lint", "test", "package", "docker"]
+    for name, job in jobs.items():
+        # Each job checks out the commit given (none given: the one the run started on), keeping no credentials.
+        assert job.count("actions/checkout@") == 1, name
+        checkout = re.search(r"- uses: actions/checkout@[0-9a-f]{40} # v\S+\n        with:\n((?:          .*\n)+)", job)
+        assert [line.strip() for line in checkout.group(1).splitlines()] == [
+            "ref: ${{ inputs.ref }}", "persist-credentials: false"], name
+        assert _permissions(job) == ["contents: read"], name
+    assert "\npermissions: {}\n" in CI and not re.search(r": write\b", CI) and "secrets." not in CI
+    # The input reaches checkout and the concurrency group, never a script. Called, github.ref is the
+    # caller's (main), so the commit names the group: main's own runs neither wait for it nor cancel it.
+    assert [line.strip() for line in CI.splitlines() if "inputs." in line] == [
+        "group: ci-${{ inputs.ref || github.ref }}", *["ref: ${{ inputs.ref }}"] * 4]
+    # Nothing is published, however it starts: the image is built, not pushed, and nothing signs in.
+    assert "push: false" in jobs["docker"] and "push: true" not in CI and "login" not in CI
+    assert "upload-artifact" not in CI
+
+
+def test_the_data_refresh_runs_ci_on_its_pull_request_read_only_and_without_secrets():
+    jobs = _jobs(DATA_REFRESH)
+    propose, ci, report = jobs["propose"], jobs["ci"], jobs["report"]
+    # propose hands on the pull request it opened and the commit it pushed, as the action gives them.
+    assert re.search(r"- name: Open a pull request\n        id: pr\n        uses: peter-evans/create-pull-request@", propose)
+    assert "      pull-request: ${{ steps.pr.outputs.pull-request-number }}\n" in propose
+    assert "      sha: ${{ steps.pr.outputs.pull-request-head-sha }}\n" in propose
+    # ci: only while a pull request is open, on its commit, from the workflow in the commit this run is on.
+    assert _needs(ci) == {"propose"}
+    assert "    if: needs.propose.outputs.pull-request != ''\n" in ci
+    assert re.search(r"^    uses: [.$]/\.github/workflows/ci\.yml\n", ci, re.M)
+    assert "      ref: ${{ needs.propose.outputs.sha }}\n" in ci
+    # A called workflow's jobs get no more than the calling job's token, so this one may only read.
+    assert _permissions(ci) == ["contents: read"]
+    assert "secrets:" not in DATA_REFRESH and "secrets." not in DATA_REFRESH  # nothing passed on, not even inherit
+    # report: may set statuses and nothing else; every outcome, on the commit ci was given.
+    assert _needs(report) == {"propose", "ci"}
+    assert "    if: always() && needs.propose.outputs.pull-request != ''\n" in report
+    assert _permissions(report) == ["statuses: write"]
+    assert "          SHA: ${{ needs.propose.outputs.sha }}\n" in report
+    assert "          RESULT: ${{ needs.ci.result }}\n" in report
+    # It checks nothing out, uses no action and runs nothing of the project's; what it is given comes in by env.
+    assert not re.search(r"^ +(- )?uses:", report, re.M)
+    for word in ("mise", "pip", "python", "uv ", "tools/", "npm", "node", "./", "git "):
+        assert word not in report, word
+    assert "${{" not in _run_block(report, CI_REPORT)
+
+
+CI_REPORT = "Set the CI status on the pull request's commit"
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+def _report_ci(tmp_path: Path, sha: str, result: str):
+    """Runs the report job's script as the runner would, with a gh that writes down what it was asked."""
+    import shutil
+    import subprocess
+
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    (folder / "gh").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_ARGS"\n')
+    (folder / "gh").chmod(0o755)
+    asked = tmp_path / "asked"
+    env = {"PATH": f"{folder}:/usr/bin:/bin", "GH_ARGS": str(asked), "GH_TOKEN": "token", "SHA": sha, "RESULT": result,
+           "GITHUB_REPOSITORY": "owner/repo", "GITHUB_SERVER_URL": "https://github.com", "GITHUB_RUN_ID": "42"}
+    script = _run_block(_jobs(DATA_REFRESH)["report"], CI_REPORT)
+    run = subprocess.run([shutil.which("bash") or "bash", "-e", "-o", "pipefail", "-c", script], env=env,
+                         capture_output=True, text=True)
+    return run, asked.read_text().splitlines() if asked.exists() else None
+
+
+@pytest.mark.parametrize("result, state", [
+    ("success", "success"), ("failure", "failure"), ("cancelled", "error"), ("skipped", "error"),
+])
+def test_the_data_refresh_puts_ci_s_result_on_the_commit_ci_tested(tmp_path, result, state):
+    run, asked = _report_ci(tmp_path, COMMIT, result)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert asked[:4] == ["api", "--method", "POST", f"repos/owner/repo/statuses/{COMMIT}"]
+    fields = dict(field.split("=", 1) for flag, field in zip(asked[4::2], asked[5::2], strict=True) if flag == "-f")
+    assert fields.pop("description")
+    assert fields == {"state": state, "context": "CI", "target_url": "https://github.com/owner/repo/actions/runs/42"}
+
+
+@pytest.mark.parametrize("sha", [
+    "", "main", COMMIT[:-1], COMMIT + "0", COMMIT.upper(), f"{COMMIT}\n", f"{COMMIT}/statuses/x", "../../../user/repos",
+])
+def test_the_data_refresh_reports_nothing_for_anything_but_a_full_commit_sha(tmp_path, sha):
+    run, asked = _report_ci(tmp_path, sha, "success")
+    assert run.returncode != 0 and run.stdout.startswith("::error::")
+    assert asked is None
 
 
 def _upgrade(*args: str, path: Path | None = None):
