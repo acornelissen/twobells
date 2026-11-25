@@ -21,6 +21,9 @@ concurrency:
 env:
   # mise.toml sets up a venv and tasks; trust it without a prompt.
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # Every tool as mise.lock pins it by checksum, or none: a lock left behind
+  # by a change to mise.toml fails here, not at the next release.
+  MISE_LOCKED: "1"
 
 jobs:
   lint:
@@ -49,7 +52,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        # mise.toml's pythons as it names them, so each is one mise.lock pins.
+        python: ["3.11", "3.12.14", "3.13"]
     env:
       # Overrides mise.toml's python for this job only; node and the tasks stay as they are.
       MISE_PYTHON_VERSION: ${{ matrix.python }}
@@ -66,7 +70,7 @@ jobs:
       - name: Check the venv runs the Python under test
         env:
           WANT: ${{ matrix.python }}
-        run: .venv/bin/python -c 'import os, sys; v = "%d.%d" % sys.version_info[:2]; print(sys.version); assert v == os.environ["WANT"], v'
+        run: .venv/bin/python -c 'import os, platform; v = platform.python_version(); want = os.environ["WANT"]; print(v); assert v == want or v.startswith(want + "."), v'
       - run: mise run test
 
   package:

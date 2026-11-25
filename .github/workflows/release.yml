@@ -67,6 +67,9 @@ concurrency:
 env:
   IMAGE: ghcr.io/acornelissen/twobells
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # Every tool as mise.lock pins it by checksum: with no lock, or a tool the
+  # lock doesn't pin for this platform, mise fails rather than resolve one.
+  MISE_LOCKED: "1"
 
 jobs:
   verify:

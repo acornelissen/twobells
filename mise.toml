@@ -1,13 +1,20 @@
 # Tool versions and tasks for working on the board. `mise install`, then
 # `mise run setup` once; `mise tasks` lists the rest.
+#
+# mise.lock pins each tool's download by checksum, for CI's Linux and a Mac,
+# and CI and the release install nothing it doesn't pin. After changing a
+# tool here, run `mise lock` (it keeps the lock's platforms) and commit both.
 [tools]
-python = "3.12.14"  # the Dockerfile's python:3.12-slim
+# The first is the Dockerfile's python:3.12-slim and the one the venv uses;
+# the others are here so mise.lock pins every Python CI tests
+# (ci.yml's and release.yml's matrices name these three).
+python = ["3.12.14", "3.11", "3.13"]
 ruff = "0.16.10"    # for editors and the shell; keep in step with ruff in pyproject's dev group
 node = "22.22.3"    # only for the JS behaviour tests, which skip without node
 uv = "0.12.24"      # installs the package and dev tools from uv.lock
 
 [env]
-# The project's venv, made with the python above on first use and active in
+# The project's venv, made with the first python above on first use and active in
 # the shell. Tasks still name .venv/bin/ outright, so a venv activated by hand
 # elsewhere can't take their place on PATH.
 _.python.venv = { path = ".venv", create = true }

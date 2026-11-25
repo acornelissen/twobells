@@ -1047,9 +1047,9 @@ def _needed_on_the_pi() -> set[str]:
     return needed
 
 
-def _jobs() -> dict[str, str]:
-    """release.yml's jobs, by name, each as its text."""
-    body = RELEASE[RELEASE.index("\njobs:\n") + len("\njobs:\n"):]
+def _jobs(workflow: str = RELEASE) -> dict[str, str]:
+    """A workflow's jobs (release.yml's unless given), by name, each as its text."""
+    body = workflow[workflow.index("\njobs:\n") + len("\njobs:\n"):]
     parts = re.split(r"\n(?=  [a-z][\w-]*:\n)", body)
     return {part.split(":", 1)[0].strip(): part for part in parts}
 
@@ -1134,6 +1134,47 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
         assert not re.search(r"(^|[\s;&|(])git\s", _script(name), re.M), name
     # The release checks the scripts are in the tarball it built.
     assert "for script in install.sh update.sh upgrade.sh; do" in RELEASE
+
+
+# The workflows' toolchain and gates: what CI, the release and the data refresh install, and who holds a write token.
+
+WORKFLOWS = ROOT / ".github" / "workflows"
+CI = (WORKFLOWS / "ci.yml").read_text()
+DATA_REFRESH = (WORKFLOWS / "data.yml").read_text()
+LOCK_PLATFORMS = {"linux-x64", "linux-arm64", "macos-arm64"}  # CI's runners and the owner's Mac
+
+
+def _matrix_pythons(job: str) -> list[str]:
+    return json.loads(re.search(r"^        python: (\[.*\])$", job, re.M).group(1))
+
+
+def test_ci_and_the_release_install_only_the_tools_mise_lock_pins():
+    import tomllib
+
+    tools = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]
+    lock = tomllib.loads((ROOT / "mise.lock").read_text())
+    # Every tool, and every Python mise.toml lists, pinned by checksum on each platform.
+    for tool, wanted in tools.items():
+        for request in [wanted] if isinstance(wanted, str) else wanted:
+            entries = [entry for entry in lock["tools"][tool] if request in entry["specifiers"]]
+            assert len(entries) == 1, (tool, request)
+            platforms = {key.removeprefix("platforms."): value
+                         for key, value in entries[0].items() if key.startswith("platforms.")}
+            assert set(platforms) >= LOCK_PLATFORMS, (tool, request)
+            for platform in LOCK_PLATFORMS:
+                assert re.fullmatch(r"sha256:[0-9a-f]{64}", platforms[platform]["checksum"]), (tool, platform)
+                assert platforms[platform]["url"].startswith("https://"), (tool, platform)
+    # The first Python is the venv's, the Dockerfile's minor version; CI's matrices name mise.toml's Pythons.
+    assert tools["python"][0].startswith(re.search(r"^FROM python:(\d+\.\d+)-slim", DOCKERFILE, re.M).group(1) + ".")
+    assert sorted(_matrix_pythons(_jobs(CI)["test"])) == sorted(tools["python"])
+    # Each workflow that sets up mise does it locked, with the one mise version the lock was made for.
+    versions = set()
+    for workflow in (CI, RELEASE, DATA_REFRESH):
+        for job in _jobs(workflow).values():
+            if "jdx/mise-action@" in job:
+                assert 'MISE_LOCKED: "1"' in workflow, job.split(":")[0]
+                versions |= set(re.findall(r"^          version: (\S+)$", job, re.M))
+    assert len(versions) == 1
 
 
 def _upgrade(*args: str, path: Path | None = None):

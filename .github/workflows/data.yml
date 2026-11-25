@@ -25,6 +25,7 @@ concurrency:
 
 env:
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_LOCKED: "1" # every tool as mise.lock pins it, or none
 
 jobs:
   refresh:

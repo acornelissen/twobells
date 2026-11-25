@@ -13,7 +13,7 @@ Thanks for helping. Bug reports and small, focused changes are the easiest to ta
 
 ## Set up
 
-With [mise](https://mise.jdx.dev), which pins python, ruff, node and uv in `mise.toml`:
+With [mise](https://mise.jdx.dev), which pins python, ruff, node and uv in `mise.toml`, and their downloads by checksum in `mise.lock`:
 
 ```bash
 mise install          # the pinned tools
@@ -21,6 +21,8 @@ mise run setup        # .venv with the package and its dev tools, as uv.lock pin
 ```
 
 `mise tasks` lists the rest. Without mise: `uv sync --locked`, then `uv run pytest`.
+
+After changing a tool in `mise.toml`, run `mise lock` and commit `mise.lock` with it. CI and the release install only what the lock pins (`MISE_LOCKED`), for Linux on x64 and arm64 and for a Mac on Apple silicon; `mise lock` keeps those platforms. `mise.toml` lists every Python the tests run on in CI, so the lock pins those too.
 
 ## Run it
 
