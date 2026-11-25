@@ -16,8 +16,12 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 
 - On a Pi each release is installed in a folder of its own, and the one before is kept: `/opt/twobells/venv` is now a link to the release in use, and `/opt/twobells/previous` to the one before. Your first update moves the existing install into `/opt/twobells/releases` by itself. If a service crashes on the new release, `update.sh` goes back to the one before and says so.
 - `update.sh` no longer stops the board's timer while it works: the release in use isn't touched until the switch.
-- The settings keep you signed in while you use them: a browser is signed out after 12 hours without opening a settings page, and a week after signing in at most. Signing in takes you back to the settings page you were on.
-- Browser Back in the wizard moves back one step.
+- `update.sh` now draws the e-paper board once on the new release and goes back to the release before if that fails or takes over five minutes, as it does when a service crashes. It then draws the board on the release from before, and says which service failed; the panel itself may be at fault. It stops before switching if the SD card has less than 10 MB free.
+- On e-paper, the station board look's route column now takes the width of the longest route, up to four characters, so `201A` and `N199` are no longer cut to `20…` and `N1…`. Boards with routes of three characters or fewer look as before.
+- The monthly NaPTAN refresh's pull request now shows whether CI passed: the refresh runs CI on the pull request's commit with a read-only token and no secrets, and a job that may only set commit statuses puts the result there as **CI**.
+- Dependabot now proposes weekly updates to `uv.lock`. ruff stays out, as `pyproject.toml` and `mise.toml` pin it together.
+- The settings keep you signed in while you use them: a browser is signed out after 12 hours without opening a settings page, saving, or taking a step in the wizard, and a week after signing in at most. A tab left open doesn't count: its stylesheet, scripts and the wizard's background checks don't keep you signed in. Signing in takes you back to the settings page you were on.
+- Browser Back and Forward in the wizard move one step. Forward only returns to a step you have already passed, and not once you have changed an earlier answer; after saving, one Back leaves the wizard.
 - Trains set up with no rail key now load (they used to stop the board with a missing-key error). The Overview and Keys page show the key as needed.
 - A feed that fails now shows one plain sentence on the dashboard ("The service refused the key; check it in Settings > Keys", "Can't reach the service", "The service is having trouble", or no timetable yet) instead of the error's own text. The settings Overview shows the same sentence for the dashboard's feeds; the exact error is in the log.
 - A release now runs the tests on Python 3.11, 3.12 and 3.13, as CI does, and nothing is built or published unless all three pass. The release's wheel is dated by the tagged commit, so the same tag builds the same wheel.
@@ -26,6 +30,11 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 
 - An HDMI screen no longer stays black on the Set me up, Board off or reset code page after it restarts.
 - A full or read-only SD card no longer stops a screen. The board keeps showing departures and says once in its log that it can't save. It makes no TransportAPI lookup it can't record as spent, so the daily budget holds.
+- On e-paper, a run that can't save its state (a full or read-only SD card) still draws the board, then fails, so `systemctl status twobells` shows the problem. It keeps its last redraw in memory, in `/run/twobells`, so the panel isn't redrawn every minute while the card can't be written.
+- A screen that has just started marks each section "not updating" until its first check since the start succeeds, so a Pi that boots with its clock behind no longer shows hours-old departures as current.
+- A "not updating" mark showing when a section's checking times end now stays until a check succeeds, instead of disappearing at the end of the window.
+- The "Add the rail key in Settings > Keys" line now fits every panel at every text size, drawn in smaller type where the panel is too narrow.
+- `install.sh` and `update.sh` no longer run two at once: a second one stops straight away and says another is running, rather than removing the release the first is building.
 - A damaged bus budget, forecast, departure or bus position in the board's saved state no longer stops the board or fills the log: it is dropped when the board starts, with one warning.
 - A spent TransportAPI budget is warned of once, not on every check.
 - The e-paper board no longer rewrites its unchanged state file every minute.
@@ -48,9 +57,10 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 
 ### Security
 
-- The web server now drops a request whose line, headers and body come to more than 96 kB. Before, one device on the network could send megabytes of headers over its 16 connections until a Pi's web service ran out of memory and restarted.
+- The web server now reads no more of a request than 96 kB of line, headers and body, answers one that goes past with "Request Header Fields Too Large" (431) or "Content Too Large" (413), and closes the connection. Before, one device on the network could send megabytes of headers over its 16 connections until a Pi's web service ran out of memory and restarted.
 - The web server now refuses a `Host` header with anything but ASCII letters, digits and hyphens, or with anything but a port after the name.
-- `[train] base_url` and `[bus] base_url` must now be https addresses. The board won't start with an http one, which would send your key in clear.
+- The web server no longer looks up the computer's own name as it starts, which on a Pi could ask the router's DNS.
+- `[train] base_url` and `[bus] base_url` must now be https addresses. The board won't start with an http one, which would send your key in clear, and a key test now says the same and sends nothing, on the Keys page, in the wizard and through a Pi's fetch service.
 - The dashboard, which needs no sign-in, no longer shows a failing feed's raw error text (addresses, resolver errors or internal hints) to anyone on the network.
 - The install and update scripts no longer import Python modules from the folder they are run from, as root, and set their own umask, so the app is readable by the services however `sudo` is set up.
 - The timetable, e-paper and screen services are locked down further: native system calls only, other users' processes hidden, and a limit on their threads.
