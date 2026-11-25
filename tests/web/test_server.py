@@ -15,9 +15,13 @@ from twobells.dashboard.performance import Performance, Setup
 from twobells.dashboard.snapshot import Hub
 from twobells.settings.installs import install_named
 from twobells.settings.store import Store
+from twobells.web import settingsite
+from twobells.web.formpages import MAX_FORM_BODY
 from twobells.web.server import (
     MAX_CONNECTIONS,
+    MAX_HEADER_BYTES,
     MAX_PER_CLIENT,
+    MAX_REQUEST_BYTES,
     MAX_STREAMS,
     MAX_STREAMS_PER_CLIENT,
     DashboardApp,
@@ -860,6 +864,110 @@ def test_the_deadline_is_for_each_request_not_the_connection(static_dir):
         conn.close()
     finally:
         running.close()
+
+
+class Counted(socket.socket):
+    """The server's end of a connection, counting the bytes it takes off the wire."""
+
+    taken = 0
+
+    def recv_into(self, buffer, nbytes=0, flags=0):
+        got = super().recv_into(buffer, nbytes, flags)
+        self.taken += got
+        return got
+
+
+def counted_from(running, address="192.168.1.66"):
+    """A connection to the server, as connect_from, and the server's end of it, counted."""
+    ours, theirs = socket.socketpair()
+    ours.settimeout(5)
+    counted = Counted(fileno=theirs.detach())
+    running.server.process_request(counted, (address, 50000))
+    return ours, counted
+
+
+def send_and_read(sock, data):
+    """Send `data` from a thread of its own (the server may stop reading part
+    way), and read what comes back until the server closes the connection."""
+    def send():
+        with contextlib.suppress(OSError):
+            sock.sendall(data)
+
+    sender = threading.Thread(target=send, daemon=True)
+    sender.start()
+    reply = b""
+    with contextlib.suppress(ConnectionResetError):
+        while chunk := sock.recv(65536):
+            reply += chunk
+    sender.join(5)
+    return reply
+
+
+def test_headers_past_the_request_byte_budget_are_dropped_unanswered_and_no_more_is_read(static_dir):
+    """The audit's case: http.server takes 100 header lines of 64 KiB, about
+    6.5 MB a request, all read and parsed before the outsider check, so 16
+    such connections from one device took a test server from 51 MB to 440 MB
+    (a Pi's unit has MemoryMax=128M). What the server reads, its reader's
+    read-ahead included, stays within MAX_REQUEST_BYTES."""
+    running = start(static_dir)
+    line = b"X-A: " + b"a" * (64 * 1024 - 7) + b"\r\n"  # 64 KiB, the longest line http.server takes
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            # With Host and the blank line, the 100 lines http.server takes: it read and answered them all.
+            reply = send_and_read(sock, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n" + line * 98 + b"\r\n")
+        assert reply == b""
+        assert counted.taken <= MAX_REQUEST_BYTES < 128 * 1024
+        assert running.request("/healthz")[1] == b"ok"  # and the server still answers
+    finally:
+        running.close()
+
+
+def form_post(path, body, padding=0):
+    """A same-origin form POST, its line and headers made `padding` bytes longer."""
+    head = (f"POST {path} HTTP/1.1\r\nHost: localhost\r\nOrigin: http://localhost\r\n"
+            f"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\n")
+    if padding:
+        head += "X-Pad: " + "a" * (padding - len("X-Pad: \r\n")) + "\r\n"
+    return head.encode() + b"\r\n" + body
+
+
+def test_the_largest_form_with_the_longest_headers_allowed_is_still_answered(static_dir):
+    running = start(static_dir)
+    body = b"a=" + b"b" * (MAX_FORM_BODY - 2)
+    request = form_post("/settings/login", body)
+    request = form_post("/settings/login", body, MAX_HEADER_BYTES - (len(request) - len(body)))
+    assert len(request) == MAX_HEADER_BYTES + MAX_FORM_BODY
+    try:
+        sock, _ = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, request)
+        assert reply.startswith(b"HTTP/1.0 ") and not reply.startswith(b"HTTP/1.0 413 ")
+    finally:
+        running.close()
+
+
+def test_the_budget_holds_the_largest_body_the_settings_take():
+    for path in ("/settings/login", "/settings/keys", "/settings/setup/api/finish"):
+        assert settingsite.max_body(path) <= MAX_REQUEST_BYTES - MAX_HEADER_BYTES
+
+
+def test_a_stream_writes_far_past_the_request_byte_budget(server):
+    """The budget is for what a request sends: a stream only writes."""
+    conn, response = server.stream()
+    try:
+        read_block(response)
+        read_block(response)
+        sent = 0
+        for n in range(4):
+            server.app.hub.publish("weather", {"n": n, "rows": ["x" * 1000] * 40})
+            block = read_block(response)
+            while block == [": ping"]:
+                block = read_block(response)
+            sent += len(block[2])
+        assert sent > 1.5 * MAX_REQUEST_BYTES
+    finally:
+        conn.close()
 
 
 def test_a_stream_outlasts_the_request_deadline(static_dir):

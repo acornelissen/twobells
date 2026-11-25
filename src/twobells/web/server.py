@@ -6,8 +6,10 @@ a local host (or one in allowed_hosts), in one Host header, which blocks
 DNS rebinding from outside websites; API calls from another site's page
 are refused too. Connections are capped, in all and from any one
 address, and so are event streams; a request's line, headers and body
-must all arrive within REQUEST_DEADLINE_S. So a misbehaving client, or
-one sending its request a byte at a time, can't use up the threads.
+must all arrive within REQUEST_DEADLINE_S, and come to no more than
+MAX_REQUEST_BYTES. So a misbehaving client, or one sending its request a
+byte at a time, can't use up the threads, nor one sending huge headers
+the memory.
 
 Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
@@ -47,9 +49,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..dashboard.snapshot import SnapshotSource
+from ..setup import api as setupapi
 from ..version import about
 from . import settingsite
 from .auth import outsider, private_address
+from .formpages import MAX_FORM_BODY
 
 if TYPE_CHECKING:
     from ..dashboard.performance import Performance
@@ -68,6 +72,10 @@ MAX_STREAMS = 12
 MAX_STREAMS_PER_CLIENT = 4
 REQUEST_TIMEOUT_S = 10  # the longest one read waits
 REQUEST_DEADLINE_S = 15  # the longest a request's line, headers and body take all told
+# A request's line and headers: a browser's are a few kB, the wizard's no more; nginx allows 32 kB.
+MAX_HEADER_BYTES = 32 * 1024
+# The most a request may send: its line and headers, and the largest body a POST may have.
+MAX_REQUEST_BYTES = MAX_HEADER_BYTES + max(MAX_FORM_BODY, setupapi.MAX_BODY)
 MAX_PATH = 512
 HEARTBEAT_S = 15.0
 STREAM_SECONDS = 30 * 60
@@ -204,9 +212,16 @@ def _matches(header: str | None, etag: str) -> bool:
     return "*" in tags or etag in tags or f"W/{etag}" in tags
 
 
+class _TooBig(TimeoutError):
+    """A request past its byte budget. A TimeoutError, as one past its
+    deadline is, so http.server closes the connection unanswered."""
+
+
 class _Reads(io.RawIOBase):
     """A connection's reads, none waiting past its request's deadline, so a
-    client sending its request a byte at a time lets go of its thread then.
+    client sending its request a byte at a time lets go of its thread then,
+    and none taking more than the request's byte budget off the wire, so
+    neither http.server nor the buffer in front of this holds more of it.
     Only reads: an event stream, which only writes, runs on."""
 
     def __init__(self, connection: socket.socket, handler: _Handler, timeout: float) -> None:
@@ -222,17 +237,24 @@ class _Reads(io.RawIOBase):
         left = self._handler.deadline - time.monotonic()
         if left <= 0:
             raise TimeoutError("request not in by its deadline")
+        room = self._handler.unread
+        if room <= 0:
+            raise _TooBig("request past its byte budget")
         self._connection.settimeout(min(self._timeout, left))
         try:
-            return self._connection.recv_into(buffer)
+            with memoryview(buffer) as view:
+                got = self._connection.recv_into(view[:room])
         finally:
             self._connection.settimeout(self._timeout)  # writes keep the usual timeout
+        self._handler.unread -= got
+        return got
 
 
 class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_S  # a client that stalls lets go of its thread
     server: DashboardServer
     deadline = 0.0  # when this request must be in by, on time.monotonic()
+    unread = 0  # the bytes this request may still send
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
 
     def setup(self) -> None:
@@ -242,9 +264,12 @@ class _Handler(BaseHTTPRequestHandler):
 
     def handle_one_request(self) -> None:
         # http.server reads the request line and headers here, and the
-        # handler any body; past the deadline a read raises TimeoutError,
-        # on which http.server closes the connection unanswered.
+        # handler any body; past the deadline or the byte budget a read
+        # raises TimeoutError, on which http.server closes the connection
+        # unanswered. HTTP/1.0: one request a connection, so what the
+        # buffer read ahead is this request's.
         self.deadline = time.monotonic() + self.server.request_seconds
+        self.unread = MAX_REQUEST_BYTES
         super().handle_one_request()
 
     def version_string(self) -> str:
