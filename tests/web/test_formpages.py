@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from twobells.settings.resetcodes import RESET_MAX_TRIES, ResetCodes
+from twobells.settings.resetcodes import RESET_MAX_TRIES, RESET_MAX_TRIES_ALL, ResetCodes
 from twobells.web.auth import MAX_FAILURES, TOO_COMMON, TOTAL_FAILURES, FormTokens, Lockout, PasswordStore, Sessions
 from twobells.web.formpages import (
     HTML,
@@ -493,6 +493,14 @@ def test_the_first_claim_refuses_a_common_password_before_spending_the_code(tmp_
     assert not host.password.is_set()
     assert host.reset(code).status == 303
     assert host.password.check(NEW_PASSWORD)
+
+
+def test_password_mistakes_never_count_against_the_codes_tries(host):
+    host.codes.issue(host.clock())
+    code = host.shown[-1]
+    for _ in range(RESET_MAX_TRIES_ALL + 1):  # more than would void the code, were they tries
+        assert host.reset(code, "short").status == 422
+    assert host.reset(code).status == 303
 
 
 def test_a_wrong_code_changes_nothing(host):
