@@ -2089,3 +2089,88 @@ def test_a_saved_departure_that_doesnt_read_back_is_warned_of_once_not_every_tic
             result = run_once(board, state, FakeScreen(), saturday + timedelta(seconds=second))
     assert len(caplog.records) == 1
     assert [r.left for r in result.view.section("train").rows] == ["07:30"]
+
+
+# --- After a start, saved departures aren't trusted until fetched: the clock may be wrong ---
+# A Pi with no clock battery can boot with its clock near when it last saved,
+# so departures saved hours ago would read as minutes old.
+
+
+def saved_a_minute_ago():
+    """The state a running board saved at 07:00, read back at 07:01 by the clock."""
+    trains, buses, board, display, state = setup()
+    trains.departures = [train("07:40")]
+    buses.departures = [bus("07:50")]
+    run_once(board, state, display, THU_0700)
+    return trains, buses, board, state
+
+
+def loop_results(board, state, start, ticks, scrolling, **kwargs):
+    results = []
+    wall = WallClock(1000.0)
+    run_loop(board, state, ScrollingScreen() if scrolling else FakeScreen(), endless(start, 1), 1, ticks=ticks,
+             sleep=wall.sleep, frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall,
+             on_tick=lambda now, result: results.append(result), **kwargs)
+    return results
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_started_screen_marks_saved_departures_until_a_fetch_succeeds(scrolling):
+    trains, buses, board, state = saved_a_minute_ago()
+    trains.error = OSError("network down")
+    results = loop_results(board, state, THU_0700 + timedelta(minutes=1), 3, scrolling)
+    assert trains.calls == 1  # not due yet: nothing extra fetched for the start
+    for result in results:
+        assert result.view.section("train").stale and result.view.section("bus").stale
+        assert [r.left for r in result.view.section("train").rows] == ["07:40"]  # still shown, marked
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_started_screen_unmarks_each_source_as_its_first_fetch_succeeds(scrolling):
+    trains, buses, board, state = saved_a_minute_ago()
+    # Trains are due at 07:01:48 (2 minutes, less the timer's slack); buses not until 07:04:48.
+    results = loop_results(board, state, THU_0700 + timedelta(seconds=100), 10, scrolling)
+    assert trains.calls == 2 and buses.calls == 1
+    assert results[0].view.section("train").stale
+    assert not results[-1].view.section("train").stale
+    assert results[-1].view.section("bus").stale  # not yet fetched since the start
+
+
+def test_a_screen_started_outside_the_windows_marks_what_it_saved():
+    # No fetch is possible until the window opens, and the clock that says the window is shut may be wrong.
+    trains, buses, board, state = saved_a_minute_ago()
+    friday_evening = datetime(2026, 10, 9, 21, 0)
+    trains.departures = [train("21:30")]
+    run_once(board, state, FakeDisplay(), friday_evening, prime=True)
+    results = loop_results(board, state, friday_evening + timedelta(minutes=1), 2, False)
+    assert trains.calls == 2  # the prime only
+    assert results[-1].view.section("train").stale
+
+
+def test_a_started_screen_shows_no_saved_notice_until_its_source_is_fetched():
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700)
+    trains.error = OSError("network down")
+    results = loop_results(board, state, THU_0700 + timedelta(minutes=1), 2, False)
+    assert results[-1].view.notice is None
+
+
+def test_no_key_trains_are_never_marked_after_a_start():
+    from twobells.sources.darwin import NoKeyTrains
+
+    board = Board(title="GLO", sources=[SourceConfig(NoKeyTrains(), morning(2), stale_after=timedelta(minutes=6))],
+                  modes=("train",))
+    state = {}
+    run_once(board, state, FakeDisplay(), THU_0700)
+    results = loop_results(board, state, THU_0700 + timedelta(minutes=1), 2, False)
+    assert not results[-1].view.section("train").stale
+
+
+def test_the_e_paper_timer_trusts_what_it_saved_a_minute_ago():
+    # Each run is a new process a minute after the last: it shows what it
+    # saved, unmarked, until the source is next due, as ever.
+    trains, buses, board, state = saved_a_minute_ago()
+    trains.error = OSError("network down")
+    result = run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
+    assert trains.calls == 1
+    assert not result.view.section("train").stale and not result.rendered

@@ -193,10 +193,11 @@ class RunResult:
 
 
 def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
-          save: Callable[[dict], bool] | None = None) -> None:
-    """Fetch if due. `prime` fetches regardless of windows; the budget still applies.
-    With `save`, a source with a budget has the state saved as spent before
-    it fetches, and doesn't fetch if that fails."""
+          save: Callable[[dict], bool] | None = None) -> bool:
+    """Fetch if due, saying whether a fetch succeeded. `prime` fetches
+    regardless of windows; the budget still applies. With `save`, a source
+    with a budget has the state saved as spent before it fetches, and
+    doesn't fetch if that fails."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
     if not prime and not config.current_policy().is_due(now, _saved_time(entry, "last_attempt")):
@@ -206,7 +207,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
             note = idle() if idle else None
             if note:
                 entry["note"] = safe_message(note)
-        return
+        return False
 
     if config.daily_budget is not None:
         budgets = state.setdefault("budgets", {})
@@ -215,7 +216,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
         if not budget.try_spend(now.date(), cost):
             # Warned of once, as the last of it was spent (below), not at every check refused since.
             log.debug("%s: daily budget of %d spent, skipping", name, config.daily_budget)
-            return
+            return False
         before = budgets.get(name)
         budgets[name] = budget.to_dict()
         entry["last_attempt"] = to_iso(now)
@@ -228,7 +229,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
             else:
                 budgets[name] = before
             log.warning("%s: not fetched, as the state can't be saved with the daily budget spent", name)
-            return
+            return False
         if budget.remaining(now.date()) < cost:
             log.warning("%s: daily budget of %d spent; no more fetches until tomorrow", name, config.daily_budget)
 
@@ -240,7 +241,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
         message = safe_message(error)
         log.warning("%s: fetch failed: %s", name, message)
         entry["last_error"] = {"at": to_iso(now), "message": message}
-        return
+        return False
     # A train whose platform isn't the one the last fetch gave says so.
     departures = mark_platform_changes(_departures(state, name, now), departures)
     entry["departures"] = [departure_to_dict(d) for d in departures]
@@ -253,6 +254,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
         entry["note"] = safe_message(note)
     else:
         entry.pop("note", None)
+    return True
 
 
 def _saved_time(entry: dict, key: str) -> datetime | None:
@@ -286,6 +288,17 @@ def _is_stale(config: SourceConfig, entry: dict, now: datetime) -> bool:
     return not _fresh(config, _saved_time(entry, "last_success"), now)
 
 
+def _untrusted(config: SourceConfig, since_start: set[str] | None) -> bool:
+    """Whether a running board hasn't yet fetched this source since it started
+    (run_loop's `since_start`), so what it saved isn't to be trusted, however
+    recent the clock makes it: a Pi with no clock battery can start with its
+    clock near when it last saved. A source that never asks anything (no rail
+    key yet) has nothing that can be out of date."""
+    if since_start is None or not getattr(config.source, "fetches", True):
+        return False
+    return config.source.name not in since_start
+
+
 def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
     """What was last fetched, less anything that has left since. Clock times
     alone can't tell this morning from tonight, so each is dated by its fetch."""
@@ -307,14 +320,16 @@ def _keep_messages(config: SourceConfig, state: dict, before: str | None) -> Non
     entry["messages"] = [m for m in messages if isinstance(m, str)]
 
 
-def _notices(board: Board, state: dict, now: datetime) -> list[str]:
+def _notices(board: Board, state: dict, now: datetime, since_start: set[str] | None = None) -> list[str]:
     """Messages from fetches that are still fresh. They age out with the feed:
     once its data is older than stale_after, a notice may no longer be true,
-    and a morning's disruption must not still be showing in the evening."""
+    and a morning's disruption must not still be showing in the evening.
+    Nor do they show from a source a running board hasn't fetched since it
+    started (_untrusted)."""
     notices = []
     for config in board.sources:
         entry = state.get("sources", {}).get(config.source.name, {})
-        if not _fresh(config, _saved_time(entry, "last_success"), now):
+        if not _fresh(config, _saved_time(entry, "last_success"), now) or _untrusted(config, since_start):
             continue
         messages = entry.get("messages")
         if isinstance(messages, list):
@@ -491,11 +506,14 @@ def _render_key(shown: BoardView | RouteView | CodeView | SetupView | ClockView,
 
 def run_once(
     board: Board, state: dict, display: Display, now: datetime, prime: bool = False,
-    save: Callable[[dict], bool] | None = None,
+    save: Callable[[dict], bool] | None = None, since_start: set[str] | None = None,
 ) -> RunResult:
     """One tick. `save` writes the state, saying whether it could: given, a
-    source with a daily budget is saved as spent before it fetches (_poll)."""
-    result, frame, drawn = _make(board, state, display, now, prime, save)
+    source with a daily budget is saved as spent before it fetches (_poll).
+    `since_start`, from a running board, is the sources it has fetched since
+    it started, added to as it fetches more: until then, each one's saved
+    departures are marked not updating, and its notices left out (_untrusted)."""
+    result, frame, drawn = _make(board, state, display, now, prime, save, since_start)
     if frame is not None:
         _present(display, frame, now)
         state["last_render"] = drawn
@@ -503,7 +521,8 @@ def run_once(
 
 
 def _make(board: Board, state: dict, display: Display, now: datetime, prime: bool,
-          save: Callable[[dict], bool] | None = None) -> tuple[RunResult, Frame | None, dict | None]:
+          save: Callable[[dict], bool] | None = None,
+          since_start: set[str] | None = None) -> tuple[RunResult, Frame | None, dict | None]:
     """run_once's work but for showing it: fetch whatever is due, and draw the
     board if it has changed. Gives what it found, the Frame to show (None
     if nothing changed) and what to save as the last redraw once it is
@@ -514,10 +533,11 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
     fetched = set()
     for config in board.sources:
         before = state.get("sources", {}).get(config.source.name, {}).get("last_success")
-        _poll(config, state, now, prime, save)
-        _keep_messages(config, state, before)
-        if state.get("sources", {}).get(config.source.name, {}).get("last_success") != before:
+        if _poll(config, state, now, prime, save):
             fetched.add(config.source.name)
+        _keep_messages(config, state, before)
+    if since_start is not None:
+        since_start |= fetched
     # What the board doesn't show isn't asked for: the bus page's positions,
     # the rows' strips (where each is) and the forecast (the rain warning).
     if "bus_page" not in board.show:
@@ -532,7 +552,8 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
         _poll_weather(board.weather, state, now)
     entries = state.get("sources", {})
     stale = {
-        c.source.name for c in board.sources if _is_stale(c, entries.get(c.source.name, {}), now)
+        c.source.name for c in board.sources
+        if _is_stale(c, entries.get(c.source.name, {}), now) or _untrusted(c, since_start)
     }
     departures = {mode: _departures(state, mode, now) for mode in board.modes}
     view = build_view(
@@ -543,7 +564,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
         walk=board.walk,
         wording=board.theme.wording,
         clock=now.strftime("%H:%M:%S") if live else None,
-        notices=_notices(board, state, now),
+        notices=_notices(board, state, now, since_start),
         rain=_rain(board, state, [d for found in departures.values() for d in found], now, live),
         strips=strips,
         # Only a screen wide enough draws them; e-paper never asks.
@@ -713,6 +734,8 @@ def run_loop(
     the board shows them (_announce)."""
     sleep = sleep or time.sleep
     saves = _Saves(store)
+    # What it saved before this start counts as not updating until fetched afresh (_untrusted).
+    since_start: set[str] = set()
     if not display.panel.epaper:
         # A screen starts blank: what the last run drew isn't on it, whatever
         # the state says. E-paper keeps its image, so it skips an unchanged one.
@@ -725,7 +748,7 @@ def run_loop(
             started = time.perf_counter()
             if reload is not None:
                 board = reload() or board
-            result, frame, drawn = _make(board, state, display, now, first, saves.write)
+            result, frame, drawn = _make(board, state, display, now, first, saves.write, since_start)
             if drawn is not None:
                 state["last_render"] = drawn  # before it is shown: see below for a fault showing it
             if speaker is not None:
@@ -754,7 +777,8 @@ def run_loop(
             board = reload() or board
         now = clock()
         try:
-            result = run_once(board, state, display, now, prime=prime and count == 0, save=saves.write)
+            result = run_once(board, state, display, now, prime=prime and count == 0, save=saves.write,
+                              since_start=since_start)
         except Exception:
             # Keep what was fetched, so a display fault doesn't cost a refetch on restart.
             saves.write(state)  # a card that can't be written mustn't hide the fault

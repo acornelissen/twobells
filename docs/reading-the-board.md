@@ -189,6 +189,8 @@ It is drawn after the classic British platform clock, the same in every look: a 
 
 The board only fetches new times during set windows. Train times and the bus timetable cost nothing, so their windows can cover the whole day; if bus times come from TransportAPI instead (see [Bus times](buses.md)), its free limit means short windows, such as weekday mornings and early evenings. Outside the windows it keeps showing what it last knew, and doesn't say "not updating", because it isn't trying to. Departures drop off once their time has passed, so the evening never shows the morning's buses. The windows are on the [Board page](settings.md#board) of the settings.
 
+A screen that has just started (switched on, updated or restarted) marks each section "not updating" until its first check since the start succeeds; outside the windows, that waits for the window to open. A Pi with no clock battery can start with its clock hours behind, and would otherwise take what it saved for new. E-paper runs afresh each minute, so can't tell a start from the minute before: it shows what it saved as ever.
+
 Trams from the Metrolink timetable cost nothing too, so the board reads it every minute, 05:00 to midnight by default; London's are live from TfL, a call for each stop each minute (see [London](london.md#how-often-it-asks)).
 
 On bank holidays trains and buses run a Sunday service, so the board treats them like Sundays: weekday-only windows are off, and windows that include Sundays apply.

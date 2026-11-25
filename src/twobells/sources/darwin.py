@@ -629,6 +629,8 @@ class NoKeyTrains:
     note = TRAINS_NEED_KEY
     # No notices either: the app then replaces any saved from when there was a key.
     messages: tuple[str, ...] = ()
+    # It asks nothing, so nothing it shows can be out of date, even just after a start (board/app.py).
+    fetches = False
 
     def fetch(self) -> list[Departure]:
         return []
