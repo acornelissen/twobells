@@ -189,7 +189,7 @@ function remember(mode, rows, t) {
   boards[mode].drawn = arrangement(mode, rows, t);
 }
 
-// The board itself: the "Just missed" line, the table, and the button for the
+// The board itself: the "Just missed" line (hidden when empty), the table, and the button for the
 // later departures. A `quiet` caption is for screen readers only, where the
 // section's heading already says it.
 function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, drawRow) {
@@ -197,7 +197,9 @@ function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, draw
   const t = now();
   const { shown, missed } = arrange(rows, t);
   remember(mode, rows, t);
-  const missedLine = missed ? h("p", { class: "just-missed" }, justMissed(missed, mode)) : null;
+  // Always drawn, hidden and empty when nothing was missed, so the table keeps
+  // its place among the children and patch() keeps its rows.
+  const missedLine = h("p", { class: "just-missed", hidden: !missed }, missed ? justMissed(missed, mode) : null);
   if (!shown.length) {
     patch(el, missedLine, h("p", { class: "empty" }, empty));
     return;

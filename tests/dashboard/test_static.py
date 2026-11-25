@@ -2832,8 +2832,9 @@ def test_a_row_drops_once_its_leaving_time_is_two_minutes_gone():
           words: [leaveText(26 * 60_000 + 5_000), leaveText(60_000), leaveText(59_000), leaveText(-119_000)],
           // The fixture's 07:05 bus left its walk at 06:59: at 07:01:30 it is gone, just missed.
           buses: bodyRows("buses-board").map((tr) => /the (\\d\\d:\\d\\d)/.exec(said(cell(tr, "c-dest")))[1]),
-          missed: byClass(board("buses-board"), "just-missed").map(said),
-          trainsMissed: byClass(board("trains-board"), "just-missed").length,
+          // The line is always there, hidden and empty when nothing is missed.
+          missed: byClass(board("buses-board"), "just-missed").filter((el) => !el.hasAttribute("hidden")).map(said),
+          trainsMissed: byClass(board("trains-board"), "just-missed").filter((el) => !el.hasAttribute("hidden")).length,
         }));
     """)
     assert found["arranged"] == [
@@ -2847,6 +2848,43 @@ def test_a_row_drops_once_its_leaving_time_is_two_minutes_gone():
     assert "07:05" not in found["buses"] and found["buses"][0] == "07:09"
     assert found["missed"] == ["Just missed 07:05 237 to Ashton Bus Station"]
     assert found["trainsMissed"] == 0
+
+
+@needs_node
+def test_the_just_missed_line_coming_and_going_keeps_the_table_and_its_rows():
+    found = run_js(_boards() + """
+        import { now } from "./time.js";
+        const t = now();
+        const iso = (ms) => new Date(ms).toISOString();
+        const table = () => elements(board("trains-board")).find((el) => el.nodeName === "TABLE");
+        const line = () => byClass(board("trains-board"), "just-missed")[0];
+        const rowsNow = () => bodyRows("trains-board");
+        const start = { table: table(), rows: rowsNow(), line: line() };
+        // The first train's leave time is 3 minutes gone, its train not yet left: the "Just missed" line.
+        const later = structuredClone(snapshot);
+        later.trains.rows[0].leave_at = iso(t - 3 * 60_000);
+        later.trains.rows[0].expected_at = iso(t + 5 * 60_000);
+        renderTrains(later, alerts);
+        const during = { table: table(), rows: rowsNow(), line: line(), words: said(line()), hidden: line().hasAttribute("hidden") };
+        renderTrains(snapshot, alerts);
+        const after = { table: table(), rows: rowsNow(), line: line(), hidden: line().hasAttribute("hidden"), words: said(line()) };
+        console.log(JSON.stringify({
+          startHidden: start.line.hasAttribute("hidden"),
+          appeared: { table: during.table === start.table, hidden: during.hidden, words: during.words,
+                      rowsKept: during.rows.filter((r) => start.rows.includes(r)).length, line: during.line === start.line },
+          gone: { table: after.table === start.table, hidden: after.hidden, words: after.words,
+                  rowsKept: after.rows.filter((r) => during.rows.includes(r)).length, line: after.line === start.line },
+          counts: [start.rows.length, during.rows.length, after.rows.length],
+        }));
+    """)
+    assert found["startHidden"] is True
+    counts = found["counts"]
+    assert found["appeared"]["table"] is True and found["appeared"]["line"] is True
+    assert found["appeared"]["hidden"] is False and found["appeared"]["words"].startswith("Just missed ")
+    assert found["appeared"]["rowsKept"] == counts[1]  # every row kept its node, one fewer than before
+    assert found["gone"]["table"] is True and found["gone"]["line"] is True
+    assert found["gone"]["hidden"] is True and found["gone"]["words"] == ""
+    assert found["gone"]["rowsKept"] >= counts[1]
 
 
 @needs_node
