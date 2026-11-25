@@ -1,3 +1,4 @@
+import dataclasses
 import errno
 import http.client
 import json
@@ -2604,7 +2605,7 @@ def test_timetable_builds_the_tram_timetable_too(bods_env, monkeypatch, capsys):
 
     def fake_trams(folder, stops, now, force=False):
         seen.append((stops, force))
-        made = read(stops=stops)
+        made = dataclasses.replace(read(stops=stops), built=now)  # built when the command says it is
         trams.save(folder, made)
         return made
 
@@ -2627,7 +2628,7 @@ def test_timetable_builds_trams_set_up_beside_buses_from_transportapi(probe_env,
     config.write_text(config.read_text() + '[metro]\n[metro.stops]\nT = "9400ZZMAPIC"\n')
 
     def fake_trams(folder, stops, now, force=False):
-        made = read(stops=stops)
+        made = dataclasses.replace(read(stops=stops), built=now)  # built when the command says it is
         trams.save(folder, made)
         return made
 

@@ -1,5 +1,6 @@
 # Lint, a type check, tests on every supported Python, a package build and a container build,
-# for pushes to main and for pull requests. Nothing here publishes anything or
+# for pushes to main, for pull requests and once a week (a test that depends on
+# the date fails here, not at the next push). Nothing here publishes anything or
 # holds a write token. The jobs run the same mise tasks as a laptop does
 # (mise.toml), so "it passes here" means the same thing in both places.
 name: CI
@@ -8,6 +9,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
 
 permissions: {}
 

@@ -285,6 +285,7 @@ class SettingsSite:
         self.network_guard: Guard | None = None
         self.setup = setup
         self._dashboard_on = dashboard_on
+        self._clock = clock
         self.password = PasswordStore(store.password_file)
         self.sessions = Sessions(clock, cookie_name=COOKIE_NAME, cookie_path=PREFIX, password=self.password,
                                  file=store.sessions_file)
@@ -497,7 +498,7 @@ class SettingsSite:
         except (OSError, ConfigError):
             data = {}
         zone = schema.zone(data)
-        now = datetime.now(zone).replace(tzinfo=None)
+        now = datetime.fromtimestamp(self._clock(), zone).replace(tzinfo=None)
         views = self.views()
         running = self._running()
         out = [self._header("overview", csrf)]

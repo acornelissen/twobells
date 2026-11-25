@@ -586,11 +586,14 @@ def test_the_overview_says_when_the_bus_timetable_was_saved_and_how_its_roads_ar
     from twobells.timetable import build as timetable
     from twobells.timetable.model import Schedule
 
-    docker = make(install="docker")  # whose dashboard starts again on saving: this page says how far they got
+    # Midday, so the three minutes before it are the same day: a save on another day shows its date too.
+    midday = Clock()
+    midday.now = datetime(2026, 11, 25, 12, 0, tzinfo=ZoneInfo("Europe/London")).timestamp()
+    docker = make(install="docker", clock=midday)  # its dashboard starts again on saving: the page says how far
     cookie = docker.session()
     place = _place(docker("GET", "/settings", cookie=cookie)[1])
     assert "<dt>Bus timetable</dt><dd>Not built yet</dd>" in place and "Bus map roads" not in place
-    when = time.time() - 180
+    when = midday.now - 180
     clock = datetime.fromtimestamp(when, ZoneInfo("Europe/London"))
     timetable.save(docker.folder, Schedule(clock.replace(tzinfo=None), None, {"A": "1000DGHS0900"}, (), {},
                                            ("BNML",), timetable.FORMAT))

@@ -103,7 +103,7 @@ Take them at 2x and save them at 0.75 scale in 256 colours, with a quantiser tha
 
 ## Releases
 
-CI (`.github/workflows/ci.yml`) runs ruff, pyright, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and the container (amd64, arm64) on every push to main and every pull request. Once a month `data.yml` rebuilds the setup data from NaPTAN and opens a pull request if it changed.
+CI (`.github/workflows/ci.yml`) runs ruff, pyright, the tests on Python 3.11, 3.12 and 3.13, and builds the wheel and the container (amd64, arm64) on every push to main and every pull request, and on main every Monday, so a test that depends on the date is caught without a push. Once a month `data.yml` rebuilds the setup data from NaPTAN and opens a pull request if it changed.
 
 To cut a release, set the version in `pyproject.toml`, add the release to [CHANGELOG.md](CHANGELOG.md), merge to main, then push a signed tag: `git tag -s vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. The tag starts `.github/workflows/release.yml`, which runs in this order:
 
