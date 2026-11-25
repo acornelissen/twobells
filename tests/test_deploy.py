@@ -1148,6 +1148,12 @@ def _matrix_pythons(job: str) -> list[str]:
     return json.loads(re.search(r"^        python: (\[.*\])$", job, re.M).group(1))
 
 
+def _permissions(job: str) -> list[str]:
+    """A job's permissions, as `scope: level` lines, comments dropped."""
+    block = re.search(r"^    permissions:\n((?:      .*\n)+)", job, re.M).group(1)
+    return [line.split("#")[0].strip() for line in block.splitlines()]
+
+
 def _run_block(job: str, step: str) -> str:
     """The shell script of the step named `step` in a job, dedented."""
     import textwrap
@@ -1209,6 +1215,95 @@ def test_ci_and_the_release_install_only_the_tools_mise_lock_pins():
                 assert 'MISE_LOCKED: "1"' in workflow, job.split(":")[0]
                 versions |= set(re.findall(r"^          version: (\S+)$", job, re.M))
     assert len(versions) == 1
+
+
+def test_the_data_refresh_holds_its_write_token_only_where_nothing_but_the_pull_request_runs():
+    jobs = _jobs(DATA_REFRESH)
+    assert list(jobs) == ["build", "propose"]
+    assert "\npermissions: {}\n" in DATA_REFRESH
+    # build downloads NaPTAN, the toolchain and the dev tools, and runs the tests: it may only read.
+    build, propose = jobs["build"], jobs["propose"]
+    assert _permissions(build) == ["contents: read"]
+    assert "write" not in build
+    assert "changed: ${{ steps.diff.outputs.changed }}" in build
+    # propose runs only for a change, after build, and runs nothing of the project's.
+    assert _needs(propose) == {"build"}
+    assert "    if: needs.build.outputs.changed == 'true'\n" in propose
+    assert _permissions(propose) == ["contents: write", "pull-requests: write"]
+    steps = propose[:propose.index("peter-evans/create-pull-request@")]  # the PR's own text may name the builder
+    for word in ("mise", "pip", "python", "uv ", "uv\n", "tools/", "make ", "npm", "node", "bash ", "./"):
+        assert word not in steps, word
+    assert "\nenv:" not in DATA_REFRESH  # no workflow-wide setting reaches propose
+    actions = re.findall(r"uses: ([\w-]+/[\w-]+)@", propose)
+    assert actions == ["actions/checkout", "actions/download-artifact", "peter-evans/create-pull-request"]
+    # It checks the artefact before the files reach the checkout, and the PR takes only the CSV files.
+    downloaded = propose.index("actions/download-artifact@")
+    checked = propose.index("- name: Check the artefact holds only the expected data files")
+    placed = propose.index('cp -- "$RUNNER_TEMP"/setup-data/*.csv src/twobells/data/')
+    assert downloaded < checked < placed < propose.index("peter-evans/create-pull-request@")
+    assert "add-paths: src/twobells/data/*.csv" in propose
+    assert "name: setup-data" in build and "name: setup-data" in propose
+    assert "persist-credentials: false" in build and "persist-credentials: false" in propose
+
+
+DATA_FILES = sorted(path.name for path in (ROOT / "src" / "twobells" / "data").glob("*.csv"))
+ARTEFACT_CHECK = "Check the artefact holds only the expected data files"
+MIB = 1024 * 1024
+
+
+def _check_artefact(folder: Path):
+    """Runs the propose job's check of the artefact in `folder`, as the runner's bash -e would."""
+    import shutil
+    import subprocess
+
+    script = _run_block(_jobs(DATA_REFRESH)["propose"], ARTEFACT_CHECK)
+    return subprocess.run([shutil.which("bash") or "bash", "-e", "-c", script], cwd=folder,
+                          capture_output=True, text=True)
+
+
+def test_the_data_refresh_takes_the_data_files_it_builds_and_no_others():
+    script = _run_block(_jobs(DATA_REFRESH)["propose"], ARTEFACT_CHECK)
+    allowed = re.search(r"^ +(\S+(?: \| \S+)*)\) ;;$", script, re.M).group(1).split(" | ")
+    assert sorted(allowed) == DATA_FILES
+    assert len(DATA_FILES) == 4  # read from the data folder, not empty
+
+
+@pytest.mark.parametrize("names", [DATA_FILES, DATA_FILES[:1]], ids=["all", "one"])
+def test_the_data_refresh_lets_through_the_files_that_changed(tmp_path, names):
+    for name in names:
+        (tmp_path / name).write_bytes((ROOT / "src" / "twobells" / "data" / name).read_bytes())
+    (tmp_path / names[0]).write_bytes(b"x" * MIB)  # the largest it takes
+    result = _check_artefact(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("name, kind", [
+    ("evil.sh", "file"), (".gb_stations.csv", "file"), ("gb_stations.csv.bak", "file"),
+    ("sub/gb_stations.csv", "file"), ("gb_stations.csv", "symlink"), ("london_stops.csv", "folder"),
+    ("metrolink_stops.csv", "empty"), ("naptan_area_grid.csv", "too big"), ("$(id)\n::warning::x.csv", "file"),
+])
+def test_the_data_refresh_refuses_an_artefact_holding_anything_else(tmp_path, name, kind):
+    target = tmp_path / name
+    target.parent.mkdir(exist_ok=True)
+    if kind == "file":
+        target.write_text("name,crs\n")
+    elif kind == "symlink":
+        target.symlink_to("/etc/hostname")
+    elif kind == "folder":
+        target.mkdir()
+    else:
+        target.write_bytes(b"" if kind == "empty" else b"x" * (MIB + 1))
+    # Beside a good file, so it is this one that is refused.
+    good = next(other for other in DATA_FILES if other != name)
+    (tmp_path / good).write_text("name,crs\n")
+    result = _check_artefact(tmp_path)
+    assert result.returncode != 0
+    assert result.stdout.startswith("::error::") and result.stdout.count("\n") == 1  # one line, the name escaped
+
+
+def test_the_data_refresh_refuses_an_empty_artefact(tmp_path):
+    result = _check_artefact(tmp_path)
+    assert result.returncode != 0 and result.stdout.startswith("::error::")
 
 
 def _upgrade(*args: str, path: Path | None = None):
