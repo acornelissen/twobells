@@ -440,6 +440,46 @@ def test_a_page_asking_for_its_files_past_the_cap_is_not_signed_in(signed):
     assert response.status == 401
 
 
+def renewed(response, cookie):
+    return (response.getheader("Set-Cookie") or "").startswith(cookie + ";")
+
+
+def test_a_form_whose_token_doesnt_match_never_keeps_the_browser_signed_in(signed):
+    # Only a request carrying the session's own form token is the owner's doing.
+    cookie, csrf = signed.sign_in()
+    signed.clock.now += SESSION_SECONDS - 120
+    refused = [
+        ("/settings/general", {"csrf": "wrong", "bank_holidays": "on"}),
+        ("/settings/general", {"bank_holidays": "on"}),
+        ("/settings/keys", {"csrf": "wrong", "key": "RDM_API_KEY", "do": "save", "RDM_API_KEY": "a-new-key-123"}),
+        ("/settings/keys", {"key": "nope"}),
+    ]
+    for path, fields in refused:
+        response, _ = signed("POST", path, fields, cookie=cookie)
+        assert response.status == 403 and not renewed(response, cookie), (path, fields)
+    response, _ = signed("POST", "/settings/setup/api/postcode", cookie=cookie, headers={"X-CSRF-Token": "wrong"},
+                         json_body={"postcode": "SK13 1AH"})
+    assert response.status == 403 and not renewed(response, cookie)
+    signed.clock.now += 120
+    assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
+def test_a_form_with_its_token_keeps_the_browser_signed_in_even_when_refused(signed):
+    # The owner pressed the button: a mistake in a field, or an odd form, is still use.
+    cookie, csrf = signed.sign_in()
+    matched = [
+        ("/settings/general", {"csrf": csrf, "bank_holiday_division": "nowhere"}, 422),
+        ("/settings/keys", {"csrf": csrf, "key": "RDM_API_KEY", "do": "save", "RDM_API_KEY": "has spaces"}, 422),
+        ("/settings/keys", {"csrf": csrf, "key": "nope"}, 400),
+    ]
+    for path, fields, status in matched:
+        signed.clock.now += SESSION_SECONDS - 60
+        response, _ = signed("POST", path, fields, cookie=cookie)
+        assert response.status == status and renewed(response, cookie), (path, fields, response.status)
+    signed.clock.now += SESSION_SECONDS - 60
+    assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+
+
 def test_signing_out_after_a_long_session_still_ends_it(signed):
     cookie, csrf = signed.sign_in()
     signed.clock.now += SESSION_SECONDS - 60

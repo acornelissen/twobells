@@ -379,7 +379,8 @@ class SettingsSite:
         A signed-in browser's session is extended, and its cookie sent again
         to match, only by what the owner does: a GET of one of the pages
         (the tabs, the wizard's), a save from a tab and the wizard's
-        setupapi.OWNER_STEPS. Each route that does says so (_used); the
+        setupapi.OWNER_STEPS, the last two only with the session's form
+        token. Each route that does says so (_used, or FormPages); the
         stylesheet, scripts, files and the wizard's polls don't, so a tab
         left open lets the session run out."""
         if path.startswith(SETUP_API):
@@ -426,12 +427,13 @@ class SettingsSite:
         tab = self._tab(path)
         if tab == "overview":  # it only shows
             return Reply(405, b"Method Not Allowed", headers={"Allow": "GET, HEAD"})
+        # Each extends the session itself, once the form's token is the session's.
         if tab == "keys":
-            return self._used(headers, self._pages.key_form(fields, headers, self._keys, self._title(tab),
-                                                            TAB_PATHS[tab], here=NEXT_NAMES[tab]))
+            return self._pages.key_form(fields, headers, self._keys, self._title(tab), TAB_PATHS[tab],
+                                        here=NEXT_NAMES[tab])
         if tab is not None:
-            return self._used(headers, self._pages.save(fields, headers, self._forms[tab], self._title(tab),
-                                                        TAB_PATHS[tab], here=NEXT_NAMES[tab]))
+            return self._pages.save(fields, headers, self._forms[tab], self._title(tab), TAB_PATHS[tab],
+                                    here=NEXT_NAMES[tab])
         return Reply(404, b"Not Found")
 
     def _used(self, headers: Headers, reply: Reply) -> Reply:

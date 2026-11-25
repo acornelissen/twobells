@@ -519,14 +519,19 @@ class FormPages:
         title = title or wording.title
         if not csrf_matches(session, fields.get("csrf", "")):
             return self._out_of_date(page, session.csrf, title, where or self._prefix)
+        # Its own token: the owner pressed Save, so the session is extended, whatever the form says.
         fields.pop("csrf", None)
+        return self.keep_signed_in(headers, self._save(fields, session.csrf, page, title, where or self._prefix))
+
+    def _save(self, fields: dict[str, str], csrf: str, page: SettingsPage, title: str, where: str) -> Reply:
+        """save's reply once the form's token is the session's (`csrf`)."""
         changed: list[str] = []
         errors = page.save(fields, changed)
         if errors:
-            body = page.render(session.csrf, errors=errors, values=fields)
-            return self._signed_in_html(422, f"{title}: fix the errors", page, session.csrf, body)
-        self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, wording.saved)))
-        return redirect((where or self._prefix) + "?saved")
+            body = page.render(csrf, errors=errors, values=fields)
+            return self._signed_in_html(422, f"{title}: fix the errors", page, csrf, body)
+        self._notice(csrf, Notice(page, "Saved", saved_notice(changed, self._wording().saved)))
+        return redirect(where + "?saved")
 
     def key_form(self, fields: dict[str, str], headers: Headers, page: KeyForms, title: str, where: str,
                  here: str = "") -> Reply:
@@ -542,7 +547,12 @@ class FormPages:
             return redirect(self._login_address(here, ran_out=True))
         if not csrf_matches(session, fields.get("csrf", "")):
             return self._out_of_date(page, session.csrf, title, where)
+        # Its own token: the owner pressed a button, so the session is extended, whatever the form says.
         fields.pop("csrf", None)
+        return self.keep_signed_in(headers, self._key_form(fields, session.csrf, page, title, where))
+
+    def _key_form(self, fields: dict[str, str], csrf: str, page: KeyForms, title: str, where: str) -> Reply:
+        """key_form's reply once the form's token is the session's (`csrf`)."""
         do = fields.get("do") or "save"  # Enter in a box sends the first button, Save key
         if do not in ("save", "save_test", "test") or not page.knows(fields.get("key", "")):
             return Reply(400, b"Bad request: no such key or button")
@@ -550,15 +560,15 @@ class FormPages:
         if do != "test":
             errors = page.save(fields, changed)
             if errors:
-                body = page.render(session.csrf, errors=errors, values=fields)
-                return self._signed_in_html(422, f"{title}: fix the errors", page, session.csrf, body)
+                body = page.render(csrf, errors=errors, values=fields)
+                return self._signed_in_html(422, f"{title}: fix the errors", page, csrf, body)
         tested = page.test_key(fields) if do != "save" else None
         if do != "save" and tested is None:
             return Reply(400, b"Bad request: no such key to test")
         if tested is not None and not changed:  # nothing saved: a test alone
-            self._notice(session.csrf, Notice(page, "Key tested", "", tested))
+            self._notice(csrf, Notice(page, "Key tested", "", tested))
             return redirect(where + "?tested")
-        self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, self._wording().saved), tested))
+        self._notice(csrf, Notice(page, "Saved", saved_notice(changed, self._wording().saved), tested))
         return redirect(where + "?saved")
 
     def keep_signed_in(self, headers: Headers, reply: Reply) -> Reply:
@@ -567,7 +577,8 @@ class FormPages:
         with the session cookie sent again to last as long as it has left.
         Not when the reply sets a cookie of its own: signing out, a new
         password or a session run out send none, so nothing brings an ended
-        session back. The host calls it only for such requests: every other
+        session back. Called only for such requests (save and key_form
+        once the form's token matched; the host for the rest): every other
         lookup leaves the session to run out."""
         if "Set-Cookie" in reply.headers:
             return reply
