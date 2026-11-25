@@ -96,6 +96,11 @@ class TimetableError(Exception):
     """A timetable that can't be read or built; build.py and trams.py raise it too."""
 
 
+class TooManyJourneys(TimetableError):
+    """More journeys call at your stops than a build may hold (Room): the
+    build fails, where a document that can't be read is only skipped."""
+
+
 # Reading TransXChange.
 
 
@@ -584,7 +589,7 @@ def inbound_limit(limits: DocumentLimits) -> int:
 class Room:
     """How many journeys a build may hold, counted as each is found, so a
     document with more than the memory there is fails cleanly: those calling
-    at your stops (`journeys`; one more is a TimetableError) and inbound-only
+    at your stops (`journeys`; one more is TooManyJourneys) and inbound-only
     ones (`inbound`; the rest are left out, and counted). `held` and
     `held_inbound` are those kept from the documents before."""
 
@@ -659,7 +664,7 @@ def _journeys_kept(
         elif any(call.atco in atcos for call in journey.calls):
             calling += 1
             if calling > room.journeys:
-                raise TimetableError(f"More than {room.journeys} journeys call at your stops; refusing")
+                raise TooManyJourneys(f"More than {room.journeys} journeys call at your stops; refusing")
         else:
             continue
         found.append(shared.kept(version, journey))

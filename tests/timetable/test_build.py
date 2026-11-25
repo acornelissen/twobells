@@ -882,6 +882,28 @@ def test_a_document_too_big_to_read_is_skipped_and_the_rest_built(caplog):
     assert f"Skipped big.xml: {len(big):,} bytes" in caplog.text
 
 
+BROKEN_AT_A = b'<?xml version="1.0"?><TransXChange xmlns="http://www.transxchange.org.uk/"><x>' + STOP_A.encode() + b"</x><broken"
+
+
+def test_a_broken_document_naming_your_stop_is_skipped_and_the_rest_built(caplog):
+    bods = FakeBods()
+    name = "bad\x1b[2J.xml"  # a zip's names are its maker's
+    bods.blobs[BNML_LINK] = _zip({"341.xml": TXC_341, name: BROKEN_AT_A, "237.xml": TXC_237})
+    schedule = bods.build()
+    assert {j.line for j in schedule.journeys} == {"341", "61"}
+    skipped = [r.getMessage() for r in caplog.records if "Skipped bad" in r.getMessage()]
+    assert len(skipped) == 1 and "Timetable file is not XML" in skipped[0]
+    assert "\x1b" not in caplog.text
+
+
+def test_a_build_of_only_broken_documents_still_fails():
+    bods = FakeBods()
+    bods.blobs[BNML_LINK] = _zip({"bad.xml": BROKEN_AT_A})
+    bods.datasets["HIPK"] = []
+    with pytest.raises(TimetableError, match="No timetabled journeys call at your stops"):
+        bods.build()
+
+
 def test_the_journey_limit_counts_every_document_s_journeys():
     # 5 of the 341, then the 237's 4 (ended, so let go once read), then 4 of the 61.
     assert len(FakeBods().build(limits=DocumentLimits(journeys=9)).journeys) == 9

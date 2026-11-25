@@ -469,7 +469,13 @@ def _read_timetables(links: list[tuple[str, str]], atcos: set[str], today: date,
             log.warning("%s", routesetup.too_big(name, limits.parse, len(document)))
             continue
         room.held, room.held_inbound = len(journeys), len(inbound)
-        found, positions = txc.read_document(document, atcos, noc, yours, room, today=today, versions=versions)
+        try:
+            found, positions = txc.read_document(document, atcos, noc, yours, room, today=today, versions=versions)
+        except txc.TooManyJourneys:
+            raise
+        except TimetableError as error:  # one broken document costs only itself, as in setup discover
+            log.warning("Skipped %s: %s", safe_message(name), safe_message(error))
+            continue
         yours.update((atco, positions[atco]) for atco in atcos if atco in positions)
         # Those that ended before today were let go as they were read, their
         # versions noted: even an ended version switches lower revisions off.
