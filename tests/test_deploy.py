@@ -1587,17 +1587,92 @@ def test_update_goes_back_when_the_e_paper_board_fails_on_the_new_release():
     # Once the services stay up, and before anything else is turned on.
     check = ('if $epaper; then\n  echo "Drawing the e-paper board on the new release"\n'
              "  if ! draws; then\n")
-    steps = ['if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', check, "    go_back\n    exit 1\n",
+    steps = ['if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', check, "      go_back\n      exit 1\n",
              "\nsay_if_unguarded\n", "\nsystemctl enable --now twobells-timetable.timer\n"]
     places = [update.index(step) for step in steps]
     assert places == sorted(places)
     said = update[places[1]:places[2]]
     # Which service failed, where to see why, and that it may be the panel.
     assert "twobells.service" in said and "journalctl -u twobells -n 30" in said and "panel" in said
+    # But not when the card wouldn't take the state of a board that drew: the new release stays.
+    kept = said.index("    if card_refused_save; then\n")
+    assert kept < said.index("    else\n") < said.index("twobells.service, the e-paper board, failed")
+    assert "go_back" not in said[kept:said.index("    else\n")]
     # That run is the only one, but going back's: none at the end, whatever it does, as before.
     assert update.count("systemctl start twobells.service") == 2
     for function in ("draws", "go_back"):
         assert _function("update.sh", function).count('timeout "$RENDER_WAIT" systemctl start twobells.service') == 1
+
+
+REFUSED = re.compile(r"^card_refused_save\(\) \{\n.*?^\}$", re.M | re.S)
+FAILED_74 = "ActiveState=failed\nResult=exit-code\nExecMainStatus=74\n"
+
+
+def _card_refused_save(shown: str | None, writable: bool):
+    """Runs update.sh's card_refused_save with systemctl and runuser stood in
+    for: systemctl show saying `shown` (None: it fails), and a file written
+    in the state folder as the services' user going in if `writable`. What
+    it found, and each command it ran."""
+    [function] = REFUSED.findall(_script("update.sh"))
+    # Each command said on 3, a copy of stderr that the probe's own 2>/dev/null leaves alone.
+    stubs = ('exec 3>&2\n'
+             'systemctl() { echo "systemctl $*" >&3; if [[ -z "$SHOWN" ]]; then return 1; fi; printf "%s" "$SHOWN"; }\n'
+             'runuser() { echo "runuser $*" >&3; [[ -n "$WRITABLE" ]]; }\n')
+    done = _bash(f"set -euo pipefail\n{stubs}{function}\nif card_refused_save; then echo card; else echo release; fi",
+                 SHOWN=shown or "", WRITABLE="yes" if writable else "")
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip(), done.stderr.splitlines()
+
+
+def test_a_board_that_drew_but_couldn_t_save_on_an_unwritable_card_isn_t_the_release_s_fault():
+    from twobells.cli.run import UNSAVED
+
+    assert FAILED_74.endswith(f"={UNSAVED}\n")  # run.py's exit for a run that drew but couldn't save
+    found, ran = _card_refused_save(FAILED_74, writable=False)
+    assert found == "card"
+    assert ran[0] == ("systemctl show --property=ActiveState --property=Result --property=ExecMainStatus "
+                      "twobells.service")
+    # Tried as the services' user, in the state folder, a file as big as a state, not handed the lock.
+    probe = shlex.split(ran[1])
+    assert probe[:4] == ["runuser", "-u", "twobells", "--"] and "/var/lib/twobells/" in ran[1]
+
+
+def test_a_board_that_couldn_t_save_on_a_card_that_takes_a_file_is_the_release_s_fault():
+    # A release whose saving is broken exits 74 too; the card taking a file tells them apart.
+    assert _card_refused_save(FAILED_74, writable=True)[0] == "release"
+
+
+@pytest.mark.parametrize("shown", [
+    "ActiveState=failed\nResult=exit-code\nExecMainStatus=1\n",  # any other exit
+    "ActiveState=failed\nResult=timeout\nExecMainStatus=74\n",  # its unit stopped it, hung
+    "ActiveState=activating\nResult=exit-code\nExecMainStatus=74\n",  # still going: an earlier run's result
+    "ActiveState=failed\nResult=signal\nExecMainStatus=74\n",
+    "ActiveState=failed\nResult=exit-code\nExecMainStatus=074\n",  # read strictly
+    "ActiveState=failed\nResult=exit-code\nExecMainStatus=74 \n",
+    "ActiveState=failed\nResult=exit-code\n",  # no status
+    "Result=exit-code\nExecMainStatus=74\n",
+    None,  # systemctl failed
+])
+def test_any_other_failure_of_the_board_is_the_release_s(shown):
+    found, ran = _card_refused_save(shown, writable=False)
+    assert found == "release"
+    assert not [line for line in ran if line.startswith("runuser")]  # nothing tried unless it was 74
+
+
+def test_the_card_s_probe_writes_a_states_worth_and_always_cleans_up(tmp_path):
+    # Its sh -c, run for real in a folder standing in for /var/lib/twobells.
+    [function] = REFUSED.findall(_script("update.sh"))
+    [probe] = re.findall(r"runuser -u twobells -- sh -c '([^']*)' 9<&-", function)
+    script = probe.replace("/var/lib/twobells", str(tmp_path))
+    assert _bash(f"sh -c '{script}'").returncode == 0
+    assert list(tmp_path.iterdir()) == []
+    import os
+
+    if os.geteuid() == 0:
+        return  # root writes into a folder whatever its mode
+    (tmp_path / "readonly").mkdir(mode=0o500)
+    assert _bash(f"sh -c '{probe.replace('/var/lib/twobells', str(tmp_path / 'readonly'))}'").returncode != 0
+    assert list((tmp_path / "readonly").iterdir()) == []
 
 
 def _go_back(epaper: bool, fails: bool, tmp_path: Path):
@@ -1654,12 +1729,37 @@ ROOM = re.compile(r"^room_to_save\(\) \{\n.*?^\}$", re.M | re.S)
     (None, False),  # df failed
 ])
 def test_update_needs_room_on_the_card_for_the_board_to_save_its_state(df, room):
+    assert _room(df, INODES) == room
+
+
+INODES = "Filesystem Inodes IUsed IFree IUse% Mounted on\n/dev/root 1900000 100000 1800000 6% /\n"
+ROOMY = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 30000000 20000000 512000 98% /\n"
+
+
+def _room(df: str | None, inodes: str | None) -> bool:
+    """update.sh's room_to_save, df -Pk saying `df` and df -Pi `inodes` (None: it fails)."""
     [function] = ROOM.findall(_script("update.sh"))
-    stub = ('df() { [[ "$*" == "-Pk /var/lib/twobells" ]] || return 9; '
-            'if [[ -z "$SAID" ]]; then return 1; fi; printf "%s" "$SAID"; }\n')
-    done = _bash(f"set -euo pipefail\nMIN_FREE_KB=10240\n{stub}{function}\n"
-                 "if room_to_save; then echo room; else echo none; fi", SAID=df or "")
-    assert (done.returncode, done.stdout) == (0, "room\n" if room else "none\n")
+    stub = ('df() { case "$*" in\n'
+            '  "-Pk /var/lib/twobells") [[ -n "$SAID" ]] && printf "%s" "$SAID" ;;\n'
+            '  "-Pi /var/lib/twobells") [[ -n "$INODES" ]] && printf "%s" "$INODES" ;;\n'
+            '  *) return 9 ;;\nesac; }\n')
+    done = _bash(f"set -euo pipefail\nMIN_FREE_KB=10240\nMIN_FREE_INODES=1000\n{stub}{function}\n"
+                 "if room_to_save; then echo room; else echo none; fi", SAID=df or "", INODES=inodes or "")
+    assert done.returncode == 0, done.stderr
+    return done.stdout == "room\n"
+
+
+@pytest.mark.parametrize("inodes, room", [
+    (INODES, True),
+    ("Filesystem Inodes IUsed IFree IUse% Mounted on\n/dev/root 1900000 1899000 1000 100% /\n", True),
+    # A card out of files has room to spare in KB, but can't take a new state file.
+    ("Filesystem Inodes IUsed IFree IUse% Mounted on\n/dev/root 1900000 1899001 999 100% /\n", False),
+    ("Filesystem Inodes IUsed IFree IUse% Mounted on\n/dev/root 0 0 0 - /\n", True),  # none counted: no limit
+    ("Filesystem Inodes IUsed IFree IUse% Mounted on\n/dev/root - - - - /\n", False),  # can't be told
+    (None, False),  # df failed
+])
+def test_update_needs_room_for_a_file_on_the_card_too(inodes, room):
+    assert _room(ROOMY, inodes) == room
 
 
 def test_update_stops_before_the_switch_on_a_card_too_full_to_save_the_boards_state():
@@ -1669,7 +1769,7 @@ def test_update_stops_before_the_switch_on_a_card_too_full_to_save_the_boards_st
     assert update.index(NEW_RELEASE) < update.index(stop) < update.index('switch_to "$release"\n')
     block = update[update.index(stop):update.index("fi\n", update.index(stop))]
     assert "exit 1" in block and "/var/lib/twobells" in block
-    assert re.search(r"^MIN_FREE_KB=10240$", update, re.M)
+    assert re.search(r"^MIN_FREE_KB=10240$", update, re.M) and re.search(r"^MIN_FREE_INODES=1000$", update, re.M)
 
 
 @pytest.mark.parametrize("name", ["install.sh", "update.sh", "upgrade.sh", "releases.sh"])

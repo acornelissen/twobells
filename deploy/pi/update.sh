@@ -34,8 +34,10 @@ SETTLE=30
 # reads the new release off the card afresh), so this is for a unit that
 # doesn't, with room to spare.
 RENDER_WAIT=300
-# The room the board needs on the SD card to save its state, in KB.
+# The room the board needs on the SD card to save its state: in KB, and in
+# files (inodes), which a card can run out of with room to spare.
 MIN_FREE_KB=10240
+MIN_FREE_INODES=1000
 config="" secrets=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -128,17 +130,23 @@ new_release
 build_release "$release"
 
 # Whether the SD card has room for the board to save its state, as each run
-# does. A run that can't fails, and the check of the e-paper board below
-# would blame the new release for it and undo the update.
+# does: a run that can't fails (below, that's told apart from the new
+# release failing, but this says so sooner and more plainly). Room in KB, and
+# for files, unless the card's file system counts none (Inodes 0).
 room_to_save() {
-  local free
+  local free inodes
   free="$(df -Pk /var/lib/twobells | awk 'NR == 2 { print $4 }')" || return 1
-  [[ "$free" =~ ^[0-9]+$ ]] && (( free >= MIN_FREE_KB ))
+  if [[ ! "$free" =~ ^[0-9]+$ ]] || (( free < MIN_FREE_KB )); then
+    return 1
+  fi
+  inodes="$(df -Pi /var/lib/twobells | awk 'NR == 2 { print $2, $4 }')" || return 1
+  [[ "$inodes" =~ ^([0-9]+)\ ([0-9]+)$ ]] && (( BASH_REMATCH[1] == 0 || BASH_REMATCH[2] >= MIN_FREE_INODES ))
 }
 if ! room_to_save; then
-  echo "The SD card is too full for the board to save its state: it needs $((MIN_FREE_KB / 1024)) MB free" >&2
-  echo "in /var/lib/twobells (df -h /var/lib/twobells says how much is). The release in use runs on as it" >&2
-  echo "was: make room (sudo apt-get clean, say), then run this again." >&2
+  echo "The SD card is too full for the board to save its state: it needs $((MIN_FREE_KB / 1024)) MB free," >&2
+  echo "and room for $MIN_FREE_INODES files, in /var/lib/twobells (df -h and df -i /var/lib/twobells say how" >&2
+  echo "much there is). The release in use runs on as it was: make room (sudo apt-get clean, say), then" >&2
+  echo "run this again." >&2
   exit 1
 fi
 
@@ -231,6 +239,31 @@ draws() {
   done
   return 1
 }
+# Whether that run failed only because the SD card wouldn't take its state:
+# it drew, then exited 74 (cli/run.py's UNSAVED), and the card won't take a
+# file in /var/lib/twobells as the services' user now either (full, read-only
+# or out of files). A release whose saving is broken exits 74 too, but there
+# the card takes the file, so that still counts against the release. The
+# unit's state is read strictly, and one still running (a hung run, whose
+# result is an earlier one's) never counts. The file, 1 MB of zeros, is
+# removed whether or not it went in.
+card_refused_save() {
+  local said line active="" result="" status=""
+  said="$(systemctl show --property=ActiveState --property=Result --property=ExecMainStatus twobells.service)" \
+    || return 1
+  while IFS= read -r line; do
+    case "$line" in
+      ActiveState=*) active="${line#ActiveState=}" ;;
+      Result=*) result="${line#Result=}" ;;
+      ExecMainStatus=*) status="${line#ExecMainStatus=}" ;;
+    esac
+  done <<<"$said"
+  if [[ "$active" != failed || "$result" != exit-code || "$status" != 74 ]]; then
+    return 1
+  fi
+  # shellcheck disable=SC2016 # expanded by the sh it starts, as the services' user
+  ! runuser -u twobells -- sh -c 'f="$(mktemp /var/lib/twobells/.update-check.XXXXXX)" || exit 1; head -c 1048576 /dev/zero >"$f"; ok=$?; rm -f "$f"; exit "$ok"' 9<&- 2>/dev/null
+}
 # Back to the release from before, with the units and guard's rules from
 # before, and the services restarted onto them as they were.
 go_back() {
@@ -269,14 +302,22 @@ if ! stay_up "${watched[@]}"; then
 fi
 # Then the e-paper board, once (a oneshot), which goes back as a crash does if
 # it fails. That may be the panel rather than the new release (its cable, say):
-# the journal says which.
+# the journal says which. A board that drew but couldn't save its state on a
+# card that won't take it isn't the release's doing: that stays, and says so.
 if $epaper; then
   echo "Drawing the e-paper board on the new release"
   if ! draws; then
-    echo "twobells.service, the e-paper board, failed on the new release or took over $RENDER_WAIT seconds." >&2
-    echo "It may be the panel rather than the release (its cable, say); why: journalctl -u twobells -n 30" >&2
-    go_back
-    exit 1
+    if card_refused_save; then
+      echo "The e-paper board drew on the new release, but couldn't save its state: the SD card is full," >&2
+      echo "read-only or out of files. The new release stays. Make room (df -h and df -i /var/lib/twobells;" >&2
+      echo "sudo apt-get clean, say); if the card has gone read-only, it may be failing: back it up" >&2
+      echo "(see backup.md) and restart the Pi. Why: journalctl -u twobells -n 30" >&2
+    else
+      echo "twobells.service, the e-paper board, failed on the new release or took over $RENDER_WAIT seconds." >&2
+      echo "It may be the panel rather than the release (its cable, say); why: journalctl -u twobells -n 30" >&2
+      go_back
+      exit 1
+    fi
   fi
   journalctl -u twobells.service -n 12 --no-pager -o cat
 fi
