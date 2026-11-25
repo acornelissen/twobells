@@ -39,6 +39,7 @@ import logging
 import os
 import re
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -626,6 +627,14 @@ class DashboardServer(ThreadingHTTPServer):
         self._streams = 0
         self._streams_from: dict[str, int] = {}  # each address's event streams; none for one with none
         super().__init__(address, _Handler)
+
+    def server_bind(self) -> None:
+        """Binds as http.server's does, but without looking up this
+        computer's name for server_name (socket.getfqdn), which nothing here
+        uses: on a Pi that lookup could go to the router's DNS."""
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = str(host), port
 
     def take_stream(self, client: str) -> bool:
         """An event stream's slot for `client`, if it and the server are under their caps."""

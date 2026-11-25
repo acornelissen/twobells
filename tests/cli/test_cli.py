@@ -1544,6 +1544,81 @@ def test_serve_on_a_pi_gives_a_row_s_history_the_days_saved_since_it_started(ser
     assert days() == ["2026-08-28"]
 
 
+LOOKUPS = ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo", "getfqdn",
+           "create_connection")
+
+
+def test_serve_on_a_pi_never_looks_up_a_name(tmp_path, monkeypatch, pi_with_the_dashboard):
+    # The Pi's network guard lets the web server reach the home network, and
+    # the router's DNS with it, which would carry a name looked up out to the
+    # internet. Nothing it does needs one: it listens on an address, answers
+    # by address, and hands its internet work to the fetch service. Each of
+    # Python's ways to look one up fails here, and is counted.
+    import socket
+
+    from twobells.core import net
+    from twobells.web import netguard
+    from twobells.web import server as dashserver
+    from twobells.web.auth import PasswordStore
+    from twobells.web.settingsite import TAB_PATHS
+
+    looked_up = []
+
+    def refused(name):
+        def lookup(*args, **kwargs):
+            looked_up.append((name, args))
+            raise OSError(f"{name}: no names are looked up here")
+        return lookup
+
+    for name in LOOKUPS:
+        monkeypatch.setattr(socket, name, refused(name))
+    monkeypatch.setattr(net, "urlopen", refused("urlopen"))
+    monkeypatch.setattr(netguard, "_send", lambda address: errno.EPERM)  # the guard holds, nothing sent
+
+    def connect(conn):
+        # The tests' own browser connects by address too, without a lookup.
+        conn.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        conn.sock.settimeout(conn.timeout)
+        conn.sock.connect((conn.host, conn.port))
+
+    monkeypatch.setattr(http.client.HTTPConnection, "connect", connect)
+    args, folder, _ = pi_with_the_dashboard
+    PasswordStore(folder / "web.json").set(DASH_PASSWORD)
+    answered = {}
+    serve_forever = dashserver.DashboardServer.serve_forever
+
+    def serve_a_while(server, poll_interval=0.5):
+        thread = threading.Thread(target=serve_forever, args=(server, 0.05), daemon=True)
+        thread.start()
+        try:
+            browser = Browser(server.server_address[1])
+            for path in ("/", "/healthz", "/api/snapshot", "/api/performance", "/nowhere", "/settings/login"):
+                answered[path] = browser("GET", path)[0].status
+            answered["sign in"] = browser("POST", "/settings/login", {"password": DASH_PASSWORD})[0].status
+            for path in (*TAB_PATHS.values(), "/settings/setup/"):
+                answered[path] = browser("GET", path)[0].status
+            answered["outsider"] = browser("GET", "/settings/login", headers={"Host": "evil.example.com"})[0].status
+            with socket.socket() as raw:
+                raw.settimeout(5)
+                raw.connect(("127.0.0.1", server.server_address[1]))
+                raw.sendall(b"GET\r\n\r\n")
+                answered["broken"] = raw.recv(64).split(b" ")[1]
+        finally:
+            server.shutdown()
+            thread.join(5)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", serve_a_while)
+    code = main([*args, "--host", "127.0.0.1", "--port", "0"])
+    assert looked_up == []
+    assert code == 0
+    # Each was answered: the pages, signed in, and the requests turned away.
+    assert answered.pop("broken") == b"400" and answered.pop("outsider") == 403
+    assert answered.pop("/nowhere") == 404 and answered.pop("sign in") == 303
+    assert answered.pop("/healthz") == 503  # nothing handed over by the fetch service yet
+    assert set(answered.values()) == {200}, answered
+
+
 @pytest.mark.parametrize("details_key, off", [("details-key", None), (None, "no_details_key")])
 def test_serve_gives_the_performance_page_the_filter_station_for_delay_repay(tmp_path, served, pi_with_the_dashboard,
                                                                              dashboard_config, monkeypatch,
