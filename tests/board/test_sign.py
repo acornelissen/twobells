@@ -1092,12 +1092,26 @@ def test_the_bus_route_column_is_as_wide_as_the_routes_shown(panel):
     assert find(items, "X57ABC").box is not None
 
 
-def test_e_paper_keeps_its_route_column_and_leave_gap():
-    view = dataclasses.replace(screen(buses=[dataclasses.replace(SCREEN_BUSES[0], left="201A"), *SCREEN_BUSES[1:]]),
-                               clock=None)
+def epaper_stop_x(routes):
+    buses = [dataclasses.replace(r, left=route) for r, route in zip(SCREEN_BUSES, routes, strict=True)]
+    view = dataclasses.replace(screen(buses=buses), clock=None)
     items = sign_layout(view, *dots(WAVESHARE_10IN85G)).items
-    assert line_of(items, "Hyde")[1].x == MARGIN + FONT.getlength("000") + 4
+    return line_of(items, "Hyde")[1].x, view, items
+
+
+# Changed with the e-paper route column: it was always "000" wide, cutting a four-character route short.
+def test_e_paper_route_column_is_as_wide_as_the_routes_shown_and_keeps_the_leave_gap():
+    x, view, _ = epaper_stop_x(("61", "7", "8"))
+    assert x == MARGIN + FONT.getlength("000") + 4  # three characters or fewer: as before
+    assert epaper_stop_x(("341", "61", "237"))[0] == MARGIN + FONT.getlength("000") + 4
+    x, view, items = epaper_stop_x(("201A", "61", "N199"))
+    assert x == MARGIN + max(FONT.getlength("201A"), FONT.getlength("N199")) + 4
+    assert find(items, "201A").box is None and find(items, "N199").box is None  # whole, not cut
     assert leave_gap(view, *dots(WAVESHARE_10IN85G)) == 5
+    # Longer than four characters is still cut short, in the four-character column.
+    x, _, items = epaper_stop_x(("X57ABC", "61", "237"))
+    assert x == MARGIN + FONT.getlength("N199") + 4
+    assert not any(i.text == "X57ABC" for i in items)
 
 
 # The bottom line on a screen: the notice and the rain warning side by side.

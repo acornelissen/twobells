@@ -109,9 +109,9 @@ _TRAIN_DEST_X = MARGIN + _FONT.getlength(_ORDINAL_W) + _COL_GAP + _FONT.getlengt
 # so "Leave in 2 min" and "Exp 07:24" don't read as one phrase; e-paper keeps
 # the one.
 _LEAVE_GAP = 2 * _COL_GAP
-# On a screen, a bus row's route column: as wide as the widest route shown,
-# from "000" to four characters ("201A", "N199"); a longer one scrolls.
-# E-paper keeps it "000" wide, cutting a longer route short.
+# A bus row's route column: as wide as the widest route shown,
+# from "000" to four characters ("201A", "N199"); a longer one scrolls on a
+# screen and is cut short on e-paper.
 _ROUTE_LEAST = _FONT.getlength("000")
 _ROUTE_MOST = _FONT.getlength("N199")
 
@@ -221,10 +221,10 @@ def _columns(section: Section, width: int, most: int, live: bool) -> _Columns:
     return _bus_columns(section, width, live)
 
 
-def _stop_x(section: Section, live: bool) -> float:
-    """Where a bus section's stop column starts: after its route column, on a
-    screen (`live`) as wide as its widest route, "000" to four characters."""
-    widest = max((_w(r.left) for r in section.rows), default=0) if live else 0
+def _stop_x(section: Section) -> float:
+    """Where a bus section's stop column starts: after its route column, as
+    wide as its widest route, "000" to four characters."""
+    widest = max((_w(r.left) for r in section.rows), default=0)
     return MARGIN + min(_ROUTE_MOST, max(_ROUTE_LEAST, widest)) + _COL_GAP - 1
 
 
@@ -244,7 +244,7 @@ def _bus_lead(section: Section, width: int, live: bool, dest_end: float) -> tupl
     `dest_end`: the names as wide as they want, as far as the bus
     destination's target leaves room, and at least STOP_NAME_LEAST; None
     for names_w where the rows show their labels."""
-    stop_x = _stop_x(section, live)
+    stop_x = _stop_x(section)
     wanted = _names_wanted(section, width, live)
     if wanted is None:
         stops = [r.stop for r in section.rows if r.stop]
@@ -268,7 +268,7 @@ def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
         lead = _bus_lead(section, width, True, 0)[2]
         steps = [("words", _WHERE_LEAST), ("destination", _DEST_TARGET["bus"])]
     else:
-        lead = _stop_x(section, True) + _STOP_GAP
+        lead = _stop_x(section) + _STOP_GAP
         steps = [("words", _WHERE_LEAST), ("names", min(wanted, STOP_NAME_LEAST)),
                  ("destination", _DEST_TARGET["bus"]), ("names", wanted)]
     steps += [("destination", _DEST_MOST), ("words", _WHERE_MOST)]
