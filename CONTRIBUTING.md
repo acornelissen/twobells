@@ -109,7 +109,7 @@ CI (`.github/workflows/ci.yml`) runs ruff, pyright, the tests on Python 3.11, 3.
 
 To cut a release, set the version in `pyproject.toml`, add the release to [CHANGELOG.md](CHANGELOG.md), merge to main, then push a signed tag: `git tag -s vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. The tag starts `.github/workflows/release.yml`, which runs in this order:
 
-1. **verify:** the tag is `vX.Y.Z`, matches `pyproject.toml`'s version and is on main; lint, the type check and the tests pass.
+1. **verify** and **test:** the tag is `vX.Y.Z`, matches `pyproject.toml`'s version and is on main; lint and the type check pass; the tests pass on Python 3.11, 3.12 and 3.13, as in CI. Every job after these needs both, so one failing Python stops the release.
 2. **dist**, **image** and **tarball:** the sdist and wheel; the container image (amd64, arm64), pushed to GHCR (`ghcr.io/acornelissen/twobells`) by its digest alone, with no tag and no signature; the Pi's source tarball and `SHA256SUMS`, not signed yet.
 3. **pypi:** waits for the owner's approval (the `pypi` environment), then publishes to PyPI. This is the release's one approval gate: nothing is tagged or signed before it.
 4. **image-tags** and **sign-sums**, once approved: the image is signed by digest and tagged `X.Y.Z`, and `latest` too if it is the highest version; `SHA256SUMS` is signed with Sigstore.

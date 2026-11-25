@@ -1,7 +1,10 @@
 # Publishes a release when a tag like v0.1.0 is pushed:
 #
 #   verify   the tag is vX.Y.Z, equals pyproject.toml's version and is on main;
-#            lint, the type check and tests pass
+#            lint and the type check pass
+#   test     the tests pass on every Python CI tests (the same matrix as ci.yml).
+#            Every job after these two needs both, so one failing Python
+#            stops the release
 #   dist     sdist and wheel, built with hashed build tools, smoke-tested
 #   image    multi-arch container (amd64, arm64) with SBOM and provenance,
 #            pushed to GHCR by digest only: no tag, no signature
@@ -73,7 +76,7 @@ env:
 
 jobs:
   verify:
-    name: Verify tag, lint and test
+    name: Verify tag, lint and type check
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -111,11 +114,38 @@ jobs:
       - run: mise run setup
       - run: mise run lint
       - run: mise run typecheck
+
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # ci.yml's matrix: mise.toml's pythons as it names them.
+        python: ["3.11", "3.12.14", "3.13"]
+    env:
+      MISE_PYTHON_VERSION: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          version: 2026.10.3
+          cache: false # nothing cached feeds a release
+      - run: mise run setup
+      - name: Check the venv runs the Python under test
+        env:
+          WANT: ${{ matrix.python }}
+        run: .venv/bin/python -c 'import os, platform; v = platform.python_version(); want = os.environ["WANT"]; print(v); assert v == want or v.startswith(want + "."), v'
       - run: mise run test
 
   dist:
     name: Build sdist and wheel
-    needs: verify
+    needs: [verify, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -132,7 +162,11 @@ jobs:
           install_args: python
           cache: false
       - name: Build
+        # The wheel's file dates are the tagged commit's, not the build's, so
+        # the same tag builds the same wheel. (Not the sdist: its gzip and tar
+        # headers still carry the build's time.)
         run: |
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct "$GITHUB_SHA")"
           python -m venv "$RUNNER_TEMP/build"
           "$RUNNER_TEMP/build/bin/python" -m pip install --require-hashes -r .github/requirements-build.txt
           "$RUNNER_TEMP/build/bin/python" -m build --no-isolation --outdir dist .
@@ -159,7 +193,7 @@ jobs:
 
   image:
     name: Container image (amd64, arm64), by digest
-    needs: verify
+    needs: [verify, test]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -204,7 +238,7 @@ jobs:
 
   tarball:
     name: Source tarball and SHA256SUMS
-    needs: [verify, dist]
+    needs: [verify, test, dist]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -250,7 +284,7 @@ jobs:
 
   pypi:
     name: Publish to PyPI
-    needs: [dist, image, tarball]
+    needs: [verify, test, dist, image, tarball]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment:
@@ -269,7 +303,7 @@ jobs:
     # After pypi, so behind its environment's review, without that environment
     # (and so a token PyPI would take) of its own.
     name: Sign the image and tag it
-    needs: [verify, image, pypi]
+    needs: [verify, test, image, pypi]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -337,7 +371,7 @@ jobs:
     # After pypi, so behind its environment's review: nothing is signed
     # before the release is approved.
     name: Sign SHA256SUMS
-    needs: [tarball, pypi]
+    needs: [verify, test, tarball, pypi]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -364,7 +398,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: [verify, pypi, image-tags, sign-sums]
+    needs: [verify, test, pypi, image-tags, sign-sums]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

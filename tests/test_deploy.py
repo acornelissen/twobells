@@ -1061,7 +1061,7 @@ def _needs(job: str) -> set[str]:
 
 def test_the_image_is_tagged_and_signed_only_after_the_release_is_approved():
     jobs = _jobs()
-    assert list(jobs) == ["verify", "dist", "image", "tarball", "pypi", "image-tags", "sign-sums", "release"]
+    assert list(jobs) == ["verify", "test", "dist", "image", "tarball", "pypi", "image-tags", "sign-sums", "release"]
     # pypi's environment is the one review: nothing before it tags, signs or publishes the image.
     assert [name for name, job in jobs.items() if "environment:" in job] == ["pypi"]
     # Only pypi and the two jobs after it that sign may ask for an OIDC token.
@@ -1146,6 +1146,40 @@ LOCK_PLATFORMS = {"linux-x64", "linux-arm64", "macos-arm64"}  # CI's runners and
 
 def _matrix_pythons(job: str) -> list[str]:
     return json.loads(re.search(r"^        python: (\[.*\])$", job, re.M).group(1))
+
+
+def _run_block(job: str, step: str) -> str:
+    """The shell script of the step named `step` in a job, dedented."""
+    import textwrap
+
+    after = job[job.index(f"- name: {step}\n"):]
+    run = re.search(r"^( +)run: \|\n", after, re.M)
+    lines = []
+    for line in after[run.end():].splitlines():
+        if line.strip() and len(line) - len(line.lstrip()) <= len(run.group(1)):
+            break
+        lines.append(line)
+    return textwrap.dedent("\n".join(lines)) + "\n"
+
+
+def test_no_release_job_builds_or_publishes_before_the_tests_pass_on_every_python():
+    jobs = _jobs()
+    # The release tests on each Python CI tests, which are the ones the package says it runs on.
+    assert _matrix_pythons(jobs["test"]) == _matrix_pythons(_jobs(CI)["test"])
+    assert "MISE_PYTHON_VERSION: ${{ matrix.python }}" in jobs["test"]
+    assert jobs["test"].index("Check the venv runs the Python under test") < jobs["test"].index("- run: mise run test")
+    assert "mise run test" not in jobs["verify"]
+    assert "- run: mise run lint" in jobs["verify"] and "- run: mise run typecheck" in jobs["verify"]
+    # Every job after the gate needs it outright, so one failing Python stops all of them.
+    for name, job in jobs.items():
+        if name not in ("verify", "test"):
+            assert {"verify", "test"} <= _needs(job), name
+
+
+def test_the_release_dates_the_wheel_by_the_tagged_commit():
+    build = _run_block(_jobs()["dist"], "Build")
+    dated = build.index('export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct "$GITHUB_SHA")"')
+    assert dated < build.index("-m build --no-isolation")
 
 
 def test_ci_and_the_release_install_only_the_tools_mise_lock_pins():
