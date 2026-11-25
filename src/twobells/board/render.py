@@ -568,6 +568,24 @@ def fit_text(text: str, font: Measurable, width: float, measure=None) -> str:
     return text[:keep].rstrip() + "…"
 
 
+# The smallest type a line is stepped down to (as MIN_ADDRESS_PX): below it, text is hard to read.
+MIN_LINE_PX = 8
+
+
+@functools.lru_cache(maxsize=16)
+def _sized(font: ImageFont.FreeTypeFont, size: int) -> ImageFont.FreeTypeFont:
+    return font.font_variant(size=size)
+
+
+def stepped_down(font: ImageFont.FreeTypeFont, text: str, width: float) -> ImageFont.FreeTypeFont:
+    """`font`, or the largest smaller size down to MIN_LINE_PX that draws `text` within `width`; at the floor
+    it is the floor size, and the line is left to run on."""
+    size = font.size
+    while size > MIN_LINE_PX and drawn_length(font if size == font.size else _sized(font, size), text) > width:
+        size -= 1
+    return font if size == font.size else _sized(font, size)
+
+
 NOTICE_LEAD = "! "
 
 
@@ -807,7 +825,9 @@ class Painter:
                 leave_x = leave_column(rows, self.f, self.width, s)
         y += self.label_h * s
         if not rows:
-            self.text((pad, y + s), section.empty_text, self.f.regular, self.ink)
+            # Drawn whole: type steps down for a line (the no-rail-key one) too wide at this text size.
+            font = stepped_down(self.f.regular, section.empty_text, self.width - 2 * pad)
+            self.text((pad, y + s), section.empty_text, font, self.ink)
             return y + self.row_h * s
         platform_x = platform_column(rows, self.f, self.width, s)
         dest_end = (strip_x if strip_x is not None else section_end(rows, self.f, self.width, s)) - 2 * _COL_GAP * s

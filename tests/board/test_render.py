@@ -1591,12 +1591,8 @@ def test_a_board_of_buses_alone_has_no_trains_section(monkeypatch):
     assert [t for t in drawn if t in "12345"] == ["1", "2", "3", "4", "5"]  # 5 buses, where 2 shared the board
 
 
-# The no-rail-key line is drawn whole, never fitted: it must fit every panel in every look that draws it.
-
-# Where the line is too wide today: (panel, look, text size). The smallest panel's text sizes 13 to 16 and
-# the pHAT's 16 are offered in the settings; the owner decides whether to reword or to cut it there. Shrinking
-# the wording so one fits fails the last assertion below until it is taken off this list.
-NO_KEY_DOES_NOT_FIT = {("inky-phat-v1", "plain", size) for size in (13, 14, 15, 16)} | {("inky-phat", "plain", 16)}
+# The no-rail-key line is never cut: it must fit every panel in every look that draws it. Where the plain look's
+# text size makes it too wide, that line is drawn in smaller type (down to MIN_LINE_PX).
 
 
 def no_key_widths():
@@ -1632,6 +1628,40 @@ def test_the_no_rail_key_line_fits_every_panel_in_every_look_that_draws_it():
     widths = no_key_widths()
     assert {look for _, look, _ in widths} == {"plain", "sign", "tft", "flap"}
     assert {panel for panel, _, _ in widths} >= {"inky-phat", "inky-phat-v1"}
-    too_wide = {key for key, (end, room) in widths.items() if end > room}
-    assert too_wide - NO_KEY_DOES_NOT_FIT == set()
-    assert too_wide >= NO_KEY_DOES_NOT_FIT  # a rewording that fits one: take it off the list
+    # The plain look steps its type down, so its width at the nominal size is not what is drawn: see below.
+    too_wide = {key for key, (end, room) in widths.items() if end > room and key[1] != "plain"}
+    assert too_wide == set()
+
+
+def test_the_plain_look_steps_the_no_rail_key_line_down_until_it_fits(monkeypatch):
+    from twobells.board import render as render_module
+    from twobells.board.names import themes_for
+    from twobells.board.panel import PANELS
+    from twobells.board.render import MIN_LINE_PX, PAD, REGULAR, load_font
+    from twobells.settings import schema
+    from twobells.sources.darwin import TRAINS_NEED_KEY
+
+    sizes = [int(value) for value, _ in next(f for f in schema.fields() if f.key == "text_size").options]
+    view = BoardView("GLO", (Section("Trains", (), TRAINS_NEED_KEY),), "07:00")
+    real, drawn = render_module.draw_text, []
+
+    def spy(image, xy, text, font, fill):
+        if text == TRAINS_NEED_KEY:
+            drawn.append((xy[0] + drawn_length(font, text), font.size))
+        return real(image, xy, text, font, fill)
+
+    monkeypatch.setattr(render_module, "draw_text", spy)
+    for panel in PANELS.values():
+        if "plain" not in themes_for(panel.epaper):
+            continue
+        room_end = panel.width - PAD * plain_scale(panel)
+        for size in sizes:
+            drawn.clear()
+            render(view, PALETTE, panel, size)
+            [(end, drawn_size)] = drawn
+            asked = size * plain_scale(panel)
+            assert end <= room_end, (panel.name, size)
+            assert MIN_LINE_PX <= drawn_size <= asked, (panel.name, size)
+            if drawn_size < asked:  # as big as it can be: one step more would not fit
+                wider = drawn_length(load_font(REGULAR, drawn_size + 1), TRAINS_NEED_KEY)
+                assert PAD * plain_scale(panel) + wider > room_end, (panel.name, size)
