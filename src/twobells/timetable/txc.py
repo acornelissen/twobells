@@ -52,7 +52,10 @@ TEXT_LIMIT = 80  # line names, destinations, codes
 _LATEST = 2 * 24 * 3600  # a journey still running two days after its service day is nonsense
 
 _NS = {"t": "http://www.transxchange.org.uk/"}
-_DURATION = re.compile(r"^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.\d+)?S)?)?$")
+# Plain digits, and few enough for int(): "\d" and str.isdigit() let "²" and
+# other scripts' digits through, and int() refuses more than 4,300 digits.
+_DURATION = re.compile(r"P(?:([0-9]{1,9})D)?(?:T(?:([0-9]{1,9})H)?(?:([0-9]{1,9})M)?(?:([0-9]{1,9})(?:\.[0-9]+)?S)?)?")
+_COUNT = re.compile(r"[0-9]{1,9}")
 _TIME = re.compile(r"^(\d{2}):(\d{2})(?::(\d{2}))?$")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -449,7 +452,7 @@ def _journey(
     if departure is None:
         return None
     shift = _text(node, "t:DepartureDayShift")
-    departure += 24 * 3600 * (int(shift) if shift.isdigit() else 0)
+    departure += 24 * 3600 * (int(shift) if _COUNT.fullmatch(shift) else 0)
     overrides = {
         _text(timing, "t:JourneyPatternTimingLinkRef"): timing
         for timing in node.iterfind("t:VehicleJourneyTimingLink", _NS)
@@ -539,7 +542,7 @@ def _read_first_pass(xml: bytes) -> tuple[_Document, set[str]]:
         tag = node.tag.removeprefix(_TXC)
         if not section:  # the root
             revision = node.get("RevisionNumber", "").strip()
-            doc.revision = int(revision) if revision.isdigit() and len(revision) < 10 else 0
+            doc.revision = int(revision) if _COUNT.fullmatch(revision) else 0
         elif name == "StopPoints" and tag == "AnnotatedStopPointRef":
             _read_stop_ref(node, doc)
         elif name == "StopPoints" and tag == "StopPoint":

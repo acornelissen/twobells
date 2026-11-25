@@ -221,6 +221,28 @@ def test_a_departure_day_shift_counts_past_midnight():
     assert journey.origin.minute == 1460
 
 
+@pytest.mark.parametrize("shift", ["²", "١", "1" * 5000, "-1", "x"],
+                         ids=["superscript", "arabic", "5000 digits", "negative", "letter"])
+def test_a_departure_day_shift_that_is_not_a_plain_number_is_ignored(shift):
+    # "²" passes str.isdigit() but not int(); 5,000 digits is past int()'s limit.
+    journey = _one(_txc(LINKS, departure="00:20:00", journey=f"<DepartureDayShift>{shift}</DepartureDayShift>"))
+    assert journey.origin.minute == 20
+
+
+@pytest.mark.parametrize("revision, read", [("7", 7), ("²", 0), ("٣", 0), ("1" * 5000, 0), ("1234567890", 0)],
+                         ids=["plain", "superscript", "arabic", "5000 digits", "10 digits"])
+def test_a_revision_number_is_read_only_when_it_is_a_plain_number(revision, read):
+    [(version, _)] = txc.read_document(_txc(LINKS, revision=revision), OURS, "")[0]
+    assert version.revision == read
+
+
+@pytest.mark.parametrize("run", ["PT" + "1" * 5000 + "S", "PT²M", "PT٣M", "P" + "9" * 10 + "D"],
+                         ids=["5000 digits", "superscript", "arabic", "10 digits"])
+def test_a_run_time_that_is_not_a_plain_duration_counts_as_none(run):
+    links = [("X1", "X2", "PT2M", "", ""), ("X2", STOP_A, run, "", ""), (STOP_A, "X3", "PT1M", "", "")]
+    assert [call.minute for call in _one(_txc(links)).calls] == [600, 602, 602, 603]
+
+
 def test_a_vehicle_journey_timing_link_overrides_the_pattern():
     timing = (
         "<VehicleJourneyTimingLink><JourneyPatternTimingLinkRef>l1</JourneyPatternTimingLinkRef>"
