@@ -371,3 +371,19 @@ def test_a_save_that_failed_is_tried_again(tmp_path, monkeypatch):
     monkeypatch.setattr(files, "write_atomic", real)
     store.save({"a": 1})
     assert StateStore(tmp_path / "state.json").load() == {"a": 1}
+
+
+@pytest.mark.parametrize("mark", [True, 1, "2026-10-08T07:00:00", [], {}, {"last_success": 3},
+                                  {"last_success": "07:00"}, {"last_success": "2026-10-08T07:00:00+01:00"},
+                                  {"last_success": None, "extra": 1}, {"last_success": "2026-10-08T07:00:00" * 3}])
+def test_a_saved_not_updating_mark_of_the_wrong_shape_means_no_mark(tmp_path, mark):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": {"train": {"last_success": "2026-10-08T07:00:00", "not_updating": mark}}}))
+    assert "not_updating" not in StateStore(path).load()["sources"]["train"]
+
+
+@pytest.mark.parametrize("mark", [{"last_success": None}, {"last_success": "2026-10-08T07:00:00"}])
+def test_a_saved_not_updating_mark_reads_back(tmp_path, mark):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": {"train": {"not_updating": mark}}}))
+    assert StateStore(path).load()["sources"]["train"]["not_updating"] == mark

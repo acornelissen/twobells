@@ -22,6 +22,14 @@ log = logging.getLogger(__name__)
 MEMORY_ONLY = "strips"
 
 
+# Saved in a source's entry while its section says "not updating", with the
+# last_success it was made against, so the mark outlasts the window it showed
+# in until a fetch succeeds (board/app.py's _is_stale).
+NOT_UPDATING = "not_updating"
+# The longest a saved time by the board's clock is: 2026-10-08T07:00:00.123456.
+_MOST_TIME_CHARS = 26
+
+
 # What a screen's speaker says of a train beyond its row (Departure). Saved
 # only when there is something to say, so an e-paper board's state, which
 # never has it, is as it always was, and a version from before reads it.
@@ -111,6 +119,23 @@ def vehicles_from_dicts(items: list) -> list[Vehicle]:
     return vehicles
 
 
+def _a_mark(value: object) -> bool:
+    """Whether `value` is a "not updating" mark as board/app.py saves it: the
+    entry's last_success then, a time by the board's clock (no offset), or
+    None if nothing had come; nothing more."""
+    if not isinstance(value, dict) or set(value) != {"last_success"}:
+        return False
+    when = value["last_success"]
+    if when is None:
+        return True
+    if not isinstance(when, str) or len(when) > _MOST_TIME_CHARS:
+        return False
+    try:
+        return datetime.fromisoformat(when).tzinfo is None
+    except ValueError:
+        return False
+
+
 def _readable(items: list, read) -> tuple[list, int]:
     """The saved `items` that `read` reads back, and how many it didn't."""
     kept = []
@@ -139,7 +164,11 @@ def _clean(state: dict) -> list[str]:
         if not isinstance(entry, dict):
             dropped.append(f"source {name!r}")
             del state["sources"][name]
-        elif "departures" in entry:
+            continue
+        if NOT_UPDATING in entry and not _a_mark(entry[NOT_UPDATING]):
+            dropped.append(f"{name!r} not updating mark")
+            del entry[NOT_UPDATING]
+        if "departures" in entry:
             if not isinstance(entry["departures"], list):
                 dropped.append(f"{name!r} departures")
                 del entry["departures"]

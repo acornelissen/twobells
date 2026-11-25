@@ -37,6 +37,7 @@ from .scroll import Frame, board_seconds
 from .speaker import Speaker
 from .state import (
     MEMORY_ONLY,
+    NOT_UPDATING,
     departure_to_dict,
     departures_from_dicts,
     from_iso,
@@ -247,7 +248,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
     entry["departures"] = [departure_to_dict(d) for d in departures]
     entry["last_success"] = to_iso(now)
     entry.pop("last_error", None)
-    entry.pop(_MARKED, None)
+    entry.pop(NOT_UPDATING, None)
     # A source that got there the long way round (the bus timetable's fallback)
     # says so, for the settings site.
     note = getattr(config.source, "note", None)
@@ -283,24 +284,23 @@ def _fresh(config: SourceConfig, fetched: datetime | None, now: datetime) -> boo
     return fetched is not None and fetched <= now and now - fetched <= config.stale_after
 
 
-# Saved in a source's entry while its section says "not updating", so the
-# mark outlasts the window it showed in (_is_stale); a fetch that works clears it.
-_MARKED = "not_updating"
-
-
 def _is_stale(config: SourceConfig, entry: dict, now: datetime, untrusted: bool = False) -> bool:
     """Whether a source's section says "not updating". In its windows: when
     what it has is older than stale_after, or is `untrusted` (_untrusted).
     Outside them it isn't trying, so it shows what it last knew unmarked,
     unless the mark was showing as the window closed: that stays until a
-    fetch succeeds (_poll clears it), as nothing has come since."""
+    fetch succeeds, as nothing has come since. It is saved with the
+    last_success it was made against (none, if nothing ever came), so a
+    success by any version of the board, one from before the mark included,
+    ends it; this one's _poll also clears it."""
     if not config.policy.is_active(now):
-        return untrusted or entry.get(_MARKED) is True
+        mark = entry.get(NOT_UPDATING)
+        return untrusted or (isinstance(mark, dict) and mark.get("last_success") == entry.get("last_success"))
     stale = untrusted or not _fresh(config, _saved_time(entry, "last_success"), now)
     if stale:
-        entry[_MARKED] = True
+        entry[NOT_UPDATING] = {"last_success": entry.get("last_success")}
     else:
-        entry.pop(_MARKED, None)
+        entry.pop(NOT_UPDATING, None)
     return stale
 
 

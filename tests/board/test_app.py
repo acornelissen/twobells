@@ -2228,3 +2228,27 @@ def test_data_fine_as_the_window_closes_shows_unmarked_after_it():
     trains.error = OSError("network down")
     for hhmm in ("09:01", "09:10", "23:00"):
         assert not run_once(board, state, display, at(hhmm)).view.section("train").stale, hhmm
+
+
+def test_a_mark_goes_with_a_fetch_made_by_any_version():
+    # Rolled back to a release that knows nothing of the mark: its fetches
+    # still move last_success on, and the mark was for the one before.
+    from twobells.board.state import departure_to_dict, to_iso
+
+    trains, board, display, state = failing_into_the_close()
+    entry = state["sources"]["train"]
+    entry["departures"] = [departure_to_dict(train("19:50"))]
+    entry["last_success"] = to_iso(at("19:00"))  # as the older release's _poll leaves it
+    entry.pop("last_error", None)
+    result = run_once(board, state, display, at("19:40"))
+    assert not result.view.section("train").stale
+    assert [r.left for r in result.view.section("train").rows] == ["19:50"]
+
+
+def test_a_mark_on_a_source_never_fetched_stays_until_one_is():
+    trains, buses, board, display, state = setup()
+    trains.error = OSError("network down")
+    run_once(board, state, display, at("08:58"))  # nothing ever fetched: marked
+    assert run_once(board, state, display, at("09:10")).view.section("train").stale
+    state["sources"]["train"]["last_success"] = "2026-10-08T09:05:00"  # an older release's success
+    assert not run_once(board, state, display, at("09:20")).view.section("train").stale
