@@ -626,6 +626,8 @@ class NoKeyTrains:
     label = "Trains"
     empty = TRAINS_NEED_KEY
     note = TRAINS_NEED_KEY
+    # No notices either: the app then replaces any saved from when there was a key.
+    messages: tuple[str, ...] = ()
 
     def fetch(self) -> list[Departure]:
         return []

@@ -1887,6 +1887,20 @@ def test_trains_with_no_rail_key_say_so_on_the_board_and_are_not_called_stale():
     assert result.rendered and len(display.shown) == 1
 
 
+def test_a_train_notice_saved_before_the_rail_key_went_does_not_stay_on_the_board():
+    from twobells.sources.darwin import NoKeyTrains
+
+    trains, board, display, state = notice_setup()
+    run_once(board, state, display, THU_0700)
+    assert state["sources"]["train"]["messages"] == ["Lifts out of use."]
+    # Trains now set up with no key: every poll is a success, so the old notice would count as fresh.
+    board = Board(title="GLO", sources=[SourceConfig(NoKeyTrains(), morning(2), stale_after=timedelta(minutes=6))],
+                  modes=("train",))
+    result = run_once(board, state, display, THU_0700 + timedelta(minutes=2))
+    assert result.view.notice is None
+    assert state["sources"]["train"].get("messages") == []
+
+
 # --- Saving the state: a screen's restart, a card that can't be written, the bus budget ---
 
 class FullStore:
