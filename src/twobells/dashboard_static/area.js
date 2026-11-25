@@ -262,10 +262,13 @@ function drawMap() {
   });
 }
 
-// Shows one bus on the map, from its button in the list.
+// Shows one bus on the map, from its button in the list. The map is scrolled
+// into view first: on a phone the list is below it, and nothing else would
+// show that anything happened. A reader who asks for less motion gets a jump.
 function showBus(i) {
   const marker = markers.get(i);
   if (!map || !marker) return;
+  $("area-map").scrollIntoView({ block: "nearest", behavior: reduceMotion() ? "auto" : "smooth" });
   map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: !reduceMotion() });
   marker.openPopup();
 }

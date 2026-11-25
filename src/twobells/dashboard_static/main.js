@@ -8,7 +8,7 @@ import { $, setText, str, obj, focusKey, refocus } from "./dom.js";
 import { connect, STATE } from "./api.js";
 import { clockParts, clockText, now, parseAt } from "./time.js";
 import {
-  applyRowStrips, applyScrolling, lastBuses, renderBuses, renderTrains, renderTrams, stopNames, tickBoards,
+  applyRowStrips, lastBuses, renderBuses, renderTrains, renderTrams, stopNames, tickBoards,
   toggleMore,
 } from "./board.js";
 import { tickStrips } from "./strip.js";
@@ -24,6 +24,7 @@ import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
+import { applyScrolling, drawScrolling, setUpScrolling } from "./scrolling.js";
 import { applyFlaps } from "./flap.js";
 import { startAnnouncements, tickAnnouncements, wantsAnnouncements } from "./pa.js";
 import { applyShow, shows } from "./show.js";
@@ -61,7 +62,8 @@ const heroContext = () => ({
 // or come off them, with the Split-flap look (flap.js).
 
 setUpLook();
-$("look").addEventListener("change", () => applyFlaps());
+setUpScrolling();
+$("look").addEventListener("change", () => { applyFlaps(); drawScrolling(); });
 
 // --- The status pill: live or not, and whether the trains and buses are current.
 
@@ -124,6 +126,7 @@ function render(data) {
   if (kiosk) applyDim(document.documentElement, data);
   applyRowStrips(document.documentElement, data);
   applyScrolling(document.documentElement, data);
+  drawScrolling();
   applyShow(document.documentElement, data);
   $("performance-link").hidden = !shows("performance");
   drawBoards();

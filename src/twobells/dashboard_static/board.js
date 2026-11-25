@@ -262,18 +262,11 @@ function whereLine(where, kind, strip, at) {
   return h("span", { class: ["sub", "where", drawing ? "has-strip" : null] }, drawing, where);
 }
 
-// Marks the page with whether the settings turned scrolling text off
-// (data-scrolling="off"). A snapshot from an older server doesn't say: it is on.
-export function applyScrolling(root, snapshot) {
-  if (snapshot?.scrolling === false) root.dataset.scrolling = "off";
-  else delete root.dataset.scrolling;
-}
-
 // The first row's "Calling at" line, in the server's words (core/calling.py):
 // "Calling at: Dinting, Broadbottom and Manchester Piccadilly. This train is
 // formed of 3 coaches." Every look but Standard (Dot matrix, TFT, Split-flap)
 // scrolls it along one line, as a station's screen does. The Standard look,
-// and every look with scrolling off in the settings (applyScrolling) or with
+// and every look with scrolling off in the settings (scrolling.js), or by this browser's button, or with
 // reduced motion, shows two lines of it, cut short (app.css).
 
 // Seconds for one pass: a steady pace, whatever the line's length.

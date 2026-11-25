@@ -1507,6 +1507,8 @@ def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
           h("div", { id: "area-map" }), h("p", { id: "area-dialog-summary" }), h("ul", { id: "area-vehicles" }),
           h("ul", { id: "area-stops" }));
         dialog.showModal = () => { dialog.open = true; };
+        const scrolled = [];
+        dialog.childNodes.find((el) => el.id === "area-map").scrollIntoView = (options) => scrolled.push(options);
         document.body.append(dialog, h("p", { id: "osm-credit" }), h("button", { id: "area-zoom-in" }),
           h("button", { id: "area-zoom-out" }), h("button", { id: "area-fit" }),
           h("section", { id: "area" }, h("div", { id: "line-part" }), h("p", { id: "line-summary" }),
@@ -1522,17 +1524,24 @@ def test_the_area_map_keeps_the_focus_and_the_open_popup_across_snapshots():
         const second = buttons()[1];
         second.focus();
         second.listeners.find(([type]) => type === "click")[1]({});
+        const jumped = scrolled.splice(0);
+        globalThis.matchMedia = () => ({ matches: false });
+        second.listeners.find(([type]) => type === "click")[1]({});
         const before = markers.length;
         await renderArea({ generated_at: "2026-10-09T10:15:00+01:00", buses: { rows: [] } });
         const fresh = buttons()[1];
         console.log(JSON.stringify({
           count: buttons().length, redrawn: fresh !== second, focused: document.activeElement === fresh,
-          popups: markers.slice(before).map((m) => m.open),
+          popups: markers.slice(before).map((m) => m.open), jumped, glided: scrolled,
         }));
     """.replace("(AREA)", f"({area})"))
     assert found["count"] > 1 and found["redrawn"] is True
     assert found["focused"] is True
     assert found["popups"] == [i == 1 for i in range(found["count"])]
+    # On a phone the list is below the map: "Show on map" scrolls it into view
+    # first (WCAG 2.4.3 gives no other sign), smoothly unless less motion is asked for.
+    assert found["jumped"] == [{"block": "nearest", "behavior": "auto"}]
+    assert found["glided"] == [{"block": "nearest", "behavior": "smooth"}]
 
 
 # A bus's sheet on the fake page, with a stand-in for Leaflet that counts the
@@ -2389,7 +2398,7 @@ def test_the_calling_at_delay_keeps_its_decimals_on_a_whole_second():
 @needs_node
 def test_the_page_is_marked_only_while_scrolling_text_is_off():
     found = run_js("""
-        import { applyScrolling } from "./board.js";
+        import { applyScrolling } from "./scrolling.js";
         const root = { dataset: {} };
         const marks = [];
         for (const snapshot of [{ scrolling: false }, { scrolling: true }, { scrolling: false }, {},
@@ -2401,6 +2410,98 @@ def test_the_page_is_marked_only_while_scrolling_text_is_off():
     """)
     # Only a real false turns it off; anything else, an older server's snapshot too, leaves it on.
     assert found == ["off", None, "off", None, None, None]
+
+
+SCROLLING = """
+import { h } from "./dom.js";
+import { applyScrolling, drawScrolling, setUpScrolling } from "./scrolling.js";
+const saved = {};
+globalThis.localStorage = { getItem: (k) => saved[k] ?? null, setItem: (k, v) => { saved[k] = v; } };
+const root = { dataset: { theme: "board" } };
+document.documentElement = root;
+const button = h("button", { id: "scrolling", "aria-pressed": "true", hidden: true }, "Scrolling text",
+  h("span", { "aria-hidden": "true" }, ": ", h("span", { "data-state": "" }, "on")));
+document.body.append(button);
+const press = () => button.listeners.find(([type]) => type === "click")[1]();
+const state = () => [root.dataset.scrolling ?? null, button.hidden, button.getAttribute("aria-pressed"),
+                     button.querySelector("[data-state]").textContent];
+"""
+
+
+@needs_node
+def test_the_scrolling_button_turns_scrolling_off_for_this_browser_and_keeps_it():
+    found = run_js(SCROLLING + """
+        setUpScrolling();
+        applyScrolling(root, { scrolling: true });
+        drawScrolling();
+        const start = state();
+        press();
+        const off = [...state(), saved["dashboard.scrolling"]];
+        // A later snapshot, or a visit with the choice saved, keeps it off.
+        applyScrolling(root, { scrolling: true });
+        const snapshot = state();
+        press();
+        console.log(JSON.stringify({ start, off, snapshot, on: [...state(), saved["dashboard.scrolling"]] }));
+    """)
+    assert found["start"] == [None, False, "true", "on"]
+    assert found["off"] == ["off", False, "false", "off", "off"]
+    assert found["snapshot"] == ["off", False, "false", "off"]
+    assert found["on"] == [None, False, "true", "on", "on"]
+
+
+@needs_node
+def test_the_scrolling_button_never_turns_on_what_the_settings_turned_off():
+    found = run_js(SCROLLING + """
+        saved["dashboard.scrolling"] = "on";
+        setUpScrolling();
+        applyScrolling(root, { scrolling: false });
+        drawScrolling();
+        console.log(JSON.stringify({ settingsOff: state(), saved: saved["dashboard.scrolling"] }));
+    """)
+    # Marked off, and no button to say otherwise.
+    assert found["settingsOff"][:2] == ["off", True]
+
+
+@needs_node
+def test_the_scrolling_button_is_only_where_a_look_scrolls():
+    found = run_js(SCROLLING + """
+        setUpScrolling();
+        applyScrolling(root, {});
+        const hidden = {};
+        for (const theme of ["modern", "board", "tft", "flap"]) {
+          root.dataset.theme = theme;
+          drawScrolling();
+          hidden[theme] = button.hidden;
+        }
+        root.dataset.theme = "board";
+        root.dataset.kiosk = "on";
+        drawScrolling();
+        const kiosk = button.hidden;
+        delete root.dataset.kiosk;
+        globalThis.matchMedia = () => ({ matches: true });
+        drawScrolling();
+        console.log(JSON.stringify({ hidden, kiosk, reduced: button.hidden }));
+    """)
+    assert found == {"hidden": {"modern": True, "board": False, "tft": False, "flap": False}, "kiosk": True, "reduced": True}
+
+
+@needs_node
+def test_the_scrolling_button_works_without_storage():
+    found = run_js(SCROLLING.replace("globalThis.localStorage = ", "const unused = ") + """
+        globalThis.localStorage = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
+        setUpScrolling();
+        applyScrolling(root, {});
+        console.log(JSON.stringify(state()));
+    """)
+    assert found == [None, False, "true", "on"]
+
+
+def test_the_scrolling_button_is_in_the_footer_beside_the_look():
+    page = _page()
+    buttons = [attrs for tag, attrs in page.elements if tag == "button" and attrs.get("id") == "scrolling"]
+    assert buttons and buttons[0].get("aria-pressed") == "true" and "hidden" in buttons[0]
+    # A wall tablet hides the whole Look part, the button with it.
+    assert "display: none" in " ".join(_css_rules(":root[data-kiosk] .look"))
 
 
 def test_the_calling_at_line_scrolls_in_every_look_but_standard_while_scrolling_is_on():

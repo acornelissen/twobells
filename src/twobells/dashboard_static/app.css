@@ -470,8 +470,9 @@ button.link:hover:not(:disabled) { background: none; text-decoration-thickness: 
 .connection[data-state="stale"] { padding-inline: var(--s-3); color: var(--late-fg); background: var(--late-bg); }
 .connection[data-state="offline"] { padding-inline: var(--s-3); color: var(--bad-fg); background: var(--bad-bg); }
 /* The Look picker, in the footer: the browser's own list, with its label,
-   at the size of the quiet buttons. */
-.look { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 500; }
+   at the size of the quiet buttons, and beside it the Scrolling text button
+   (scrolling.js), which wraps below on a narrow screen. */
+.look { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-weight: 500; }
 .look select {
   min-height: 2.75rem;
   padding: var(--s-2) var(--s-3);
