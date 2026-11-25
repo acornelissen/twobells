@@ -48,7 +48,7 @@ dev = [
     "pygame>=2.5",
     "fonttools[woff]>=4.55",
     "ruff==0.16.10",
-    "pyright==1.1.406",
+    "pyright==1.1.414",
     "pytest-xdist>=3.6",
 ]
 
