@@ -1,6 +1,6 @@
 # The settings
 
-The settings are at `/settings` on the install's address, port 8090 (on a desktop, the next free port if 8090 is taken), from any phone or computer on the home network. Sign in with the settings password.
+The settings are at `/settings` on the install's address, port 8090 (on a desktop, the next free port if 8090 is taken), from any phone or computer on the home network. Sign in with the settings password. You stay signed in while you use them: a browser is signed out after 12 hours without opening a settings page, and a week after signing in, however much it is used.
 
 They are in pages by task, one tab each:
 

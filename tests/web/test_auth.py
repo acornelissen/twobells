@@ -12,11 +12,13 @@ from twobells.web.auth import (
     FORM_TOKEN_SECONDS,
     MAX_CHECKS,
     MAX_FAILURES,
+    MAX_SESSION_SECONDS,
     MAX_SESSIONS,
     MAX_SLOW_S,
     MAX_WAITING,
     MIN_PASSWORD,
     SCRYPT,
+    SESSION_RENEW_SECONDS,
     SESSION_SECONDS,
     TOO_COMMON,
     TOTAL_FAILURES,
@@ -146,17 +148,77 @@ def test_a_broken_password_file_never_matches(tmp_path, content):
 # --- Sessions ---
 
 
-def test_a_session_lasts_until_its_expiry_and_no_longer():
+def test_a_session_left_unused_lasts_until_its_expiry_and_no_longer():
     clock = Clock()
     sessions = Sessions(clock)
     token, session = sessions.create()
     assert session.expires == clock.now + SESSION_SECONDS
-    clock.now += SESSION_SECONDS - 1
-    assert sessions.get(token) is session
-    clock.now += 1
+    clock.now += SESSION_SECONDS
     assert sessions.get(token) is None
     clock.now -= 1
     assert sessions.get(token) is None  # an expired session is gone, not just hidden
+
+
+def test_a_session_in_use_is_extended_from_its_last_use():
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    clock.now += SESSION_SECONDS - 1
+    assert sessions.get(token) is session
+    assert session.expires == clock.now + SESSION_SECONDS
+    clock.now += SESSION_SECONDS - 1  # long past 12 hours from signing in, but used since
+    assert sessions.get(token) is session
+
+
+def test_a_session_is_extended_at_most_once_in_a_while():
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    first = session.expires
+    clock.now += SESSION_RENEW_SECONDS - 1
+    assert sessions.get(token).expires == first  # too soon: nothing to write
+    clock.now += 1
+    assert sessions.get(token).expires == clock.now + SESSION_SECONDS
+
+
+def test_no_session_lasts_longer_than_the_cap_however_much_it_is_used():
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    started = clock.now
+    while clock.now < started + MAX_SESSION_SECONDS - SESSION_RENEW_SECONDS:
+        clock.now += SESSION_RENEW_SECONDS
+        assert sessions.get(token) is session
+        assert session.expires <= started + MAX_SESSION_SECONDS
+    clock.now = started + MAX_SESSION_SECONDS - 1
+    assert sessions.get(token) is session
+    clock.now += 1
+    assert sessions.get(token) is None
+
+
+def test_the_cookie_lasts_as_long_as_its_session_has_left():
+    clock = Clock()
+    sessions = Sessions(clock)
+    token, session = sessions.create()
+    clock.now += 600
+    assert sessions.cookie(token, session).endswith(f"; Max-Age={SESSION_SECONDS - 600}")
+    clock.now += SESSION_SECONDS  # run out: the cookie goes too
+    assert sessions.cookie(token, session).endswith("; Max-Age=0")
+
+
+def test_signing_out_or_a_new_password_still_ends_an_extended_session_at_once(tmp_path):
+    password = PasswordStore(tmp_path / "web.json")
+    password.set("first password here")
+    clock = Clock()
+    sessions = Sessions(clock, password=password)
+    one, _ = sessions.create()
+    two, _ = sessions.create()
+    clock.now += SESSION_SECONDS - 1
+    assert sessions.get(one) is not None and sessions.get(two) is not None  # both extended
+    sessions.end(one)
+    assert sessions.get(one) is None
+    PasswordStore(tmp_path / "web.json").set("second password here")
+    assert sessions.get(two) is None
 
 
 def test_ending_a_session_signs_it_out():
@@ -923,6 +985,51 @@ def test_signing_out_takes_the_session_out_of_the_file(tmp_path):
     assert kept(tmp_path, clock).get(stays) is None
 
 
+def test_an_extended_session_is_written_rarely_and_outlives_a_restart(tmp_path, monkeypatch):
+    from twobells.core import files
+
+    clock = Clock()
+    sessions = kept(tmp_path, clock)
+    token, _ = sessions.create()
+    writes = []
+    real = files.write_atomic
+    monkeypatch.setattr(files, "write_atomic", lambda *args, **kwargs: (writes.append(1), real(*args, **kwargs)))
+    for _ in range(60):  # a page a minute for an hour: nothing to write, as the SD card wears
+        clock.now += 59
+        assert sessions.get(token) is not None
+    assert writes == []
+    clock.now += SESSION_RENEW_SECONDS
+    assert sessions.get(token) is not None
+    assert len(writes) == 1
+    clock.now += SESSION_SECONDS - 1  # long after the first expiry: the restart keeps the extension
+    assert kept(tmp_path, clock).get(token) is not None
+
+
+def test_the_cap_on_a_sessions_life_outlives_a_restart(tmp_path):
+    clock = Clock()
+    token, _ = kept(tmp_path, clock).create()
+    started = clock.now
+    while clock.now < started + MAX_SESSION_SECONDS:
+        clock.now += SESSION_SECONDS - 1
+        found = kept(tmp_path, clock).get(token)  # a new process each time
+        assert (found is not None) == (clock.now < started + MAX_SESSION_SECONDS)
+
+
+def test_a_session_kept_by_an_older_version_counts_from_its_sign_in(tmp_path):
+    # Before sessions were extended the file had no start: a session's
+    # expiry was its sign-in plus SESSION_SECONDS, so that is its start.
+    clock = Clock()
+    token = "t" * 43
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    entry = {"hash": digest, "expires": clock.now + 60, "password": None}
+    (tmp_path / "sessions.json").write_text(json.dumps({"sessions": [entry]}))
+    sessions = kept(tmp_path, clock)
+    session = sessions.get(token)
+    assert session is not None and session.started == clock.now + 60 - SESSION_SECONDS
+    clock.now = session.started + MAX_SESSION_SECONDS
+    assert sessions.get(token) is None
+
+
 def test_an_expired_session_is_not_brought_back_and_is_dropped_from_the_file(tmp_path):
     clock = Clock()
     sessions = kept(tmp_path, clock)
@@ -984,12 +1091,22 @@ def test_entries_that_are_not_as_written_are_never_accepted(tmp_path):
         {"hash": digest + "\n", "expires": clock.now + 60, "password": None},
         {"hash": token, "expires": clock.now + 60, "password": None},  # the token itself is no hash
         {"hash": digest, "expires": clock.now + 60, "password": "an old salt"},
+        # Its start: a number, not in the future, and not so long ago that it is past the cap.
+        {"hash": digest, "expires": clock.now + 60, "password": None, "started": "0"},
+        {"hash": digest, "expires": clock.now + 60, "password": None, "started": True},
+        {"hash": digest, "expires": clock.now + 60, "password": None, "started": float("nan")},
+        {"hash": digest, "expires": clock.now + 60, "password": None, "started": clock.now + 1},
+        {"hash": digest, "expires": clock.now + 60, "password": None,
+         "started": clock.now + 60 - MAX_SESSION_SECONDS - 1},
     ]:
         (tmp_path / "sessions.json").write_text(json.dumps({"sessions": [entry]}))
         assert kept(tmp_path, clock).get(token) is None, entry
     (tmp_path / "sessions.json").write_text(
         json.dumps({"sessions": [{"hash": digest, "expires": clock.now + 60, "password": None}]}))
     assert kept(tmp_path, clock).get(token) is not None  # the same entry, as written, does
+    (tmp_path / "sessions.json").write_text(json.dumps(
+        {"sessions": [{"hash": digest, "expires": clock.now + 60, "password": None, "started": clock.now - 3600}]}))
+    assert kept(tmp_path, clock).get(token).started == clock.now - 3600
 
 
 @pytest.mark.parametrize("token", ["", "a" * 42, "a" * 44, "a" * 42 + "\n", "a" * 42 + "!", "é" * 43])

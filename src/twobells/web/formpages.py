@@ -18,6 +18,7 @@ wizard's API and its JSON, and where a new session lands.
 
 from __future__ import annotations
 
+import dataclasses
 import html
 import json
 import logging
@@ -525,6 +526,21 @@ class FormPages:
             return redirect(where + "?tested")
         self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, self._wording().saved), tested))
         return redirect(where + "?saved")
+
+    def keep_signed_in(self, headers: Headers, reply: Reply) -> Reply:
+        """`reply`, with the session cookie sent again when the request came
+        with a live session and the reply sets no cookie of its own: finding
+        the session extends it (Sessions.get), and the cookie lasts as long
+        as it has left. Signing out, a new password or a session run out
+        send none, so nothing brings an ended session back."""
+        if "Set-Cookie" in reply.headers:
+            return reply
+        token = self._token(headers)
+        session = self._sessions.get(token)
+        if token is None or session is None:
+            return reply
+        cookie = self._sessions.cookie(token, session)
+        return dataclasses.replace(reply, headers={**reply.headers, "Set-Cookie": cookie})
 
     # The setup wizard
 

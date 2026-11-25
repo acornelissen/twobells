@@ -27,7 +27,14 @@ from twobells.setup.api import PAGE_HEADERS, RateLimit, SetupApi, TooSoon, stati
 from twobells.setup.keytest import KeyResult
 from twobells.setup.lookups import SetupError
 from twobells.web import netguard, settingsite
-from twobells.web.auth import FAILURE_WINDOW_S, MAX_FAILURES, PasswordStore, Sessions
+from twobells.web.auth import (
+    FAILURE_WINDOW_S,
+    MAX_FAILURES,
+    MAX_SESSION_SECONDS,
+    SESSION_SECONDS,
+    PasswordStore,
+    Sessions,
+)
 from twobells.web.icons import icon
 from twobells.web.server import DashboardApp, StaticFiles, make_server
 from twobells.web.settingsite import SettingsSite
@@ -343,6 +350,54 @@ def test_sign_out_ends_the_session(signed):
     response, _ = signed("POST", "/settings/logout", {"csrf": csrf}, cookie=cookie)
     assert response.status == 303 and response.getheader("Set-Cookie").startswith("settings_session=;")
     assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
+
+
+def test_using_the_settings_keeps_the_browser_signed_in(signed):
+    cookie, csrf = signed.sign_in()
+    for _ in range(3):  # 33 hours in all, never 12 without a page
+        signed.clock.now += SESSION_SECONDS - 3600
+        response, _ = signed("GET", "/settings/general", cookie=cookie)
+        assert response.status == 200
+        # The browser's cookie is the same session's, kept as long as the server keeps it.
+        refreshed = response.getheader("Set-Cookie")
+        assert refreshed.startswith(cookie + ";")
+        assert refreshed.endswith(f"; Max-Age={SESSION_SECONDS}")
+        assert "HttpOnly" in refreshed and "SameSite=Strict" in refreshed and "Path=/settings;" in refreshed
+    # A save is use too, and still needs the form token.
+    response, _ = signed("POST", "/settings/general", {"csrf": csrf, "bank_holidays": "on"}, cookie=cookie)
+    assert response.status in (303, 422) and response.getheader("Set-Cookie").startswith(cookie + ";")
+    signed.clock.now += SESSION_SECONDS  # unused for 12 hours: it ends
+    response, _ = signed("GET", "/settings/general", cookie=cookie)
+    assert response.status == 303 and response.getheader("Location").startswith("/settings/login")
+    assert not (response.getheader("Set-Cookie") or "").startswith("settings_session=")
+
+
+def test_the_wizards_api_keeps_the_browser_signed_in_too(signed):
+    cookie, _ = signed.sign_in()
+    signed.clock.now += SESSION_SECONDS - 60
+    response, _ = signed("GET", "/settings/setup/api/session", cookie=cookie)
+    assert response.status == 200 and response.getheader("Set-Cookie").startswith(cookie + ";")
+    signed.clock.now += SESSION_SECONDS - 60
+    assert signed("GET", "/settings/setup/", cookie=cookie)[0].status == 200
+
+
+def test_signing_out_after_a_long_session_still_ends_it(signed):
+    cookie, csrf = signed.sign_in()
+    signed.clock.now += SESSION_SECONDS - 60
+    signed("GET", "/settings", cookie=cookie)
+    response, _ = signed("POST", "/settings/logout", {"csrf": csrf}, cookie=cookie)
+    assert response.getheader("Set-Cookie").startswith("settings_session=;")  # forgotten, not refreshed
+    assert signed("GET", "/settings", cookie=cookie)[0].status == 303
+
+
+def test_no_browser_stays_signed_in_past_the_cap(signed):
+    cookie, _ = signed.sign_in()
+    started = signed.clock.now
+    while signed.clock.now + SESSION_SECONDS - 60 < started + MAX_SESSION_SECONDS:
+        signed.clock.now += SESSION_SECONDS - 60
+        assert signed("GET", "/settings", cookie=cookie)[0].status == 200
+    signed.clock.now = started + MAX_SESSION_SECONDS
+    assert signed("GET", "/settings", cookie=cookie)[0].status == 303
 
 
 def test_a_save_and_the_restart_after_it_keep_the_browser_signed_in(signed):

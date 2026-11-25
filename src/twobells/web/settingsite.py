@@ -365,7 +365,13 @@ class SettingsSite:
                stream: BufferedIOBase) -> Reply:
         """The reply to one request the server has already let in: from the home
         network, naming a local host, with a path the site owns. A POST's
-        body is read from `stream` only once its origin is known to be ours."""
+        body is read from `stream` only once its origin is known to be ours.
+        A signed-in browser's session is extended as it is used, and its
+        cookie sent again to match."""
+        return self._pages.keep_signed_in(headers, self._answer(method, path, query, headers, client, stream))
+
+    def _answer(self, method: str, path: str, query: str, headers: Headers, client: str,
+                stream: BufferedIOBase) -> Reply:
         if path.startswith(SETUP_API):
             refused = self._pages.wizard_cross_site(headers)
             if refused is not None:

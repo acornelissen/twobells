@@ -41,7 +41,13 @@ log = logging.getLogger(__name__)
 MIN_PASSWORD = 10
 # What every way of setting the password says of one on the bundled list (see common_password).
 TOO_COMMON = "That's one of the most common passwords. Choose another."
+# A session ends this long after it was last used (see Sessions.get), and
+# never later than MAX_SESSION_SECONDS after signing in, however much it is
+# used. Use extends it only once SESSION_RENEW_SECONDS have gone since it was
+# last extended, so the sessions file (on a Pi's SD card) is rarely written.
 SESSION_SECONDS = 12 * 3600
+MAX_SESSION_SECONDS = 7 * 24 * 3600
+SESSION_RENEW_SECONDS = 3600
 MAX_SESSIONS = 20
 # Sign-in: this many failures from one client (see client_key) in the window locks it out for the window.
 MAX_FAILURES = 5
@@ -149,6 +155,7 @@ class Session:
     expires: float
     csrf: str  # the form token: every change made in this session must carry it
     password: str | None = None  # PasswordStore.stamp() when it was created
+    started: float = 0.0  # when it was signed in: it never lasts past this and MAX_SESSION_SECONDS
 
 
 # What secrets.token_urlsafe(32) makes: a session token, or a form cookie's value.
@@ -190,9 +197,9 @@ class Sessions:
     the restart after a save on a desktop or in Docker, or a Pi's update,
     doesn't sign anyone out. The file is 0600, like web.json beside it, and
     replaced whole on every change. It holds, for each session, a SHA-256 of
-    its token, its expiry and the password stamp it was made under: never the
-    token, nor its form token, which is made again from the token the browser
-    sends. Expired sessions, and those of an older password, are dropped on
+    its token, its expiry, when it was signed in and the password stamp it
+    was made under: never the token, nor its form token, which is made again
+    from the token the browser sends. Expired sessions, and those of an older password, are dropped on
     every write. A file that can't be read, or doesn't look as written, means
     no sessions: everyone signs in again. One server per store writes it; a
     password set in another process ends its sessions through the stamp.
@@ -227,13 +234,16 @@ class Sessions:
             while len(self._live) >= MAX_SESSIONS:
                 self._live.pop(min(self._live, key=lambda t: self._live[t].expires))
             token = secrets.token_urlsafe(32)
-            session = Session(now + SESSION_SECONDS, _form_token(token), stamp)
+            session = Session(now + SESSION_SECONDS, _form_token(token), stamp, now)
             self._live[_token_hash(token)] = session
             self._save()
             return token, session
 
     def get(self, token: str | None) -> Session | None:
-        """The live session for `token`, or None if there isn't one or it has expired."""
+        """The live session for `token`, or None if there isn't one or it has
+        expired. Finding it is using it: once SESSION_RENEW_SECONDS have gone
+        since it was last extended, it is extended to SESSION_SECONDS from
+        now, up to MAX_SESSION_SECONDS from signing in."""
         if not token:
             return None
         with self._lock:
@@ -241,11 +251,16 @@ class Sessions:
             if found is None:
                 return None
             session = self._live[found]
-            if session.password != self._stamp() or session.expires <= self.clock():
+            now = self.clock()
+            if session.password != self._stamp() or session.expires <= now:
                 del self._live[found]
                 self._save()
                 return None
             session.csrf = _form_token(token)  # not in the file: made again from the token
+            extended = min(now + SESSION_SECONDS, session.started + MAX_SESSION_SECONDS)
+            if extended >= session.expires + SESSION_RENEW_SECONDS:
+                session.expires = extended
+                self._save()
             return session
 
     def end(self, token: str | None) -> None:
@@ -281,7 +296,8 @@ class Sessions:
         if self.file is None:
             return
         self._prune(self.clock(), self._stamp())
-        entries = [{"hash": key, "expires": s.expires, "password": s.password} for key, s in self._live.items()]
+        entries = [{"hash": key, "expires": s.expires, "password": s.password, "started": s.started}
+                   for key, s in self._live.items()]
         try:
             files.write_atomic(self.file, json.dumps({"sessions": entries}), 0o600)
         except OSError as error:
@@ -319,11 +335,18 @@ class Sessions:
             if not isinstance(entry, dict):
                 continue
             key, expires, password = entry.get("hash"), entry.get("expires"), entry.get("password")
+            if not (isinstance(expires, (int, float)) and not isinstance(expires, bool)):
+                continue
+            # A file from before sessions were extended has no start: its
+            # sessions were never extended, so each began SESSION_SECONDS before its expiry.
+            started = entry.get("started", expires - SESSION_SECONDS)
             if (isinstance(key, str) and _SHA256.fullmatch(key)
-                    and isinstance(expires, (int, float)) and not isinstance(expires, bool)
                     and now < expires <= now + SESSION_SECONDS  # never longer than a session lasts
+                    and isinstance(started, (int, float)) and not isinstance(started, bool)
+                    and started <= now and expires <= started + MAX_SESSION_SECONDS  # nor past its cap
                     and (password is None or isinstance(password, str)) and password == stamp):
-                live[key] = Session(float(expires), "", password)  # its form token comes with its token
+                # Its form token comes with its token.
+                live[key] = Session(float(expires), "", password, float(started))
         newest = sorted(live.items(), key=lambda item: item[1].expires)[-MAX_SESSIONS:]
         return dict(newest)
 
@@ -331,10 +354,12 @@ class Sessions:
         """This store's session token from a request's Cookie header, if it has one."""
         return _cookie_value(cookie_header, self.cookie_name)
 
-    def cookie(self, token: str) -> str:
-        """The Set-Cookie value that signs a browser in for SESSION_SECONDS."""
+    def cookie(self, token: str, session: Session | None = None) -> str:
+        """The Set-Cookie value that signs a browser in for SESSION_SECONDS,
+        or, given its session, for as long as that has left."""
+        seconds = SESSION_SECONDS if session is None else max(0, int(session.expires - self.clock()))
         return (f"{self.cookie_name}={token}; HttpOnly; SameSite=Strict; "
-                f"Path={self.cookie_path}; Max-Age={SESSION_SECONDS}")
+                f"Path={self.cookie_path}; Max-Age={seconds}")
 
     def expired_cookie(self) -> str:
         """The Set-Cookie value that makes a browser forget its session cookie."""
