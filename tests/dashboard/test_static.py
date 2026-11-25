@@ -2182,6 +2182,18 @@ def test_a_wall_tablet_s_board_too_narrow_for_its_columns_folds_its_rows_as_a_na
     assert _css_block("@container board (max-width: 30rem)") == narrow
     assert "container: board / inline-size" in _css_rules(":root[data-kiosk] .boards > .panel")[0]
 
+def test_a_split_flap_destination_wraps_between_tiles_on_a_narrow_screen():
+    # About 60 px is left for it at 320 px: three or four tiles, where "Manchester" needs ten (WCAG 1.4.10).
+    css = re.sub(r"/\*.*?\*/", "", (STATIC / "app.css").read_text(encoding="utf-8"), flags=re.S)
+    start = css.index('@media (max-width: 64rem) {\n  :root[data-theme="flap"]')
+    rule = css[start:css.index("}", start)]
+    assert "table.board .dest .flap-word" in rule
+    for declaration in ("display: inline-flex", "flex-wrap: wrap", "white-space: normal"):
+        assert declaration in rule
+    # Only the destination: the time and status tiles stay on one line.
+    assert "nowrap" in _css_rules(':root[data-theme="flap"] .flap-word')[0]
+
+
 def test_the_journey_line_keeps_its_shapes_in_forced_colours():
     # Forced colours (Windows High Contrast) drop backgrounds, which draw the
     # filled dots, the solid rail and the train; system colours draw them then.

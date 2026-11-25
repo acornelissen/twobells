@@ -1533,6 +1533,13 @@ table.repay td:nth-child(2), table.repay td:last-child { white-space: normal; }
   height: 1px;
   background: var(--bg);
 }
+/* On a narrow screen a destination's column has room for a few tiles, not a
+   word ("Manchester" is ten): its words wrap between tiles where one is
+   wider than the column (WCAG 1.4.10), and stay whole where they fit. The
+   time and the status keep their tiles on one line. */
+@media (max-width: 64rem) {
+  :root[data-theme="flap"] table.board .dest .flap-word { display: inline-flex; flex-wrap: wrap; white-space: normal; }
+}
 :root[data-theme="flap"] tr.row-cancelled .time { text-decoration: none; }
 /* A bus's line is tiles too, not a badge round them. */
 :root[data-theme="flap"] table.board .line { min-width: 0; padding: 0; background: transparent; }
