@@ -63,6 +63,8 @@ export function numberSteps() {
 }
 
 const visited = []; // the steps shown on this page, one for each history entry made, by position
+const made = []; // the same, but kept when an edit makes later steps stale: the entries the browser really has
+let fixing = false; // a go() putting the browser back on the page's entry is on its way
 let position = 0; // the position of the step shown: its place in visited, and the n in its entry's state
 
 // What the person has chosen as it stands: the step's own fields and the
@@ -99,11 +101,13 @@ export function go(step, { focus = true, entry = true } = {}) {
     if (visited.length) {
       position += 1;
       visited.length = position;
+      made.length = position; // the browser drops the entries forward of here too
       window.history.pushState({ step, n: position }, "");
     } else {
       window.history.replaceState({ step, n: 0 }, "");
     }
     visited.push(step);
+    made[position] = step;
   }
   state.step = step;
   seen = answers(step);
@@ -116,15 +120,27 @@ export function go(step, { focus = true, entry = true } = {}) {
 // name and the position must both match what the page recorded. Forward then
 // only returns to a step already passed, never past the checks Next makes, and
 // an entry from before a reload, whose choices are gone, matches nothing. After
-// saving there is no way back: Back goes on out past the wizard's entries in
-// one move. While a save runs, a move puts the entry back, so the wizard stays
-// on Finish with its progress.
+// saving there is no way back: Back goes on out past the wizard's own entries
+// in one move.
+//
+// An entry this page made but will not show (Forward past a changed answer,
+// any move while a save runs) is undone with history.go, so the browser stays
+// on the entry of the step shown, n entries from where it landed. It is tried
+// once: if that lands anywhere but home, the move is left alone. An entry that
+// is not this page's own is left alone without moving the history.
 function popped(event) {
-  if (state.saving) {
-    const { step } = state;
-    window.history.pushState({ step, n: position }, "");
-    return;
-  }
+  const entry = event.state;
+  const step = entry && entry.step;
+  const n = entry && entry.n;
+  const ours = Number.isInteger(n) && n >= 0 && made[n] === step;
+  const undone = fixing;
+  fixing = false;
+  if (!ours || n === position || undone) return;
+  const undo = () => {
+    fixing = true;
+    window.history.go(position - n);
+  };
+  if (state.saving) return undo();
   // Choices changed on this step: the steps after it were made for the old
   // ones, so their entries match nothing and Forward cannot reach them.
   const now = answers(state.step);
@@ -132,15 +148,11 @@ function popped(event) {
     visited.length = position + 1;
     seen = now;
   }
-  const entry = event.state;
-  const step = entry && entry.step;
-  const n = entry && entry.n;
-  if (!Number.isInteger(n) || n < 0 || n >= visited.length || visited[n] !== step) return;
   if (state.step === "done") {
     if (n < position) window.history.go(-(n + 1));
     return;
   }
-  if (step === "done" || !shownSteps().includes(step)) return;
+  if (n >= visited.length || visited[n] !== step || step === "done" || !shownSteps().includes(step)) return undo();
   position = n;
   go(step, { entry: false });
 }

@@ -1657,15 +1657,47 @@ def test_browser_forward_after_an_edit_on_the_step_is_ignored_and_the_entries_fo
         window.history.back();                     // to station
         $("station-none").checked = false;         // an input edited
         $("station-GLO").checked = true;
+        document.activeElement = document.body;
         window.history.forward();
-        const forward = { shown: shown(), step: state.step };
+        const forward = { shown: shown(), step: state.step, at, focus: document.activeElement === document.body };
         window.history.back();                     // home
+        const home = { shown: shown(), at };
         window.history.forward();                  // station: fine, it is behind the edit
+        const station = { shown: shown(), at };
         window.history.forward();                  // stops again: the edit made it stale
-        console.log(JSON.stringify({ forward, shown: shown() }));
+        console.log(JSON.stringify({ forward, home, station, shown: shown(), at }));
     """, trams=None)
-    assert found["forward"] == {"shown": ["step-station"], "step": "station"}
-    assert found["shown"] == ["step-station"]
+    # A refused Forward puts the browser back on the entry of the step still shown, without a re-focus.
+    assert found["forward"] == {"shown": ["step-station"], "step": "station", "at": 1, "focus": True}
+    assert found["home"] == {"shown": ["step-home"], "at": 0}
+    assert found["station"] == {"shown": ["step-station"], "at": 1}
+    assert found["shown"] == ["step-station"] and found["at"] == 1
+
+
+@needs_node
+def test_after_a_refused_forward_one_in_page_back_press_goes_one_step_and_next_adds_no_duplicate():
+    found = run_wizard(TO_STOPS + """
+        window.history.back();
+        $("station-none").checked = false;
+        $("station-GLO").checked = true;
+        window.history.forward();                  // refused
+        const button = $("step-station").querySelector("[data-back]");
+        for (const [type, fn] of button.listeners) if (type === "click") fn();
+        const afterBack = { shown: shown(), at };
+        console.log(JSON.stringify({ afterBack }));
+    """, trams=None)
+    assert found["afterBack"] == {"shown": ["step-home"], "at": 0}
+    found = run_wizard(TO_STOPS + """
+        window.history.back();
+        $("station-none").checked = false;
+        $("station-GLO").checked = true;
+        window.history.forward();                  // refused
+        click("station-next");
+        await settle();
+        console.log(JSON.stringify({ pages, at }));
+    """, trams=None)
+    assert found["pages"] == [{"step": "home", "n": 0}, {"step": "station", "n": 1}, {"step": "stops", "n": 2}]
+    assert found["at"] == 2
 
 
 @needs_node
@@ -1714,15 +1746,20 @@ def test_a_forged_or_out_of_range_history_state_is_ignored():
           { step: "done", n: 1 },
         ];
         const seen = [];
+        const moved = [];
+        const start = at;
         for (const entry of forged) {
           pages[at + 1] = entry;
           goTo(at + 1);
           seen.push([shown(), state.step]);
+          moved.push(at);
           at -= 1; // the browser is put back on the station entry
         }
-        console.log(JSON.stringify({ seen }));
+        console.log(JSON.stringify({ seen, moved, start }));
     """)
     assert found["seen"] == [[["step-station"], "station"]] * 15
+    # An entry that is not the wizard's own is ignored without a history move of the wizard's.
+    assert found["moved"] == [found["start"] + 1] * 15
 
 
 @needs_node
@@ -1834,7 +1871,9 @@ def test_browser_back_during_a_running_save_keeps_the_wizard_on_finish_and_in_st
         click("save");                       // the search starts and keeps running
         await settle();
         window.history.back();               // the browser's Back, mid-save
-        console.log(JSON.stringify({ saving: state.saving, shown: shown(), step: state.step, before,
+        const afterBack = { at, pages: structuredClone(pages) };
+        goTo(at - 2);                        // a long press: two entries at once
+        console.log(JSON.stringify({ saving: state.saving, shown: shown(), step: state.step, before, afterBack,
                                      at, pages, cancelHidden: $("job-cancel").hidden }));
         process.exit(0);
     """, "?step=stops", walk={"walk": {}}, start={"job": {"state": "running"}}, job={"job": {"state": "running"}})
@@ -1845,12 +1884,14 @@ def test_browser_back_during_a_running_save_keeps_the_wizard_on_finish_and_in_st
     assert found["at"] == found["before"]["at"]
     assert found["pages"][found["at"]] == {"step": "finish", "n": 2}
     assert found["pages"] == found["before"]["pages"]
+    # A move of several entries at once is put right too, so the browser is on the entry of the step shown.
+    assert found["afterBack"] == {"at": found["before"]["at"], "pages": found["before"]["pages"]}
 
 
 def test_only_the_steps_name_goes_in_the_history_state():
     text = _js("steps.js")
-    # Only the step's name and its position: no answers, keys or labels. A step moved on to, an entry put back.
-    assert re.findall(r"pushState\(([^;]*), \"\"\)", text) == ["{ step, n: position }", "{ step, n: position }"]
+    # Only the step's name and its position: no answers, keys or labels. Only a step moved on to makes an entry.
+    assert re.findall(r"pushState\(([^;]*), \"\"\)", text) == ["{ step, n: position }"]
     assert re.findall(r"replaceState\(([^;]*), \"\"\)", text) == ["{ step, n: 0 }"]
     assert "location.hash" not in _all_js()
 
