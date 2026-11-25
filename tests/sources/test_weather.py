@@ -90,6 +90,13 @@ def test_saved_hours_read_back_and_bad_ones_are_skipped():
     assert hours_from_dicts([saved[0], *too_big]) == hours[:1]
 
 
+def test_a_saved_hour_with_a_utc_offset_is_skipped_as_a_fetched_one_is_refused():
+    # The board's clock is local with no offset: comparing one with it would stop the board.
+    hours = parse_forecast(payload())[:3]
+    zoned = {"start": "2026-10-09T01:00+01:00", "probability": 90, "precipitation": 1.0}
+    assert hours_from_dicts([zoned, *hours_to_dicts(hours)]) == hours
+
+
 def test_source_asks_for_the_hourly_rain_forecast_in_the_boards_timezone():
     calls = []
 

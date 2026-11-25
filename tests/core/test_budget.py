@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from twobells.core.budget import DailyBudget
 
 TODAY = date(2026, 10, 8)
@@ -60,3 +62,17 @@ def test_restoring_with_new_limit_keeps_usage():
 
 def test_restoring_from_nothing_gives_fresh_budget():
     assert DailyBudget.from_dict(None, limit=5).remaining(TODAY) == 5
+    assert DailyBudget.from_dict({"day": None, "used": 0}, limit=5).remaining(TODAY) == 5  # as a fresh one saves
+
+
+@pytest.mark.parametrize("saved", [
+    "x", ["2026-10-08", 1], 5,
+    {"day": "2026-13-45", "used": 1}, {"day": 5, "used": 1}, {"day": "", "used": 1}, {"day": "soon"},
+    {"day": "2026-10-08", "used": "NaN"}, {"day": "2026-10-08", "used": "3"}, {"day": "2026-10-08", "used": 1.5},
+    {"day": "2026-10-08", "used": float("inf")}, {"day": "2026-10-08", "used": [1]},
+    {"day": "2026-10-08", "used": -5}, {"day": "2026-10-08", "used": True},
+])
+def test_a_saved_budget_that_isnt_one_is_refused(saved):
+    # A negative spend would give more than the allowance; anything else would stop the board.
+    with pytest.raises(ValueError):
+        DailyBudget.from_dict(saved, limit=28)

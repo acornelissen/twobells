@@ -115,13 +115,18 @@ def hours_to_dicts(hours: list[Hour]) -> list[dict]:
 
 
 def hours_from_dicts(items) -> list[Hour]:
-    """Saved hours, skipping any that don't read back."""
+    """Saved hours, skipping any that don't read back. One with a UTC offset
+    is skipped too, as parse_forecast refuses one: compared with the board's
+    clock, which has none, it would stop the board."""
     hours = []
     for item in items if isinstance(items, list) else []:
         try:
+            start = datetime.fromisoformat(item["start"])
+            if start.tzinfo is not None:
+                continue
             probability = _number(item["probability"], 0, 100, "chance of rain")
             hours.append(Hour(
-                datetime.fromisoformat(item["start"]),
+                start,
                 None if probability is None else round(probability),
                 _number(item["precipitation"], 0, None, "rainfall"),
             ))

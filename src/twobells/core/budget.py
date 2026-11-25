@@ -28,7 +28,19 @@ class DailyBudget:
         return {"day": self._day.isoformat() if self._day else None, "used": self._used}
 
     @classmethod
-    def from_dict(cls, data: dict | None, limit: int) -> DailyBudget:
-        if not data or not data.get("day"):
+    def from_dict(cls, data: object, limit: int) -> DailyBudget:
+        """A budget as to_dict saved it, or a fresh one from nothing. Raises
+        ValueError for one that isn't (hand-edited, or corrupt): a spend that
+        isn't a whole number of at least 0 could give more than the allowance."""
+        if data is None:
             return cls(limit)
-        return cls(limit, date.fromisoformat(data["day"]), int(data.get("used", 0)))
+        if not isinstance(data, dict):
+            raise ValueError("a saved budget is not an object")
+        day, used = data.get("day"), data.get("used", 0)
+        if day is None:
+            return cls(limit)
+        if not isinstance(day, str):
+            raise ValueError("a saved budget's day is not a date")
+        if isinstance(used, bool) or not isinstance(used, int) or used < 0:
+            raise ValueError("a saved budget's spend is not a whole number of at least 0")
+        return cls(limit, date.fromisoformat(day), used)

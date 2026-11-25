@@ -272,3 +272,102 @@ def test_a_state_file_with_bad_bus_positions_still_reads_the_good_ones(tmp_path)
 @pytest.mark.parametrize("items", [5, None, "341", {"line": "341"}])
 def test_saved_bus_positions_that_are_not_a_list_read_as_none(items):
     assert vehicles_from_dicts(items) == []
+
+
+# --- What load cleans, in one pass, and what save leaves alone ---
+
+@pytest.mark.parametrize("bad", [
+    "x", 5, {"day": "2026-13-45", "used": 1}, {"day": 5}, {"day": "2026-10-08", "used": "NaN"},
+    {"day": "2026-10-08", "used": [1]}, {"day": "2026-10-08", "used": -5},
+])
+def test_a_saved_budget_that_doesnt_read_back_is_dropped_at_load_with_a_warning(tmp_path, caplog, bad):
+    path = tmp_path / "state.json"
+    good = {"day": "2026-10-08", "used": 3}
+    path.write_text(json.dumps({"budgets": {"bus": bad, "other": good}}))
+    with caplog.at_level("WARNING"):
+        assert StateStore(path).load()["budgets"] == {"other": good}  # the bus starts a fresh budget
+    assert len(caplog.records) == 1 and "state.json" in caplog.text
+
+
+def test_saved_departures_and_bus_positions_that_dont_read_back_are_dropped_at_load_with_one_warning(
+        tmp_path, caplog):
+    good = departure_to_dict(Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME))
+    vehicle = vehicle_to_dict(_vehicle())
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({
+        "sources": {"bus": {"departures": [{**good, "scheduled": "soon"}, good, None]},
+                    "train": {"departures": "07:12", "last_attempt": "2026-10-08T07:00:00"}},
+        "vehicles": {"items": [vehicle, {**vehicle, "lat": 91.0}]},
+        "budgets": {"bus": "x"},
+    }))
+    with caplog.at_level("WARNING"):
+        state = StateStore(path).load()
+    assert state["sources"] == {"bus": {"departures": [good]}, "train": {"last_attempt": "2026-10-08T07:00:00"}}
+    assert state["vehicles"] == {"items": [vehicle]} and state["budgets"] == {}
+    assert len(caplog.records) == 1
+
+
+def test_a_clean_state_file_loads_without_a_warning(tmp_path, caplog):
+    good = departure_to_dict(Departure("bus", "341", "Hyde", "07:20", None, Status.ON_TIME))
+    saved = {"sources": {"bus": {"departures": [good]}}, "vehicles": {"items": [vehicle_to_dict(_vehicle())]},
+             "budgets": {"bus": {"day": "2026-10-08", "used": 3}, "fresh": {"day": None, "used": 0}}}
+    StateStore(tmp_path / "state.json").save(saved)
+    with caplog.at_level("WARNING"):
+        assert StateStore(tmp_path / "state.json").load() == saved
+    assert not caplog.records
+
+
+def _counting_writes(monkeypatch):
+    import twobells.core.files as files
+
+    writes = []
+    real = files.write_atomic
+
+    def counting(path, data, mode):
+        writes.append(data)
+        real(path, data, mode)
+
+    monkeypatch.setattr(files, "write_atomic", counting)
+    return writes
+
+
+def test_a_state_unchanged_since_it_was_loaded_or_saved_is_not_written_again(tmp_path, monkeypatch):
+    # The e-paper timer saves every minute, and most minutes nothing has changed.
+    path = tmp_path / "state.json"
+    StateStore(path).save({"sources": {"train": {"departures": []}}})
+    writes = _counting_writes(monkeypatch)
+    store = StateStore(path)
+    state = store.load()
+    store.save(state)
+    assert writes == []
+    state["sources"]["train"]["last_attempt"] = "2026-10-08T07:00:00"
+    store.save(state)
+    store.save(state)
+    assert len(writes) == 1
+    assert StateStore(path).load() == state
+
+
+def test_a_state_file_cleaned_at_load_is_written_cleaned(tmp_path, monkeypatch):
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"budgets": {"bus": "x"}}))
+    writes = _counting_writes(monkeypatch)
+    store = StateStore(path)
+    store.save(store.load())
+    assert len(writes) == 1 and json.loads(path.read_text()) == {"budgets": {}}
+
+
+def test_a_save_that_failed_is_tried_again(tmp_path, monkeypatch):
+    import twobells.core.files as files
+
+    store = StateStore(tmp_path / "state.json")
+    real = files.write_atomic
+
+    def full(path, data, mode):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(files, "write_atomic", full)
+    with pytest.raises(OSError):
+        store.save({"a": 1})
+    monkeypatch.setattr(files, "write_atomic", real)
+    store.save({"a": 1})
+    assert StateStore(tmp_path / "state.json").load() == {"a": 1}

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..core import files
 from ..core.bounded import finite
+from ..core.budget import DailyBudget
 from ..core.model import Departure, Status
 from ..sources.bods import Vehicle
 
@@ -110,15 +111,77 @@ def vehicles_from_dicts(items: list) -> list[Vehicle]:
     return vehicles
 
 
+def _readable(items: list, read) -> tuple[list, int]:
+    """The saved `items` that `read` reads back, and how many it didn't."""
+    kept = []
+    for item in items:
+        try:
+            read(item)
+        except (TypeError, ValueError, KeyError):
+            continue
+        kept.append(item)
+    return kept, len(items) - len(kept)
+
+
+def _clean(state: dict) -> list[str]:
+    """Drops what a board run would trip over from a loaded state, in place,
+    saying what went: a hand-edited or corrupt part, or one from another
+    version. Done once at load, as a screen reads the state every second and
+    would otherwise warn of the same bad part every time."""
+    dropped = []
+    state.pop(MEMORY_ONLY, None)  # never saved; one in the file was put there by hand
+    for key in ("sources", "budgets", "last_render", "vehicles"):
+        if key in state and not isinstance(state[key], dict):
+            dropped.append(repr(key))
+            del state[key]
+    # Each source's entry is read with .get() on every run.
+    for name, entry in list(state.get("sources", {}).items()):
+        if not isinstance(entry, dict):
+            dropped.append(f"source {name!r}")
+            del state["sources"][name]
+        elif "departures" in entry:
+            if not isinstance(entry["departures"], list):
+                dropped.append(f"{name!r} departures")
+                del entry["departures"]
+                continue
+            entry["departures"], bad = _readable(entry["departures"], departure_from_dict)
+            if bad:
+                dropped.append(f"{name!r} departures: {bad}")
+    # A budget that doesn't read back starts again, fresh.
+    for name, saved in list(state.get("budgets", {}).items()):
+        try:
+            DailyBudget.from_dict(saved, 0)
+        except ValueError:
+            dropped.append(f"{name!r} budget")
+            del state["budgets"][name]
+    vehicles = state.get("vehicles", {})
+    if "items" in vehicles:
+        if not isinstance(vehicles["items"], list):
+            dropped.append("bus positions")
+            del vehicles["items"]
+        else:
+            vehicles["items"], bad = _readable(vehicles["items"], vehicle_from_dict)
+            if bad:
+                dropped.append(f"bus positions: {bad}")
+    return dropped
+
+
 class StateStore:
     def __init__(self, path: Path | str) -> None:
         self._path = Path(path)
+        # The file's text as last read or written, so a state unchanged since
+        # isn't written again: the e-paper timer saves every minute.
+        self._text: str | None = None
 
     def load(self) -> dict:
         """The saved state, or {} if there is none or it can't be read: a bad file
-        must not stop the board, which refills it on the next fetch."""
+        must not stop the board, which refills it on the next fetch. Any part
+        of it that doesn't read back is dropped, with one warning (_clean)."""
+        self._text = None
         try:
-            state = json.loads(self._path.read_text(encoding="utf-8"))
+            text = self._path.read_text(encoding="utf-8")
+            self._text = text
+            state = json.loads(text)
         except FileNotFoundError:
             return {}
         except ValueError as error:  # bad JSON or bad UTF-8
@@ -127,18 +190,17 @@ class StateStore:
         if not isinstance(state, dict):
             log.warning("Ignoring state file %s: not a JSON object", self._path)
             return {}
-        state.pop(MEMORY_ONLY, None)  # never saved; one in the file was put there by hand
-        for key in ("sources", "budgets", "last_render", "vehicles"):
-            if key in state and not isinstance(state[key], dict):
-                log.warning("Ignoring malformed %r in state file %s", key, self._path)
-                del state[key]
-        # Each source's entry is read with .get() on every run.
-        for name, entry in list(state.get("sources", {}).items()):
-            if not isinstance(entry, dict):
-                log.warning("Ignoring malformed source %r in state file %s", name, self._path)
-                del state["sources"][name]
+        dropped = _clean(state)
+        if dropped:
+            log.warning("Ignoring what doesn't read back in state file %s: %s", self._path, ", ".join(dropped))
         return state
 
     def save(self, state: dict) -> None:
+        """Raises OSError if the file can't be written, as on a full or
+        read-only SD card; the next save tries again."""
         kept = {key: value for key, value in state.items() if key != MEMORY_ONLY}
-        files.write_atomic(self._path, json.dumps(kept, indent=2), 0o640)
+        text = json.dumps(kept, indent=2)
+        if text == self._text:
+            return
+        files.write_atomic(self._path, text, 0o640)
+        self._text = text
