@@ -82,8 +82,12 @@ function drawTiles(el, words, letters) {
 function show(el, words) {
   const key = el.dataset.flap;
   const before = shown.get(key);
+  // Already on tiles with these words (a board drawn again, nothing changed):
+  // leave them, so a screen reader isn't told them again.
+  const tiled = isFlapLook() && before === words && el.dataset.flapText === words && el.querySelector(".flap-tiles");
   shown.set(key, words);
   el.dataset.flapText = words;
+  if (tiled) return;
   if (!isFlapLook()) {
     setText(el, words);
     return;

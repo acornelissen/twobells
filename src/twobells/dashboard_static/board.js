@@ -24,7 +24,7 @@
 // A row's time, destination and status carry a data-flap key, its board,
 // place and field ("train:0:time"), for the Split-flap look (flap.js).
 
-import { h, vh, setText, str, num, list, obj, own, validId } from "./dom.js";
+import { h, vh, patch, setText, str, num, list, obj, own, validId } from "./dom.js";
 import { hhmm, now, parseAt, relative } from "./time.js";
 import { arrivesLine, busStatusExtras, platformWord, trainNoun, tramNoun } from "./extras.js";
 import { applyFlaps, flapText } from "./flap.js";
@@ -199,13 +199,16 @@ function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, draw
   remember(mode, rows, t);
   const missedLine = missed ? h("p", { class: "just-missed" }, justMissed(missed, mode)) : null;
   if (!shown.length) {
-    el.replaceChildren(...[missedLine, h("p", { class: "empty" }, empty)].filter(Boolean));
+    patch(el, missedLine, h("p", { class: "empty" }, empty));
     return;
   }
   const kiosk = isKiosk();
   const drawn = kiosk ? shown.slice(0, KIOSK_ROWS) : shown;
   const later = kiosk ? 0 : shown.length - SHOWN;
-  el.replaceChildren(...[
+  // Patched, not rebuilt: a row that is the same keeps its nodes, so a screen
+  // reader keeps its place and a focused button stays focused. The row
+  // buttons work by delegation (main.js), so no listeners go with the nodes.
+  patch(el,
     missedLine,
     h("table", { role: "table", class: ["board", cls], id: board.table },
       h("caption", { class: quiet ? "vh" : null }, caption),
@@ -214,8 +217,7 @@ function drawBoard(mode, el, { caption, quiet, columns, cls, empty }, rows, draw
     later > 0 ? h("button", {
       type: "button", class: "more", "aria-expanded": String(board.more), "aria-controls": board.table,
       dataset: { action: "more", mode, focusKey: `more:${mode}` },
-    }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("chevron-down")), "Show later departures") : null,
-  ].filter(Boolean));
+    }, h("span", { class: "glyph", "aria-hidden": "true" }, icon("chevron-down")), "Show later departures") : null);
   applyFlaps(el);
 }
 

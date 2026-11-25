@@ -2769,6 +2769,77 @@ def test_the_tick_says_go_now_then_asks_for_the_row_to_drop():
 
 
 @needs_node
+def test_an_unchanged_snapshot_keeps_the_row_nodes_and_the_focus():
+    # A screen reader loses its place when the rows are rebuilt on every snapshot.
+    found = run_js(_boards() + """
+        import { focusKey, refocus } from "./dom.js";
+        globalThis.CSS = { escape: (text) => text };
+        const nodes = () => [...bodyRows("trains-board"), ...elements(board("trains-board")).filter((el) => el.nodeName === "BUTTON")];
+        const before = nodes();
+        const button = before.find((el) => el.nodeName === "BUTTON" && el.dataset.action === "open");
+        button.focus();
+        renderTrains(snapshot, alerts);
+        const same = nodes().length === before.length && nodes().every((el, i) => el === before[i]);
+        const focused = document.activeElement === button;
+        // One row changes: its words update in the node that was there.
+        const changed = structuredClone(snapshot);
+        changed.trains.rows[0].destination = "Hadfield";
+        renderTrains(changed, alerts);
+        const dest = byClass(bodyRows("trains-board")[0], "dest")[0];
+        console.log(JSON.stringify({ same, focused, kept: nodes()[0] === before[0], dest: dest.textContent,
+          button: said(button), id: button.dataset.id === snapshot.trains.rows[0].id }));
+    """)
+    assert found["same"] is True and found["focused"] is True and found["kept"] is True
+    assert found["dest"] == "Hadfield" and found["button"] == "More about the 07:12 to Hadfield"
+    assert found["id"] is True
+
+
+@needs_node
+def test_a_focused_row_that_has_gone_hands_the_focus_to_its_board_s_heading():
+    found = run_js(_boards() + """
+        import { focusKey, refocus } from "./dom.js";
+        globalThis.CSS = { escape: (text) => text };
+        document.body.append(h("h2", { id: "trains-heading", tabindex: "-1" }, "Trains"));
+        const open = () => byClass(bodyRows("trains-board")[0], "open")[0];
+        open().focus();
+        const key = focusKey();
+        const gone = structuredClone(snapshot);
+        gone.trains.rows.shift();
+        renderTrains(gone, alerts);
+        refocus(key, "trains-heading");
+        const afterGone = document.activeElement.id;
+        // A row still there keeps the focus, whatever the heading.
+        const second = byClass(bodyRows("trains-board")[0], "open")[0];
+        second.focus();
+        const kept = focusKey();
+        renderTrains(gone, alerts);
+        refocus(kept, "trains-heading");
+        console.log(JSON.stringify({ afterGone, kept: document.activeElement === second }));
+    """)
+    assert found == {"afterGone": "trains-heading", "kept": True}
+    main = (STATIC / "main.js").read_text(encoding="utf-8")
+    assert main.count("refocus(key, heading)") == 2
+
+
+@needs_node
+def test_split_flap_tiles_stay_put_while_their_words_are_the_same():
+    found = run_js("""
+        document.documentElement = { dataset: { theme: "flap" } };
+    """ + _boards() + """
+        const tiles = () => byClass(bodyRows("trains-board")[0], "flap-tiles");
+        const before = tiles();
+        renderTrains(snapshot, alerts);
+        const kept = tiles().length === before.length && tiles().every((el, i) => el === before[i]);
+        const changed = structuredClone(snapshot);
+        changed.trains.rows[0].destination = "Hadfield";
+        renderTrains(changed, alerts);
+        const dest = byClass(bodyRows("trains-board")[0], "dest")[0];
+        console.log(JSON.stringify({ kept, tiles: before.length > 0, said: said(dest), text: dest.dataset.flapText }));
+    """)
+    assert found == {"kept": True, "tiles": True, "said": "Hadfield", "text": "Hadfield"}
+
+
+@needs_node
 def test_five_rows_show_then_show_later_departures():
     found = run_js(_boards() + """
         const state = (id) => bodyRows(id).map((tr) => tr.hasAttribute("hidden"));

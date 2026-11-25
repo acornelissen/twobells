@@ -93,11 +93,27 @@ class FakeStyle {
   [Symbol.iterator]() { return this.props.keys(); }
 }
 
+// el.dataset as the real one is: a view of the data-* attributes, camelCase
+// for the dashed names, values kept as strings.
+function dataOf(attrs) {
+  const name = (key) => `data-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;
+  const key = (attr) => attr.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase());
+  return new Proxy({}, {
+    get: (_, k) => (typeof k === "string" ? attrs.get(name(k)) : undefined),
+    set: (_, k, value) => { attrs.set(name(k), String(value)); return true; },
+    deleteProperty: (_, k) => { attrs.delete(name(k)); return true; },
+    has: (_, k) => attrs.has(name(k)),
+    ownKeys: () => [...attrs.keys()].filter((a) => a.startsWith("data-")).map(key),
+    getOwnPropertyDescriptor: (_, k) => (attrs.has(name(k))
+      ? { value: attrs.get(name(k)), enumerable: true, configurable: true, writable: true } : undefined),
+  });
+}
+
 class FakeElement extends FakeNode {
   constructor(tag) {
     super(1, tag);
     this.attrs = new Map();
-    this.dataset = {};
+    this.dataset = dataOf(this.attrs);
     this.style = new FakeStyle();
     this.listeners = [];
   }

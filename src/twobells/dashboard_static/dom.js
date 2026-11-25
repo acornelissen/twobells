@@ -72,7 +72,11 @@ function patchChildren(el, wanted) {
       old.replaceWith(node);
     } else if (node.nodeType !== Node.ELEMENT_NODE) {
       if (old.nodeValue !== node.nodeValue) old.nodeValue = node.nodeValue;
+    } else if (sameFlap(old, node)) {
+      patchAttributes(old, node);
     } else {
+      // Its words changed: flap.js draws them afresh from the new text.
+      delete old.dataset.flapText;
       patchAttributes(old, node);
       patchChildren(old, [...node.childNodes]);
     }
@@ -80,9 +84,16 @@ function patchChildren(el, wanted) {
   while (el.childNodes.length > wanted.length) el.lastChild.remove();
 }
 
+// A field flap.js has drawn on tiles (data-flap-text holds its words) is left
+// as it is while the new words are the same, so its tiles, and the hidden
+// copy of the words a screen reader has, keep their place.
+const sameFlap = (old, node) => old.dataset.flap !== undefined && old.dataset.flap === node.dataset.flap
+  && old.dataset.flapText === node.textContent;
+
 function patchAttributes(old, node) {
   for (const { name } of [...old.attributes]) {
-    if (name !== "style" && !node.hasAttribute(name)) old.removeAttribute(name);
+    // data-flap-text is flap.js's own note: the new nodes never carry it.
+    if (name !== "style" && name !== "data-flap-text" && !node.hasAttribute(name)) old.removeAttribute(name);
   }
   for (const { name, value } of [...node.attributes]) {
     if (name !== "style" && old.getAttribute(name) !== value) old.setAttribute(name, value);
@@ -142,9 +153,13 @@ export function focusKey() {
   return el && el.dataset ? el.dataset.focusKey || null : null;
 }
 
-export function refocus(key) {
+// Puts the focus back on the element with the key. When there is none (its
+// row has gone) and `fallback` is an element's id, the focus goes there
+// instead of being lost.
+export function refocus(key, fallback = null) {
   if (!key) return;
-  const el = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`);
+  const el = document.querySelector(`[data-focus-key="${CSS.escape(key)}"]`)
+    || (fallback && document.getElementById(fallback));
   if (el && document.activeElement !== el) el.focus({ preventScroll: true });
 }
 

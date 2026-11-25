@@ -100,18 +100,24 @@ function drawBoards() {
   rowsById = indexRows(trains, buses, trams);
 }
 
+// The heading of the board the focus is in, if it is in one: where the focus
+// goes when its row has gone, rather than being lost.
+const boardHeading = () => document.activeElement?.closest?.("#trains, #buses, #metro")?.getAttribute("aria-labelledby") ?? null;
+
 // Draws the boards again between snapshots (a row dropped out, a reminder
 // set), keeping the focus where it was.
 function redrawBoards() {
   const key = focusKey();
+  const heading = boardHeading();
   drawBoards();
   attempt("disruption links", () => markBusRows(snapshot, rowsById));
-  refocus(key);
+  refocus(key, heading);
 }
 
 function render(data) {
   snapshot = data;
   const key = focusKey();
+  const heading = boardHeading();
   const title = str(data.title) || "Departures";
   setText($("title"), placeName(title, obj(data.trains)?.station));
   document.title = title;
@@ -123,7 +129,7 @@ function render(data) {
   drawBoards();
   attempt("weather", () => renderWeather(data));
   attempt("disruptions", () => { renderDisruptions(data); markBusRows(data, rowsById); });
-  refocus(key);
+  refocus(key, heading);
   attempt("announcements", () => noteSnapshot(data, rowsById));
   attempt("departure sheet", () => refreshSheet(rowsById, sheetContext()));
   if (!kiosk) renderArea(data).catch((error) => console.error("Couldn't render the area:", error));
