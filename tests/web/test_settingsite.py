@@ -807,6 +807,58 @@ def test_every_page_says_which_version_is_running_in_its_footer(pi):
     assert "Running twobells" not in pi("GET", "/settings/login")[1]
 
 
+FOCUSABLE = re.compile(r"<(a|button|input|select|textarea|summary)\b([^>]*)>")
+
+
+def landmarks(page):
+    """The page's body split at <main>: what is before it, in it and after it."""
+    body = page.split("<body>", 1)[1].split("</body>", 1)[0]
+    before, _, rest = body.partition('<main id="main" tabindex="-1">')
+    inside, _, after = rest.partition("</main>")
+    return before, inside, after
+
+
+def test_every_page_has_its_header_tabs_and_footer_outside_main_after_a_skip_link(make):
+    running = make(install="pi")
+    claim = [running("GET", "/settings/login")[1]]  # no password yet: the first claim
+    running.site.password.set(PASSWORD)
+    cookie = running.session()
+    signed_in = [running("GET", path, cookie=cookie)[1] for path in
+                 ("/settings", "/settings/trains-and-buses", "/settings/board", "/settings/keys", "/settings/general")]
+    response, refused = running("POST", "/settings/trains-and-buses", {"csrf": running.csrf(cookie), "train_crs": "1"},
+                                cookie=cookie)
+    assert response.status == 422
+    signed_in.append(refused)
+    signed_out = claim + [running("GET", path)[1] for path in ("/settings/login", "/settings/reset")]
+    signed_out.append(running("POST", "/settings/login", {"password": "wrong password"})[1])
+    for page in signed_in + signed_out:
+        assert page.count("<main") == 1 and page.count("</main>") == 1
+        before, inside, after = landmarks(page)
+        assert inside
+        # The skip link comes first, before anything else that takes the focus, and leads to main.
+        first = FOCUSABLE.search(before)
+        assert first.group(0) == '<a class="skip" href="#main">', page[:300]
+        assert page.count("<h1") == 1 and "<h1>" in before  # one heading for the page, in its header
+        assert re.match(r'<a class="skip" href="#main">[^<]+</a><header class="top">', before)
+        for landmark in ("<header", '<nav aria-label="Settings"', "<footer"):  # a page's own index may be in it
+            assert landmark not in inside and landmark not in after.replace("<footer", "", 1), landmark
+    for page in signed_in:
+        before, _, after = landmarks(page)
+        assert '<nav aria-label="Settings" class="tabs">' in before and 'action="/settings/logout"' in before
+        assert after.startswith('<footer class="foot">') and after.endswith("</footer>")
+    for page in signed_out:
+        assert "<nav" not in page and "<footer" not in page  # nothing to put there before signing in
+
+
+def test_the_skip_link_shows_when_it_has_the_focus_as_the_dashboards_does():
+    css = WEB_CSS.read_text(encoding="utf-8")
+    rule = re.search(r"\n\.skip \{([^}]*)\}", css).group(1)
+    assert "position: absolute" in rule and "transform: translateY(-200%)" in rule
+    assert "color: var(--accent)" in rule and "background: var(--surface)" in rule  # a text pair checked below
+    assert re.search(r"\n\.skip:focus \{ transform: none; \}", css)
+    assert re.search(r"z-index: (\d+)", rule) and int(re.search(r"z-index: (\d+)", rule).group(1)) > 1  # the save bar
+
+
 def test_the_footer_says_plainly_when_the_version_is_unknown(pi):
     cookie = pi.session()
     pi.site.version = "unknown"

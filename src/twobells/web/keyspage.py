@@ -90,7 +90,7 @@ class KeysPage:
 
     `action` is where its forms post; `load_secrets` gives the environment
     with every key saved; `install` says which views are on by default;
-    `header` draws what goes before the page, given the form token, and
+    `header` draws what goes before the page's <main>, given the form token, and
     `footer` what goes after it; `applies` says when saved changes take
     effect. `test_key`, if given, tests a key and never raises; without it
     there are no test buttons. `clock` gives the time a test is kept with."""
@@ -266,7 +266,7 @@ class KeysPage:
         env = self._load_secrets()
         forms = self._forms(data)
         states = keystate.states(forms, data, env, self._views(data), keyresults.load(self._store.folder))
-        out = [self._header(csrf)]
+        out = []
         if errors:
             out.append(self._summary(forms, errors, values))
         if message:
@@ -285,8 +285,11 @@ class KeysPage:
             result = tested if tested is not None and tested.name == form.name else None
             out.append(self._key_form(csrf, form, state, data, env, errors if mine else {},
                                       values if mine else {}, result, saved=bool(message)))
-        out.append(self._footer())
         return "".join(out)
+
+    def header_footer(self, csrf: str) -> tuple[str, str]:
+        """What the site puts before the page's <main> and after it."""
+        return self._header(csrf), self._footer()
 
     def _key_form(self, csrf: str, form: KeyForm, state: KeyState, data: dict, env: Mapping[str, str],
                   errors: dict[str, str], values: dict[str, str], tested: Tested | None, saved: bool) -> str:

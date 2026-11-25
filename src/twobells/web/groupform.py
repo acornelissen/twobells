@@ -182,8 +182,8 @@ class GroupForm:
     saved; `install` says which views can be switched on (a choice only
     when it offers more than one) and which are on by default; `noun` is
     what shows the departures ("board"), for the words when trains and
-    buses are both off; `header` draws what goes before the form, given the
-    form token, and `footer` what goes after it; `applies` says when saved
+    buses are both off; `header` draws what goes before the page's <main>,
+    given the form token, and `footer` what goes after it; `applies` says when saved
     changes take effect, in the save bar; `setup` is the setup wizard's
     address, for the sections with nothing set up; `overview` is the
     Overview's, which the Board page points to for how the board is doing."""
@@ -524,7 +524,7 @@ class GroupForm:
             shown |= {box: values.get(box, "") for f in fields if f.kind == "modes" for box in _mode_boxes(f, data)}
             unsaved = self._unsaved(fields, data, values)
         sections = self._sections(fields, data)
-        out = [self._header(csrf)]
+        out = []
         if errors:
             out.append(self._summary(fields, data, errors))
         if message:
@@ -562,8 +562,11 @@ class GroupForm:
             out.append('<button type="submit" class="primary">Save changes</button>')
         out.append("</div>")
         out.append("</form>")
-        out.append(self._footer())
         return "".join(out)
+
+    def header_footer(self, csrf: str) -> tuple[str, str]:
+        """What the site puts before the page's <main> and after it."""
+        return self._header(csrf), self._footer()
 
     def _section(self, page: str, heading: str, fields: list[Field], data: dict, shown: dict[str, str],
                  errors: dict[str, str], unsaved: set[str]) -> str:

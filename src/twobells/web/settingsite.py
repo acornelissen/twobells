@@ -178,14 +178,14 @@ def wizard_files(found: Mapping[str, Path] | None = None) -> dict[str, tuple[byt
     return out
 
 
-def shell(title: str, body: str) -> str:
+def shell(title: str, body: str, header: str = "", footer: str = "") -> str:
     """The HTML document around a page's content: with no script, for the sign-in and reset pages."""
-    return document(title, body, f"{PREFIX}/style.css")
+    return document(title, body, f"{PREFIX}/style.css", header=header, footer=footer)
 
 
-def page_shell(title: str, body: str) -> str:
+def page_shell(title: str, body: str, header: str = "", footer: str = "") -> str:
     """The HTML document around a signed-in visitor's settings page, with settings.js."""
-    return document(title, body, f"{PREFIX}/style.css", SCRIPT)
+    return document(title, body, f"{PREFIX}/style.css", SCRIPT, header, footer)
 
 
 def applies(install: Install) -> str:
@@ -474,8 +474,8 @@ class SettingsSite:
         return f"{TAB_NAMES[tab]} – {place_name(data, self.install.noun)} settings"
 
     def _header(self, tab: str, csrf: str) -> str:
-        """What goes before a page's form: the way back to the dashboard while
-        it runs, the page's name, signing out, then the tabs."""
+        """What goes before a page's <main>: its header (the way back to the
+        dashboard while it runs, the page's name, signing out), then the tabs."""
         e = html.escape
         items = []
         for shown in self.tabs():
@@ -507,7 +507,7 @@ class SettingsSite:
         now = datetime.fromtimestamp(self._clock(), zone).replace(tzinfo=None)
         views = self.views()
         running = self._running()
-        out = [self._header("overview", csrf)]
+        out = []
         if self.problem:
             out.append(
                 '<div class="summary" role="alert"><h2>The dashboard isn\'t running</h2>'
@@ -533,7 +533,6 @@ class SettingsSite:
         out.append(view.render_place(data, self.store.folder, now, zone))
         out.append(view.render_keys(keystate.key_states(self.store, self.install), TAB_PATHS["keys"]))
         out.append(view.render_actions(data, SETUP, running, host))
-        out.append(self._footer())
         return "".join(out)
 
     def _board_state(self) -> dict | None:
@@ -589,6 +588,9 @@ class Overview:
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None) -> str:
         return self._site.overview(csrf, self._host)
+
+    def header_footer(self, csrf: str) -> tuple[str, str]:
+        return self._site._header("overview", csrf), self._site._footer()
 
     def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]:
         return {"_form": "Nothing is saved from the overview"}

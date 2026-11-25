@@ -102,7 +102,9 @@ class SettingsPage(Protocol):
     visitor, and saved from their fields."""
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
-               values: dict[str, str] | None = None) -> str: ...
+               values: dict[str, str] | None = None) -> str: ...  # what goes in <main>
+
+    def header_footer(self, csrf: str) -> tuple[str, str]: ...  # what goes before <main> and after it
 
     # field -> error, empty when saved; what was saved is added to `changed` in words
     def save(self, fields: dict[str, str], changed: list[str] | None = None) -> dict[str, str]: ...
@@ -114,6 +116,8 @@ class KeyForms(Protocol):
 
     def render(self, csrf: str, message: str = "", errors: dict[str, str] | None = None,
                values: dict[str, str] | None = None, tested: Tested | None = None) -> str: ...
+
+    def header_footer(self, csrf: str) -> tuple[str, str]: ...
 
     def knows(self, name: str) -> bool: ...  # whether form `name` is on the page
 
@@ -177,17 +181,28 @@ class Wording:
     wrong_step_token: str  # the error when a wizard step's X-CSRF-Token is wrong
 
 
-def document(title: str, body: str, stylesheet: str, script: str = "") -> str:
+def document(title: str, body: str, stylesheet: str, script: str = "", header: str = "", footer: str = "") -> str:
     """The HTML document around a page's content, with `stylesheet` its CSS's
-    path and `script`, if given, the path of the one script it runs, deferred."""
+    path and `script`, if given, the path of the one script it runs, deferred.
+    `body` goes in <main>, with `header` (trusted HTML: the page's <header>
+    and its tabs) before it and `footer` (its <footer>) after, and first of
+    all a link past the header to main."""
     deferred = f'<script src="{html.escape(script)}" defer></script>' if script else ""
     return (
         '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{html.escape(title)}</title>"
         f'<link rel="stylesheet" href="{stylesheet}">{deferred}</head>'
-        f"<body><main>{body}</main></body></html>"
+        f'<body><a class="skip" href="#main">Skip to main content</a>{header}'
+        f'<main id="main" tabindex="-1">{body}</main>{footer}</body></html>'
     )
+
+
+class Shell(Protocol):
+    """What wraps a page in the HTML document (as `document` does): its
+    title, its main content, and what goes before and after that."""
+
+    def __call__(self, title: str, body: str, header: str = "", footer: str = "", /) -> str: ...
 
 
 MAX_FORM_FIELDS = 300
@@ -244,17 +259,17 @@ class FormPages:
     `wording()` gives the words for each page. `home()` is where a new
     session lands. `resume_setup`, if set, is the wizard's page: a sign-in
     started there (`?next=setup`) goes back to it, at the shortcut's step
-    if it was one of `setup_steps` (`&step=stops`). `shell(title, body)`
-    wraps a page in the HTML document; `page_shell`, if given, wraps a
-    signed-in visitor's settings pages instead (with their script), so the
-    sign-in and reset pages never have one. Log lines go to `log`, so each
+    if it was one of `setup_steps` (`&step=stops`). `shell(title, body,
+    header, footer)` wraps a page in the HTML document; `page_shell`, if
+    given, wraps a signed-in visitor's settings pages instead (with their
+    script), so the sign-in and reset pages never have one. Log lines go to `log`, so each
     host's keep their own name. `setup` runs the wizard's steps, answered
     with `json_reply`."""
 
     def __init__(self, page: SettingsPage, password: PasswordStore, sessions: Sessions, lockout: Lockout,
                  codes: ResetCodes, forms: FormTokens, wording: Callable[[], Wording], *, prefix: str,
-                 shell: Callable[[str, str], str], home: Callable[[], str], log: logging.Logger,
-                 page_shell: Callable[[str, str], str] | None = None, resume_setup: str = "",
+                 shell: Shell, home: Callable[[], str], log: logging.Logger,
+                 page_shell: Shell | None = None, resume_setup: str = "",
                  setup_steps: tuple[str, ...] = (), setup: SetupSteps | None = None,
                  json_reply: Callable[[int, dict], Reply] = compact_json,
                  clock: Callable[[], float] = time.time) -> None:
@@ -303,12 +318,12 @@ class FormPages:
                 else:
                     notice = None
         if notice is None:
-            return self._signed_in_html(200, title, page.render(session.csrf))
+            return self._signed_in_html(200, title, page, session.csrf, page.render(session.csrf))
         if notice.tested is not None:  # only the Keys page tests, so this is it
             body = cast("KeyForms", page).render(session.csrf, message=notice.message, tested=notice.tested)
         else:
             body = page.render(session.csrf, message=notice.message)
-        return self._signed_in_html(200, f"{notice.title} – {title}", body)
+        return self._signed_in_html(200, f"{notice.title} – {title}", page, session.csrf, body)
 
     def login_page(self, status: int, headers: Headers, message: str = "", to_setup: bool = False,
                    step: str = "") -> Reply:
@@ -325,7 +340,6 @@ class FormPages:
         if to_setup and step in self._setup_steps:
             then += f'<input type="hidden" name="step" value="{html.escape(step)}">'
         body = (
-            f"<h1>{wording.title}</h1>"
             f"{error}"
             f'<form method="post" action="{self._prefix}/login" class="signin">{then}'
             '<label for="password">Password</label>'
@@ -337,7 +351,7 @@ class FormPages:
             '<button type="submit">Forgot password?</button></form>'
             f"{wording.back}"
         )
-        return self._html(status, "Sign in", body, cookie)
+        return self._html(status, "Sign in", wording.title, body, cookie)
 
     def reset_page(self, status: int, headers: Headers, message: str = "", invalid: str = "",
                    asked: bool = False) -> Reply:
@@ -349,7 +363,7 @@ class FormPages:
         token, cookie = self._form_token(headers)
         title = wording.claim_title if claim else "Set a new password"
         intro = wording.claim_intro if claim else wording.reset_intro
-        parts = [f"<h1>{title}</h1>", f"<p>{intro}</p>"]
+        parts = [f"<p>{intro}</p>"]
         if asked:
             parts.append(f'<p class="notice" role="status">{wording.asked}</p>')
         if message:
@@ -393,7 +407,7 @@ class FormPages:
         else:
             parts.append(f'<p class="after"><a href="{self._prefix}/login">Back to sign in</a></p>')
         parts.append(wording.back)
-        return self._html(status, title, "".join(parts), cookie)
+        return self._html(status, title, title, "".join(parts), cookie)
 
     # Forms
 
@@ -492,7 +506,7 @@ class FormPages:
         errors = page.save(fields, changed)
         if errors:
             body = page.render(session.csrf, errors=errors, values=fields)
-            return self._signed_in_html(422, f"{title}: fix the errors", body)
+            return self._signed_in_html(422, f"{title}: fix the errors", page, session.csrf, body)
         self._notice(session.csrf, Notice(page, "Saved", saved_notice(changed, wording.saved)))
         return redirect((where or self._prefix) + "?saved")
 
@@ -517,7 +531,7 @@ class FormPages:
             errors = page.save(fields, changed)
             if errors:
                 body = page.render(session.csrf, errors=errors, values=fields)
-                return self._signed_in_html(422, f"{title}: fix the errors", body)
+                return self._signed_in_html(422, f"{title}: fix the errors", page, session.csrf, body)
         tested = page.test_key(fields) if do != "save" else None
         if do != "save" and tested is None:
             return Reply(400, b"Bad request: no such key to test")
@@ -606,12 +620,15 @@ class FormPages:
     def _token(self, headers: Headers) -> str | None:
         return self._sessions.token_from(headers.get("Cookie"))
 
-    def _html(self, status: int, title: str, body: str, extra: dict[str, str] | None = None) -> Reply:
-        return Reply(status, self._shell(title, body).encode(), HTML, extra or {})
+    def _html(self, status: int, title: str, heading: str, body: str, extra: dict[str, str] | None = None) -> Reply:
+        """A page before signing in: `heading` (trusted HTML) in its header, `body` in its main."""
+        header = f'<header class="top"><h1>{heading}</h1></header>'
+        return Reply(status, self._shell(title, body, header).encode(), HTML, extra or {})
 
-    def _signed_in_html(self, status: int, title: str, body: str) -> Reply:
-        """A signed-in visitor's settings page."""
-        return Reply(status, self._page_shell(title, body).encode(), HTML)
+    def _signed_in_html(self, status: int, title: str, page: SettingsPage | KeyForms, csrf: str, body: str) -> Reply:
+        """A signed-in visitor's settings page: `body`, from `page`, with its header and footer."""
+        header, footer = page.header_footer(csrf)
+        return Reply(status, self._page_shell(title, body, header, footer).encode(), HTML)
 
     def _form_token(self, headers: Headers) -> tuple[str, dict[str, str]]:
         """A pre-session form's hidden field, and the header that sets its cookie."""

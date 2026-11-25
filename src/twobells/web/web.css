@@ -88,7 +88,10 @@ body {
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
 }
-main { max-width: 42rem; margin: 0 auto; padding: var(--s-5) var(--s-4) 0; }
+/* The page in one column (formpages.document): its header and tabs, its main, then its footer. */
+.top, .tabs, main { max-width: 42rem; margin-left: auto; margin-right: auto; padding: 0 var(--s-4); }
+.top { padding-top: var(--s-5); }
+.skip + main { padding-top: var(--s-5); }
 h1, h2, h3 { line-height: 1.2; font-weight: 600; }
 h1 { font-size: var(--t-xl); margin: 0; }
 h2 { font-size: var(--t-lg); margin: 0 0 var(--s-2); }
@@ -110,6 +113,20 @@ a { color: var(--accent); text-underline-offset: 0.15em; }
   white-space: nowrap;
   border: 0;
 }
+/* The link past the header to main: out of sight until it has the focus, as the dashboard's. Above the save bar. */
+.skip {
+  position: absolute;
+  left: var(--s-2);
+  top: var(--s-2);
+  z-index: 10;
+  padding: var(--s-2) var(--s-4);
+  background: var(--surface);
+  color: var(--accent);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  transform: translateY(-200%);
+}
+.skip:focus { transform: none; }
 
 /* The header: the way back to the dashboard, the page's name, signing out. */
 .top { margin-bottom: var(--s-4); }
@@ -130,8 +147,9 @@ a { color: var(--accent); text-underline-offset: 0.15em; }
 .index ul { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); list-style: none; margin: 0 0 var(--s-5);
   padding: 0; font-size: var(--t-sm); }
 .index a { display: inline-block; min-height: 1.5rem; padding: var(--s-1) 0; }
-.foot { margin: var(--s-6) 0 0; padding: var(--s-4) 0 var(--s-5); color: var(--muted); font-size: var(--t-sm);
-  border-top: 1px solid var(--line); }
+/* As wide as main's content, so its rule lines up with the cards. */
+.foot { width: calc(100% - 2 * var(--s-4)); max-width: calc(42rem - 2 * var(--s-4)); margin: var(--s-6) auto 0;
+  padding: var(--s-4) 0 var(--s-5); color: var(--muted); font-size: var(--t-sm); border-top: 1px solid var(--line); }
 .foot p { margin: 0; }
 
 /* Sections: each a card, hairline edged, its heading in the legend, floated

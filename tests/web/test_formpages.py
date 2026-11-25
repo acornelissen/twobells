@@ -93,8 +93,20 @@ def test_the_document_escapes_its_title_and_names_its_stylesheet():
     page = document("<Board> & co", "<p>body</p>", "/settings/style.css")
     assert "<title>&lt;Board&gt; &amp; co</title>" in page
     assert '<link rel="stylesheet" href="/settings/style.css">' in page
-    assert page.startswith("<!doctype html>") and "<main><p>body</p></main>" in page
+    assert page.startswith("<!doctype html>") and '<main id="main" tabindex="-1"><p>body</p></main>' in page
     assert '<html lang="en-GB">' in page
+
+
+def test_the_document_puts_the_header_and_footer_outside_main_after_a_skip_link():
+    # The header, tabs and footer were inside <main> (WCAG 1.3.1); now they are landmarks of their own.
+    page = document("Board", "<p>body</p>", "/settings/style.css",
+                    header='<header class="top"><h1>Board</h1></header><nav aria-label="Settings"></nav>',
+                    footer='<footer class="foot"><p>Running.</p></footer>')
+    body = page.split("<body>", 1)[1]
+    assert body == ('<a class="skip" href="#main">Skip to main content</a>'
+                    '<header class="top"><h1>Board</h1></header><nav aria-label="Settings"></nav>'
+                    '<main id="main" tabindex="-1"><p>body</p></main>'
+                    '<footer class="foot"><p>Running.</p></footer></body></html>')
 
 
 def test_the_document_runs_no_script_unless_given_one_deferred():
@@ -110,8 +122,8 @@ def test_a_signed_in_visitors_pages_take_the_page_shell_and_sign_in_the_plain_on
     made.pages = FormPages(made.page, made.password, made.sessions, made.lockout, made.codes,
                            FormTokens(made.clock, cookie_name="widget_form", cookie_path="/area"),
                            lambda: made.wording, prefix="/area",
-                           shell=lambda title, body: f"<plain>{body}",
-                           page_shell=lambda title, body: f"<scripted>{body}",
+                           shell=lambda title, body, header="", footer="": f"<plain>{header}{body}{footer}",
+                           page_shell=lambda title, body, header="", footer="": f"<scripted>{header}{body}{footer}",
                            home=lambda: "/area", log=logging.getLogger("tests.widget"), clock=made.clock)
     made.password.set(PASSWORD)
     cookie, csrf = made.signed_in()
@@ -171,6 +183,9 @@ class FakePage:
     def render(self, csrf, message="", errors=None, values=None):
         return f"<form csrf={csrf}>{message}|{errors or ''}|{values or ''}</form>"
 
+    def header_footer(self, csrf):
+        return "", ""
+
     def save(self, fields, changed=None):
         if fields.get("title") == "bad":
             return {"title": "Too bad"}
@@ -226,7 +241,8 @@ class Host:
         self.steps = FakeSteps()
         self.pages = FormPages(self.page, self.password, self.sessions, self.lockout, self.codes, forms,
                                lambda: self.wording,
-                               prefix="/area", shell=lambda title, body: f"<title>{title}</title>{body}",
+                               prefix="/area",
+                               shell=lambda title, body, header="", footer="": f"<title>{title}</title>{header}{body}{footer}",
                                home=lambda: "/area", log=logging.getLogger("tests.widget"),
                                resume_setup=resume_setup, setup=self.steps, json_reply=json_reply,
                                clock=self.clock)
