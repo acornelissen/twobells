@@ -88,8 +88,14 @@ export function go(step, { focus = true, entry = true } = {}) {
 // Browser Back (or a back gesture) to a step this page showed earlier goes
 // there, as the Back button does. Forward, and a step from before a reload,
 // whose choices are gone, are left alone: going forward would skip the checks
-// Next makes. After saving there is no way back.
+// Next makes. After saving there is no way back, and while a save runs Back
+// puts the entry back, so the wizard stays on Finish with its progress.
 function popped(event) {
+  if (state.saving) {
+    const { step } = state;
+    window.history.pushState({ step }, "");
+    return;
+  }
   const step = event.state && event.state.step;
   const at = visited.lastIndexOf(step);
   if (state.step === "done" || at < 0 || at >= visited.length - 1) return;

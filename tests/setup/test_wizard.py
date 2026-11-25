@@ -1684,9 +1684,35 @@ def test_a_shortcuts_first_step_is_not_guarded_and_the_done_step_ignores_back():
     assert found == {"first": False, "second": True, "shown": ["step-done"], "after": False}
 
 
+@needs_node
+def test_browser_back_during_a_running_save_keeps_the_wizard_on_finish_and_in_step_with_the_history():
+    found = run_wizard("""
+        for (const box of $("stops-list").querySelectorAll('input[type="checkbox"]')) box.checked = box.value === "1800SB12341";
+        state.labels.delete("1800SB99999");
+        click("stops-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        const before = { at, pages: structuredClone(pages) };
+        click("save");                       // the search starts and keeps running
+        await settle();
+        window.history.back();               // the browser's Back, mid-save
+        console.log(JSON.stringify({ saving: state.saving, shown: shown(), step: state.step, before,
+                                     at, pages, cancelHidden: $("job-cancel").hidden }));
+        process.exit(0);
+    """, "?step=stops", walk={"walk": {}}, start={"job": {"state": "running"}}, job={"job": {"state": "running"}})
+    assert found["saving"] is True
+    assert found["shown"] == ["step-finish"] and found["step"] == "finish"
+    assert found["cancelHidden"] is False
+    # The entry Back left is put back, so the browser's entries still match the steps shown.
+    assert found["at"] == found["before"]["at"]
+    assert found["pages"][found["at"]] == {"step": "finish"}
+    assert found["pages"] == found["before"]["pages"]
+
+
 def test_only_the_steps_name_goes_in_the_history_state():
     text = _js("steps.js")
-    assert re.findall(r"pushState\(([^,)]*)", text) == ["{ step }"]
+    assert re.findall(r"pushState\(([^,)]*)", text) == ["{ step }", "{ step }"]  # a step moved on to, an entry put back
     assert re.findall(r"replaceState\(([^,)]*)", text) == ["{ step }"]
     assert "location.hash" not in _all_js()
 
