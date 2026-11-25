@@ -411,6 +411,33 @@ def test_a_new_search_stops_the_last_one_s_roads_there(serving):
     wait_for(lambda: ok(serving, "job")["job"]["state"] == "running")
 
 
+def test_a_new_search_starts_though_the_last_one_s_roads_end_as_it_asks(board):
+    """The heartbeat, on a thread of its own, lets go of a search once its
+    roads are found. Roads found just as a new search asked about them left
+    it with no search to stop, and the new one failed unanswered."""
+    job = board.runner.make_job({"A": "1800SB12341"}, "", routes=False, walk_minutes={})
+    job.start()
+    board.worker.step()
+    first = FakeJob.made[-1]
+    first.finish(roads=(3, 10))
+    board.worker.step()  # still finding them: kept
+    asked = first.status
+
+    def roads_end_as_asked():
+        first.status = asked  # once
+        status = asked()
+        first.state["roads"].update(state="done", done=10)
+        board.worker._report()  # the heartbeat, between the question and the stop
+        return status
+
+    first.status = roads_end_as_asked
+    again = board.runner.make_job({"B": "1800SB12342"}, "", routes=False, walk_minutes={})
+    again.start()
+    board.worker.step()
+    assert len(FakeJob.made) == 2 and FakeJob.made[-1].stops == {"B": "1800SB12342"}
+    assert first.cancelled and again.status()["state"] == "running"
+
+
 def test_check_status_takes_the_roads_of_a_search_that_is_done():
     status = {"state": "done", "step": "", "done": 0, "total": 0, "message": "Found 1", "result": RESULT,
               "roads": {"state": "running", "done": 12, "total": 140}}

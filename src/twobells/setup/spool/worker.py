@@ -346,12 +346,14 @@ class Worker:
         if request_id in self._cancelled:
             self._not_started(request_id, "Cancelled")
             return
-        if self._job is not None:
-            if not discover.roads_running(self._job.status()):
+        with self._lock:  # the heartbeat lets go of a search whose roads are found, at any time
+            last = self._job
+        if last is not None:
+            if not discover.roads_running(last.status()):
                 self._not_started(request_id, "A search is already running; wait for it or cancel it")
                 return
             # Done but for its roads: they stop, as this search's timetable replaces its.
-            self._job.cancel()
+            last.cancel()
         saved = ""
         try:
             saved = str(self._load_secrets().get("BODS_API_KEY", "")).strip()
