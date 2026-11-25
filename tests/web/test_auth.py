@@ -700,6 +700,13 @@ def test_other_host_names_fail(host):
     assert not local_host(host)
 
 
+# Headers are read as Latin-1, so a byte past ASCII is a letter or digit to isalnum.
+@pytest.mark.parametrize("host", ["[::1]junk", "[::1]:80x", "[fe80::1]x:8080", "localhost:abc", "b\xfccher",
+                                  "b\xfccher.local", "pi\xb2", "pi.local:8\xb2"])
+def test_a_host_with_anything_but_ascii_letters_digits_and_a_port_fails(host):
+    assert not local_host(host)
+
+
 # The web server's own check: every request it serves passes it.
 @pytest.mark.parametrize("address, hosts, refused", [
     ("192.168.1.5", ["pi.local:8080"], False),

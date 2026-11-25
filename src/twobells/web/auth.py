@@ -597,6 +597,9 @@ def same_origin(headers) -> bool:
     return parsed.scheme in ("http", "https") and parsed.netloc == headers.get("Host")
 
 
+_PORT = re.compile(r"(:[0-9]{0,5})?")  # what may follow a Host header's name: nothing, or its port
+
+
 def private_address(address: str) -> bool:
     """Loopback, link-local or a private range: the home network, not the internet."""
     try:
@@ -611,15 +614,19 @@ def private_address(address: str) -> bool:
 def local_host(host: str | None) -> bool:
     """A Host header naming this machine on the home network: a private IP, or a
     name with no dots or ending .local, .lan or .home.arpa. Anything else is how
-    a DNS-rebinding page would reach us."""
-    if not host:
+    a DNS-rebinding page would reach us. ASCII only, and after the name
+    nothing but a port."""
+    if not host or not host.isascii():
         return False
-    name = host.strip().lower()
+    name, port = host.strip().lower(), ""
     if name.startswith("["):  # [IPv6]:port
-        name = name[1 : name.find("]")] if "]" in name else ""
+        name, bracket, port = name[1:].partition("]")
+        if not bracket:
+            return False
     elif name.count(":") == 1:
-        name = name.split(":")[0]
-    if not name:
+        name, colon, port = name.partition(":")
+        port = colon + port
+    if not name or not _PORT.fullmatch(port):
         return False
     try:
         ipaddress.ip_address(name.split("%")[0])
