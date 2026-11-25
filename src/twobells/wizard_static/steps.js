@@ -65,6 +65,7 @@ export function numberSteps() {
 const visited = []; // the steps shown on this page, one for each history entry made, by position
 const made = []; // the same, but kept when an edit makes later steps stale: the entries the browser really has
 let fixing = false; // a go() putting the browser back on the page's entry is on its way
+let here = 0; // the n of the entry the browser is on, as its last move said: not position while an undo is on its way
 let position = 0; // the position of the step shown: its place in visited, and the n in its entry's state
 
 // What the person has chosen as it stands: the step's own fields and the
@@ -97,9 +98,13 @@ export function go(step, { focus = true, entry = true } = {}) {
   document.title = `${TITLES[step]}: ${state.title}`;
   if (entry && step !== state.step) {
     // The page as loaded is the first entry; each step moved on to adds one,
-    // and drops what was forward of the step it was moved on from.
+    // and drops what was forward of the entry the browser is really on. A
+    // push makes any undo still on its way pointless, so it is forgotten.
     if (visited.length) {
-      position += 1;
+      fixing = false;
+      position = here + 1;
+      here = position;
+      visited[position - 1] = made[position - 1]; // from the entry the browser is on, not the step shown
       visited.length = position;
       made.length = position; // the browser drops the entries forward of here too
       window.history.pushState({ step, n: position }, "");
@@ -133,6 +138,7 @@ function popped(event) {
   const step = entry && entry.step;
   const n = entry && entry.n;
   const ours = Number.isInteger(n) && n >= 0 && made[n] === step;
+  if (ours) here = n;
   const undone = fixing;
   fixing = false;
   if (!ours || n === position || undone) return;

@@ -724,14 +724,32 @@ const build = (node) => {
 document.body.append(...TREE.map(build));
 const assigned = [];
 // A window that keeps its listeners, and a history of entries with the state each was given, as
-// a browser's: pushState drops what is forward of here, back() goes one entry back and says so.
+// a browser's: pushState drops what is forward of here. A move (back, forward, go) is queued and
+// delivered after the handler that asked for it, never inside it; a move out of range does nothing
+// and fires nothing, except one to entry -1, which stands for leaving the wizard for the page
+// before it. A test sets `hold` to deliver by hand with deliver() or drain(), so a move can be
+// overtaken by another action, as in a browser.
 const windowListeners = [];
 const pages = [null];
 let at = 0;
-const goTo = (index) => {
-  at = index;
+let hold = false;
+let delivering = false;
+const queue = [];
+const deliver = () => {
+  const delta = queue.shift();
+  const target = at + delta;
+  if (delta === 0 || target < -1 || target >= pages.length) return;
+  at = target;
+  if (at < 0) return; // left the wizard's page: no popstate reaches it
   for (const [type, fn] of [...windowListeners]) if (type === "popstate") fn({ state: pages[at] });
 };
+const drain = () => {
+  if (delivering) return;
+  delivering = true;
+  try { while (queue.length) deliver(); } finally { delivering = false; }
+};
+const move = (delta) => { queue.push(delta); if (!hold) drain(); };
+const goTo = (index) => move(index - at);
 globalThis.window = {
   location: { search: SEARCH, assign: (url) => { assigned.push(url); } },
   addEventListener: (type, fn) => windowListeners.push([type, fn]),
@@ -742,9 +760,9 @@ globalThis.window = {
   history: {
     pushState: (given) => { pages.length = at + 1; pages.push(given); at += 1; },
     replaceState: (given) => { pages[at] = given; },
-    back: () => goTo(at - 1),
-    forward: () => goTo(at + 1),
-    go: (delta) => goTo(at + delta),
+    back: () => move(-1),
+    forward: () => move(1),
+    go: (delta) => move(delta),
   },
 };
 const guarded = () => windowListeners.some(([type]) => type === "beforeunload");
@@ -1886,6 +1904,58 @@ def test_browser_back_during_a_running_save_keeps_the_wizard_on_finish_and_in_st
     assert found["pages"] == found["before"]["pages"]
     # A move of several entries at once is put right too, so the browser is on the entry of the step shown.
     assert found["afterBack"] == {"at": found["before"]["at"], "pages": found["before"]["pages"]}
+
+
+@needs_node
+def test_a_save_that_finishes_before_the_undo_of_a_back_lands_leaves_the_next_back_working():
+    found = run_wizard("""
+        const realFetch = globalThis.fetch;
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        globalThis.fetch = async (url, init) => {
+          if (url.endsWith("finish") && init && init.body) await gate;
+          return realFetch(url, init);
+        };
+        click("stops-next"); await settle();
+        click("walk-next"); await settle();
+        click("save"); await settle();
+        hold = true;
+        window.history.back();
+        deliver();                          // Back mid-save: the page queues its undo, go(+1)
+        release(); await settle();          // the save finishes first and pushes Done
+        const done = { at, pages: structuredClone(pages), shown: shown() };
+        drain();                            // the undo: nothing forward of here now, so nothing happens
+        hold = false;
+        window.history.back();              // the first Back from Done
+        console.log(JSON.stringify({ done, at, shown: shown() }));
+    """, "?step=stops", walk={"walk": {}})
+    # Done's entry sits where the browser really was, with its true position.
+    assert found["done"]["pages"] == [{"step": "stops", "n": 0}, {"step": "walk", "n": 1}, {"step": "done", "n": 2}]
+    assert found["done"]["at"] == 2 and found["done"]["shown"] == ["step-done"]
+    # One Back from Done leaves the wizard; it is not swallowed by the undo that never landed.
+    assert found["at"] == -1
+
+
+@needs_node
+def test_next_pressed_before_a_refused_forwards_undo_lands_still_shows_the_step_its_entry_names():
+    # Cosmetic and left as it is: the history can hold the stale entry and its replacement, both
+    # Stops, so a Back may need two presses. What must hold is that the step shown is the entry's.
+    found = run_wizard(TO_STOPS + """
+        window.history.back();
+        $("station-none").checked = false;
+        $("station-GLO").checked = true;
+        hold = true;
+        window.history.forward();
+        deliver();                          // refused: the page queues go(-1)
+        click("station-next");              // Next before it lands
+        await settle();
+        const afterNext = { at, entry: pages[at], shown: shown() };
+        drain();
+        const afterUndo = { at, entry: pages[at], shown: shown() };
+        console.log(JSON.stringify({ afterNext, afterUndo }));
+    """, trams=None)
+    for seen in found.values():
+        assert seen["shown"] == [f"step-{seen['entry']['step']}"]
 
 
 def test_only_the_steps_name_goes_in_the_history_state():
