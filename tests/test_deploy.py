@@ -756,12 +756,15 @@ def test_the_fetch_service_goes_out_and_listens_on_nothing():
     assert unit["WantedBy"] == ["multi-user.target"]  # at boot, so the dashboard's feeds start with the Pi
     assert int(unit["TasksMax"][0]) >= 32
     timetable = _unit("twobells-timetable.service")
+    # Both read untrusted downloads (the timetables, up to 61 MB): the same lock-down.
     hardening = ("NoNewPrivileges", "CapabilityBoundingSet", "ProtectSystem", "ProtectHome", "PrivateTmp",
                  "PrivateDevices", "ProtectKernelTunables", "ProtectKernelModules", "ProtectControlGroups",
                  "RestrictAddressFamilies", "RestrictNamespaces", "RestrictSUIDSGID", "LockPersonality",
-                 "MemoryDenyWriteExecute", "SystemCallFilter", "MemoryMax", "UMask")
+                 "MemoryDenyWriteExecute", "SystemCallArchitectures", "SystemCallFilter", "SystemCallErrorNumber",
+                 "ProtectHostname", "ProtectKernelLogs", "RestrictRealtime", "PrivateIPC", "ProtectClock",
+                 "ProcSubset", "ProtectProc", "MemoryMax", "TasksMax", "UMask")
     for setting in hardening:
-        assert unit[setting] == timetable[setting], setting
+        assert setting in unit and unit[setting] == timetable.get(setting), setting
     path = _unit("twobells-fetch.path")
     assert path["DirectoryNotEmpty"] == [f"{RUNTIME}/requests"]
     assert path["Unit"] == ["twobells-fetch.service"]
@@ -986,6 +989,14 @@ def test_every_service_is_locked_down_as_far_as_its_work_allows(name):
     assert unit.get("ProtectClock") == (["yes"] if devices else None)
     # The e-paper drivers learn which Pi this is from /proc/cpuinfo and /proc/device-tree.
     assert unit.get("ProcSubset") == (None if name == "twobells.service" else ["pid"])
+    # Neither touches the hardware: only native system calls, and no other user's processes.
+    assert unit.get("SystemCallArchitectures") == ["native"] and unit.get("ProtectProc") == ["invisible"]
+    # Each of the services' own has a ceiling on its threads and processes.
+    if name != GUARD_UNIT:
+        assert int(unit["TasksMax"][0]) >= 32, name
+    # Where a lock-down setting is left out, the unit says why (it is untried with the hardware).
+    text = (PI / name).read_text()
+    assert unit.get("MemoryDenyWriteExecute") == ["yes"] or "# No MemoryDenyWriteExecute:" in text, name
 
 
 def test_install_and_update_give_the_settings_new_address():

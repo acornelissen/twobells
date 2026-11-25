@@ -45,6 +45,9 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+# No MemoryDenyWriteExecute: not yet tried with SDL and Mesa on a Pi (Mesa's
+# software renderer compiles code as it runs).
+SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
@@ -54,7 +57,11 @@ RestrictRealtime=yes
 PrivateIPC=yes
 # No ProtectClock: it allows only the clock's devices, and the screen needs /dev/dri.
 ProcSubset=pid
+ProtectProc=invisible
 MemoryMax=256M
+# The board's own threads (the board made a second ahead, the announcements),
+# espeak-ng's, and SDL's and Mesa's, with room to spare.
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target

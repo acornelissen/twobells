@@ -28,6 +28,9 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 RestrictNamespaces=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+# No MemoryDenyWriteExecute: not yet tried with the panels' drivers (inky,
+# lgpio, spidev) and numpy on a Pi.
+SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged
 SystemCallErrorNumber=EPERM
@@ -37,5 +40,8 @@ RestrictRealtime=yes
 PrivateIPC=yes
 # No ProtectClock: it allows only the clock's devices, not SPI, GPIO and I2C.
 # No ProcSubset=pid: the panels' drivers read /proc/cpuinfo and /proc/device-tree
-# to tell which Pi this is.
+# to tell which Pi this is. Other users' processes are hidden all the same.
+ProtectProc=invisible
 MemoryMax=256M
+# A tick's threads, and those of the GPIO libraries and numpy, with room to spare.
+TasksMax=64
