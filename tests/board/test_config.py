@@ -6,7 +6,7 @@ from tests.paths import ROOT
 from twobells.board.config import load_config
 from twobells.core.errors import ConfigError
 from twobells.sources.bodsbus import BodsBusSource
-from twobells.sources.darwin import DarwinSource
+from twobells.sources.darwin import TRAINS_NEED_KEY, DarwinSource, NoKeyTrains
 from twobells.sources.transportapi import TransportApiBusSource
 
 TEMPLATE = ROOT / "examples/config.example.toml"  # the blank template, with CHANGE_ME placeholders
@@ -123,9 +123,26 @@ def test_bus_section_is_optional(tmp_path):
 
 
 def test_missing_secret_names_the_variable(tmp_path):
+    path = write(tmp_path, '[bus]\nsource = "bods"\noperators = ["BNML"]\n[bus.stops]\nA = "1000DGHS0900"\n')
+    with pytest.raises(ConfigError, match="BODS_API_KEY"):
+        load_config(path, {})
+
+
+def test_trains_with_no_rail_key_never_ask_and_say_so_in_plain_words(tmp_path):
+    path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    for env in ({}, {"RDM_API_KEY": "  "}):
+        [config] = load_config(path, env).board.sources
+        assert isinstance(config.source, NoKeyTrains) and config.source.name == "train"
+        assert config.source.fetch() == []  # nothing asked of the rail API
+        assert config.source.empty == config.source.note == TRAINS_NEED_KEY
+    assert "Settings > Keys" in TRAINS_NEED_KEY and "rail key" in TRAINS_NEED_KEY
+    assert isinstance(load_config(path, {"RDM_API_KEY": "rdm"}).board.sources[0].source, DarwinSource)
+
+
+def test_a_probe_of_the_trains_still_needs_the_key(tmp_path):
     path = write(tmp_path, '[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
     with pytest.raises(ConfigError, match="RDM_API_KEY"):
-        load_config(path, {})
+        load_config(path, {}, only={"train"})
 
 
 def test_bad_window_is_reported(tmp_path):

@@ -1864,3 +1864,20 @@ def test_london_s_section_has_its_own_heading_and_keeps_its_notice_without_a_sta
     tubes.next_messages = None  # the status couldn't be had this time
     result = run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
     assert result.view.notice == "Central line: Minor delays."
+
+
+# Trains on with no rail key yet: the section says what to do, is not "not updating", and the state keeps the note.
+
+
+def test_trains_with_no_rail_key_say_so_on_the_board_and_are_not_called_stale():
+    from twobells.sources.darwin import TRAINS_NEED_KEY, NoKeyTrains
+
+    board = Board(title="GLO", sources=[SourceConfig(NoKeyTrains(), morning(2), stale_after=timedelta(minutes=6))],
+                  modes=("train",))
+    state = {}
+    display = FakeDisplay()
+    result = run_once(board, state, display, THU_0700)
+    section = result.view.section("train")
+    assert (section.label, section.empty_text, section.rows, section.stale) == ("Trains", TRAINS_NEED_KEY, (), False)
+    assert state["sources"]["train"]["note"] == TRAINS_NEED_KEY and "last_error" not in state["sources"]["train"]
+    assert result.rendered and len(display.shown) == 1

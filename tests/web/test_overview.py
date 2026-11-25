@@ -578,3 +578,12 @@ def test_the_dashboard_s_london_feed_goes_by_its_heading():
         [feed] = [f for f in dashboard_feeds(snapshot, now, ZoneInfo("Europe/London")) if f.name in ("Underground", "Trams")]
         assert feed.name == name and "live from TfL" in feed.meaning
 
+
+def test_trains_waiting_for_the_rail_key_are_off_and_say_so_not_a_problem():
+    from twobells.sources.darwin import TRAINS_NEED_KEY
+
+    waiting = {"status": block(last_success=None, note=TRAINS_NEED_KEY), "positions": None}
+    feeds = overview.dashboard_feeds(snapshot(trains=waiting), NOW, LONDON)
+    [trains] = [f for f in feeds if f.name == "Trains"]
+    assert (trains.state, trains.note, trains.error) == ("off", TRAINS_NEED_KEY, "")
+

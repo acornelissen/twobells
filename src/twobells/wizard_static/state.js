@@ -57,6 +57,7 @@ export const state = {
   walkFor: "",
   walkMinutes: {}, // key -> minutes, when leaving the walk step
   keysDrawn: false,
+  railLater: false, // the rail key chosen to be added later, in Settings > Keys, on the keys step
   saving: false,
   step: "",
 };

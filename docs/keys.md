@@ -32,6 +32,7 @@ All of them are free.
 | `TFL_APP_KEY` (Transport for London) | – | – | optional, for London | optional, for London |
 
 - **Trains only:** one key. Start here; you can add the rest later.
+- **Waiting for the rail key's approval:** the setup wizard's **Keys** step has **Carry on without the rail key**. Setup then saves with trains on and no key: the board and the dashboard say "Add the rail key in Settings > Keys for trains." and ask nothing of the rail service, and the Overview and **Keys** page show the key as needed for trains. Paste the key on the **Keys** page when it arrives. This is the only key the wizard lets you leave until later.
 - **Buses on the board:** BODS gives bus times all day at no cost. TransportAPI is only a stand-in while there's no bus timetable; see [TransportAPI](#transportapi).
 - **The dashboard** never uses TransportAPI, even if its keys are set.
 - **London's Underground, DLR, trams, cable car and river buses** work without a key; TfL's only raises how often they may be asked for. See [London](london.md).

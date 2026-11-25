@@ -49,7 +49,7 @@ from ..settings.config import flag, https_url, switched_on, table, texts, whole
 from ..settings.schema import ENGLAND_AND_WALES, bus_source
 from ..settings.store import Store
 from ..sources.bodsbus import BodsBusSource, BusBoard
-from ..sources.darwin import DarwinSource, ServiceDetails, ServiceDetailsClient, TrainBoard
+from ..sources.darwin import DarwinSource, NoKeyTrains, ServiceDetails, ServiceDetailsClient, TrainBoard
 from ..sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource, kb_url_is_placeholder
 from ..sources.lastbus import LastBus
 from ..sources.tfl import Arrival, TflSource
@@ -245,6 +245,8 @@ class DashboardSettings:
     walk: WalkTimes
     options: DashboardOptions
     train: TrainSource | None = None
+    # Why there are no trains, when [train] is set up but has no rail key yet.
+    train_note: str | None = None
     train_crs: str = ""
     train_filter: str | None = None
     # Service details for the trains' positions; None without RDM_DETAILS_API_KEY.
@@ -378,9 +380,11 @@ def dashboard_settings(data: dict, env: Mapping[str, str], folder: Path) -> Dash
     free_env = {key: value for key, value in env.items() if not key.startswith("TAPI_")}
     settings = settings_from(data, free_env, modes=modes)
 
-    train = bus = metro = metro_live = None
+    train = bus = metro = metro_live = train_note = None
     for config in settings.board.sources:
-        if isinstance(config.source, DarwinSource):
+        if isinstance(config.source, NoKeyTrains):
+            train_note = config.source.note  # nothing to ask until the key is added
+        elif isinstance(config.source, DarwinSource):
             train = config.source
             train.with_details = True  # GetDepBoardWithDetails: calling points and reasons
         elif isinstance(config.source, BodsBusSource):  # TransportAPI buses were dropped above
@@ -410,7 +414,8 @@ def dashboard_settings(data: dict, env: Mapping[str, str], folder: Path) -> Dash
         walk=settings.board.walk,
         options=options,
         train=train,
-        train_crs=str(train_section.get("crs", "")).strip().upper() if train else "",
+        train_note=train_note,
+        train_crs=str(train_section.get("crs", "")).strip().upper() if train or train_note else "",
         train_filter=train_filter,
         train_details=ServiceDetailsClient(details_key) if train is not None and details_key else None,
         bus=bus,

@@ -27,6 +27,7 @@ from ..core.places import tram_stop_names
 from ..core.polling import PollPolicy
 from ..settings import schema
 from ..sources import tfl
+from ..sources.darwin import TRAINS_NEED_KEY
 from ..timetable import build as timetable
 from ..timetable import trams
 from . import places
@@ -159,7 +160,9 @@ def dashboard_feeds(snapshot: Mapping | None, now: datetime, zone: tzinfo | None
         found.append(Feed("Dashboard updates", "problem", "Stopped", "No",
                           "The dashboard's checks have stopped", meaning=MEANINGS["updates"]))
     trains = snapshot.get("trains")
-    if isinstance(trains, Mapping):
+    if isinstance(trains, Mapping) and as_dict(trains.get("status")).get("note") == TRAINS_NEED_KEY:
+        found.append(Feed("Trains", "off", "Never", "No", note=TRAINS_NEED_KEY))  # no rail key yet: nothing is asked
+    elif isinstance(trains, Mapping):
         add("Trains", trains.get("status"), MEANINGS["trains"])
         if isinstance(trains.get("positions"), Mapping):
             add("Where each train is", trains["positions"], MEANINGS["train_positions"])

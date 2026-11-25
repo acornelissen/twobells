@@ -109,12 +109,19 @@ def test_without_a_saved_overlay_the_changes_are_the_overlay(board):
 def test_nothing_is_written_if_the_settings_would_not_load(board):
     config, state = board
     before = (state / "settings.toml").read_text()
-    with pytest.raises(OverlayError, match="RDM_API_KEY"):
-        save_to(board_target(config), CHANGES, {}, {"BODS_API_KEY": "x"})
+    with pytest.raises(OverlayError, match="BODS_API_KEY"):
+        save_to(board_target(config), CHANGES, {}, {"RDM_API_KEY": "x"})
     with pytest.raises(OverlayError, match="crs"):
         save_to(board_target(config), {"train": {"crs": "TOOLONG"}}, {}, ENV)
     assert (state / "settings.toml").read_text() == before
     assert not (state / "secrets.env").exists()
+
+
+def test_trains_with_no_rail_key_still_save_and_the_key_can_come_later(board):
+    # The owner may add the rail key later (Settings > Keys): the settings load without it.
+    config, state = board
+    save_to(board_target(config), CHANGES, {}, {"BODS_API_KEY": "x"})
+    assert tomllib.loads((state / "settings.toml").read_text())["train"]["crs"] == "MAN"
 
 
 def test_a_broken_overlay_is_left_alone(board):

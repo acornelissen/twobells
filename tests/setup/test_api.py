@@ -11,7 +11,7 @@ from tests.paths import ROOT
 from twobells.board.config import load_config, settings_from
 from twobells.settings import keyresults, show
 from twobells.settings.config import needs_setup, read_base
-from twobells.settings.installs import INSTALLS, Install
+from twobells.settings.installs import INSTALLS, Install, install_named
 from twobells.settings.overlay import Target, board_target
 from twobells.settings.schema import keys as schema_keys
 from twobells.settings.store import Store
@@ -24,6 +24,7 @@ from twobells.setup.lookups import Place, SetupError, Station, Stop
 from twobells.timetable import build as timetable
 from twobells.timetable.model import Schedule, StopPosition
 from twobells.web.groupform import check_views
+from twobells.web.keystate import key_states
 
 # Home, near Hadfield station, to more places than anything written may show.
 HOME = {"lat": 53.461964, "lon": -1.965633}
@@ -456,11 +457,74 @@ def test_choosing_again_switches_a_section_back_on(template):
 
 
 def test_settings_that_would_not_load_are_not_saved(board):
-    del board.secrets["RDM_API_KEY"]
+    (board.state / "settings.toml").write_text("rotate = 45\n")
     before = (board.state / "settings.toml").read_text()
     status, body = saved_with_a_search(board)
-    assert status == 422 and "RDM_API_KEY" in body["error"]
+    assert status == 422 and "rotate" in body["error"]
     assert (board.state / "settings.toml").read_text() == before
+
+
+# The rail key may be left until later, but only by saying so.
+
+FINISH_TRAINS = {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {}}
+
+
+def test_trains_without_the_rail_key_are_refused_unless_it_is_said_to_come_later(board):
+    del board.secrets["RDM_API_KEY"]
+    before = (board.state / "settings.toml").read_text()
+    status, body = board.handle("finish", FINISH_TRAINS)
+    assert status == 400 and body["field"] == "RDM_API_KEY" and "Settings > Keys" in body["error"]
+    assert (board.state / "settings.toml").read_text() == before
+    status, body = board.handle("finish", {**FINISH_TRAINS, "keys": {}, "without_keys": []})
+    assert status == 400 and body["field"] == "RDM_API_KEY"
+
+
+def test_saying_the_rail_key_comes_later_saves_trains_with_no_key(board):
+    del board.secrets["RDM_API_KEY"]
+    status, body = board.handle("finish", {**FINISH_TRAINS, "without_keys": ["RDM_API_KEY"]})
+    assert status == 200 and body["saved"], body
+    saved = tomllib.loads((board.state / "settings.toml").read_text())
+    assert saved["train"]["crs"] == "GLO" and saved["train"]["enabled"] is True
+    assert not (board.state / "secrets.env").exists()  # no key was invented, and none is saved
+    # The key state (the Overview, the Keys page) says it is still needed.
+    found = {s.name: s for s in key_states(Store.of(board.config), install_named("pi"))}
+    assert (found["RDM_API_KEY"].state, found["RDM_API_KEY"].words) == ("needed", "Needed for trains")
+
+
+def test_a_pasted_or_saved_rail_key_needs_no_saying_so(board):
+    assert board.handle("finish", FINISH_TRAINS)[0] == 200  # saved
+    del board.secrets["RDM_API_KEY"]
+    assert board.handle("finish", {**FINISH_TRAINS, "keys": {"RDM_API_KEY": "pasted-rail-key-1"}})[0] == 200
+
+
+def test_without_a_station_there_is_no_rail_key_to_wait_for(board):
+    del board.secrets["RDM_API_KEY"]
+    status, body = saved_with_a_search(board, station_crs=None, filter_crs=None, walk={"1800SB12341": 3})
+    assert status == 200, body
+
+
+@pytest.mark.parametrize("later", [["BODS_API_KEY"], ["PATH"], "RDM_API_KEY", [1], [["RDM_API_KEY"]],
+                                   ["RDM_API_KEY", "RDM_API_KEY", "RDM_API_KEY"], {"RDM_API_KEY": True}, None])
+def test_only_the_rail_key_can_be_left_until_later(board, later):
+    del board.secrets["RDM_API_KEY"]
+    status, body = board.handle("finish", {**FINISH_TRAINS, "without_keys": later})
+    assert status == 400 and body["field"] == "without_keys"
+
+
+def test_a_malformed_rail_key_is_still_refused_when_saying_it_comes_later(board):
+    del board.secrets["RDM_API_KEY"]
+    status, body = board.handle("finish", {**FINISH_TRAINS, "without_keys": ["RDM_API_KEY"],
+                                           "keys": {"RDM_API_KEY": "has spaces 12345"}})
+    assert status == 400 and body["field"] == "RDM_API_KEY" and "has spaces" not in json.dumps(body)
+
+
+def test_the_station_shortcut_needs_the_same_choice(board):
+    saved_with_a_search(board)  # the stops it leaves as they are
+    del board.secrets["RDM_API_KEY"]
+    only = {"only": "station", "station_crs": "GLO", "filter_crs": "", "walk": {}}
+    assert board.handle("finish", only)[1]["field"] == "RDM_API_KEY"
+    status, body = board.handle("finish", {**only, "without_keys": ["RDM_API_KEY"]})
+    assert status == 200, body
 
 
 def test_errors_never_carry_keys(board):
@@ -474,7 +538,7 @@ def test_errors_never_carry_keys(board):
     status, body = board.handle("finish", {"home": HOME, "station_crs": "GLO", "stops": {}, "walk": {},
                                            "keys": {"RDM_API_KEY": "has spaces 12345"}})
     assert status == 400 and "has spaces" not in json.dumps(body) and body["field"] == "RDM_API_KEY"
-    del board.secrets["RDM_API_KEY"]
+    (board.state / "settings.toml").write_text("rotate = 45\n")
     board.secrets["BODS_API_KEY"] = "zz"
     status, body = saved_with_a_search(board, keys={"BODS_API_KEY": "pasted-bods-key-1"})
     assert status == 422 and "pasted-bods-key-1" not in json.dumps(body)

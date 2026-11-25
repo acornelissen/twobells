@@ -125,10 +125,10 @@ def test_unreadable_env_file_is_treated_as_empty(tmp_path):
 
 def test_run_reports_config_errors_without_traceback(tmp_path, capsys):
     config = tmp_path / "config.toml"
-    config.write_text('[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n')
+    config.write_text('[bus]\nsource = "bods"\noperators = ["BNML"]\n[bus.stops]\nA = "1000DGHS0900"\n')
     code = main(["run", "--config", str(config), "--secrets", str(tmp_path / "missing.env")])
     assert code == 2
-    assert "RDM_API_KEY" in capsys.readouterr().err
+    assert "BODS_API_KEY" in capsys.readouterr().err
 
 
 def test_a_secrets_file_that_is_not_text_is_a_config_error_not_a_traceback(tmp_path, capsys):

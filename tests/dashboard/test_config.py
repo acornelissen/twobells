@@ -14,7 +14,7 @@ from twobells.settings.installs import install_named
 from twobells.settings.overlay import OverlayError, save_to
 from twobells.settings.store import Store
 from twobells.sources.bodsbus import BodsBusSource
-from twobells.sources.darwin import DETAILS_BASE_URL, DarwinSource, ServiceDetailsClient
+from twobells.sources.darwin import DETAILS_BASE_URL, TRAINS_NEED_KEY, DarwinSource, ServiceDetailsClient
 from twobells.sources.disruptions import KB_URL_PLACEHOLDER, BusDisruptionSource, TrainIncidentSource
 from twobells.sources.weather import OpenMeteoSource
 
@@ -268,8 +268,16 @@ def test_enabled_must_be_true_or_false(config, tmp_path):
 
 
 def test_missing_keys_are_a_config_error(config, tmp_path):
-    with pytest.raises(ConfigError, match="RDM_API_KEY"):
-        load_dashboard(config, {"BODS_API_KEY": "k"}, tmp_path / "dash")
+    with pytest.raises(ConfigError, match="BODS_API_KEY"):
+        load_dashboard(config, {"RDM_API_KEY": "k"}, tmp_path / "dash")
+
+
+def test_trains_with_no_rail_key_are_not_asked_for_and_say_why(config, tmp_path, opened):
+    dash = load(config, tmp_path / "dash", env={"BODS_API_KEY": "k"}, opened=opened)
+    assert dash.train is None and dash.train_details is None and dash.train_incidents is None
+    assert dash.train_note == TRAINS_NEED_KEY and dash.train_crs == "GLO"
+    assert dash.bus is not None  # the other modes carry on
+    assert load(config, tmp_path / "dash2", opened=opened).train_note is None
 
 
 def test_state_dir_comes_from_the_table_unless_overridden(tmp_path, opened):

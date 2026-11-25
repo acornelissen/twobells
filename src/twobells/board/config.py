@@ -53,7 +53,7 @@ from ..settings.store import Store
 from ..sources.bods import BodsVehicleSource
 from ..sources.bodsbus import BodsBusSource
 from ..sources.darwin import DEFAULT_BASE_URL as DARWIN_BASE_URL
-from ..sources.darwin import DarwinSource, ServiceDetailsClient, TrainDetails
+from ..sources.darwin import DarwinSource, NoKeyTrains, ServiceDetailsClient, TrainDetails
 from ..sources.tfl import TflSource
 from ..sources.trams import TramTimetableSource
 from ..sources.transportapi import DEFAULT_BASE_URL as TAPI_BASE_URL
@@ -115,7 +115,9 @@ def _policy(section: dict, defaults: dict, where: str, holidays: frozenset[date]
     return PollPolicy(times, interval, holidays)
 
 
-def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> SourceConfig:
+def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date], keyless: bool) -> SourceConfig:
+    """The trains. With no rail key they are NoKeyTrains where `keyless`
+    (setup lets the key be added later); a probe needs the key."""
     where = "[train] "
     crs = section.get("crs")
     if not isinstance(crs, str) or not crs.strip():
@@ -124,6 +126,9 @@ def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> 
         raise ConfigError(f'[train] crs is {crs!r}; set your station\'s 3-letter code, like crs = "GLO"')
     defaults = BOARD_DEFAULTS["train"]
     policy = _policy(section, defaults, where, holidays)
+    stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
+    if keyless and not env.get("RDM_API_KEY", "").strip():
+        return SourceConfig(NoKeyTrains(), policy, stale_after)
     source = DarwinSource(
         api_key=_secret(env, "RDM_API_KEY"),
         crs=crs,
@@ -131,7 +136,6 @@ def _train(section: dict, env: Mapping[str, str], holidays: frozenset[date]) -> 
         rows=whole(section, "rows", defaults["rows"], where),
         base_url=https_url(section, "base_url", DARWIN_BASE_URL, where),
     )
-    stale_after = timedelta(minutes=whole(section, "stale_after_minutes", defaults["stale_after_minutes"], where))
     return SourceConfig(source, policy, stale_after)
 
 
@@ -454,7 +458,7 @@ def settings_from(
     tracker = None
     wanted = set(shown_modes)
     if "train" in data and "train" in wanted:
-        sources.append(_train(table(data, "train", "[train]"), env, holidays))
+        sources.append(_train(table(data, "train", "[train]"), env, holidays, keyless=only is None))
     if "metro" in data and "metro" in wanted:
         sources.append(_metro(table(data, "metro", "[metro]"), env, holidays, Path(state_file).parent, timezone))
     if "bus" in data and "bus" in wanted:

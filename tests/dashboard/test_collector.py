@@ -1305,3 +1305,19 @@ def test_a_failing_tfl_status_keeps_the_times_and_its_messages_go_after_half_an_
     clock.now += timedelta(minutes=31)
     collector.poll_live_trams()
     assert json.loads(hub.current()[1])["metro"]["messages"] == []
+
+
+def test_without_a_rail_key_the_trains_say_why_and_nothing_polls_them(tmp_path):
+    from dataclasses import replace
+
+    from twobells.dashboard.collector import Collector
+    from twobells.sources.darwin import TRAINS_NEED_KEY
+
+    setup = Setup(tmp_path, train=False)
+    settings = replace(setup.settings, train_note=TRAINS_NEED_KEY)
+    collector = Collector(settings, setup.hub, setup.history, clock=setup.clock, fetch_holidays=setup._holidays,
+                          random=lambda: 0.5, monotonic=setup.monotonic)
+    trains = setup.snapshot()["trains"]
+    assert trains["rows"] == [] and trains["station"] == "GLO"
+    assert trains["status"]["note"] == TRAINS_NEED_KEY and trains["status"]["error"] is None
+    assert "trains" not in collector.pollers()

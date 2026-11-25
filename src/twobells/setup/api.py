@@ -168,8 +168,9 @@ _NAME_LENGTH = 100  # a stop's name from the timetable, as the page shows it
 # or for one part of it, the rest kept as saved.
 PARTS = ("station", "stops")
 _FINISH_FIELDS = {
-    None: (("home", "stops", "walk"), ("station_crs", "filter_crs", "trams", "keys", "views", "show", "modes")),
-    "station": (("only", "walk"), ("station_crs", "filter_crs", "keys")),
+    None: (("home", "stops", "walk"),
+           ("station_crs", "filter_crs", "trams", "keys", "without_keys", "views", "show", "modes")),
+    "station": (("only", "walk"), ("station_crs", "filter_crs", "keys", "without_keys")),
     "stops": (("only", "stops", "walk"), ("keys",)),
 }
 
@@ -804,6 +805,8 @@ class SetupApi:
         _check_something_shows(only, station, stops, trams, current)
         walk = _walk_times(fields["walk"], station, stops, trams)
         keys = inputs.keys(fields.get("keys", {}), self._key_names)
+        env = dict(self._load_secrets())
+        self._check_rail_key(station, keys, env, inputs.later(fields.get("without_keys", [])))
         picked = [key for key, chosen in (("train", station), ("bus", stops), ("metro", trams)) if chosen]
         views, on, presets, shown_modes = self._chosen_views(fields, picked)
 
@@ -820,13 +823,24 @@ class SetupApi:
             self._trams_changes(changes, trams, walk)
         self._home_changes(changes, home)
         self._views_changes(changes, only, views, on, presets, shown_modes)
-        env = dict(self._load_secrets())
         save_to(self._target, changes, keys, env)
         keyresults.forget(self._job_folder, keys)  # a test of the old key says nothing of the new
         with self._lock:
             self._found_stops.clear()
         message = self._saved_message or inputs.saved_message(self._install, on)
         return {"saved": True, "message": message, "links": self._links_for(on)}
+
+    def _check_rail_key(self, station: Station | None, pasted: Mapping[str, str], env: Mapping[str, str],
+                        later: Sequence[str]) -> None:
+        """Invalid unless trains have their key, pasted or saved, or the person
+        chose to add it later (`without_keys`): the settings then load, and the
+        board and dashboard say trains need it (sources/darwin.py, NoKeyTrains)."""
+        name = "RDM_API_KEY"
+        if station is None or name not in self._key_names or name in later:
+            return
+        if not pasted.get(name) and not str(env.get(name, "")).strip():
+            raise Invalid("Paste the rail key, or choose to carry on without it and add it later in Settings > Keys",
+                          name)
 
     def _chosen_station(self, fields: Mapping) -> tuple[Station | None, str]:
         """The station finish saves, if any, and the one trains must call at ("" for any)."""

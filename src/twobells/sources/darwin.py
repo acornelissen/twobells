@@ -612,6 +612,25 @@ def _get_details(url: str, headers: dict) -> dict:
     return get_json_capped(url, headers, DETAILS_MAX_BYTES)
 
 
+# What the board and the dashboard say while trains are on and there is no rail
+# key. Short enough for the smallest e-paper board's one line.
+TRAINS_NEED_KEY = "Add the rail key in Settings > Keys for trains."
+
+
+class NoKeyTrains:
+    """Trains with no rail key yet: it never asks the rail API, and there are
+    never any trains. The board's section says (label and empty are the
+    section's words), the dashboard and the settings site read `note`."""
+
+    name = "train"
+    label = "Trains"
+    empty = TRAINS_NEED_KEY
+    note = TRAINS_NEED_KEY
+
+    def fetch(self) -> list[Departure]:
+        return []
+
+
 class DarwinSource:
     name = "train"
 

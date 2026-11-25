@@ -1747,3 +1747,141 @@ def test_each_stops_label_box_is_named_for_its_stop():
     """, "?step=stops")
     assert found == ["Label on the board for Station Road, Stop A", "Label on the board for Station Road, Stop B",
                      "Label on the board for Stop code 1800SB99999"]
+
+
+# The rail key may be left until later, by its own button and never by default.
+
+NO_RAIL_KEY = {**BEGIN, "keys": [dict(KEYS_SET[0], set=False), KEYS_SET[1]],
+               "views": {"offered": [{"name": "dashboard", "label": "The dashboard"}], "on": []}}
+TO_KEYS = """
+state.home = { lat: 53.46, lon: -1.97, label: "SK13 1AH", country: "" };
+state.station = { crs: "GLO", name: "Glossop" };
+state.walkMinutes = {};
+const { enterKeys } = await import("./keys.js");
+enterKeys();
+const later = () => $("key-RDM_API_KEY-later-box");
+const typeKey = (id, value) => {
+  $(id).value = value;
+  for (const [type, fn] of $(id).listeners) if (type === "input") fn({ currentTarget: $(id) });
+};
+"""
+
+
+@needs_node
+def test_next_without_the_rail_key_still_refuses_and_points_at_the_choice():
+    found = run_wizard(TO_KEYS + """
+        click("keys-next");
+        console.log(JSON.stringify({ shown: shown(), error: $("key-RDM_API_KEY-error").textContent,
+                                     focus: document.activeElement.id, button: later().hidden === true,
+                                     chosen: state.railLater }));
+    """, begin=NO_RAIL_KEY)
+    assert found["shown"] == ["step-keys"] and found["focus"] == "key-RDM_API_KEY" and found["button"] is False
+    assert "Carry on without the rail key" in found["error"] and found["chosen"] is False
+
+
+@needs_node
+def test_carrying_on_without_the_rail_key_is_its_own_button_and_is_sent_as_a_choice():
+    found = run_wizard(TO_KEYS + """
+        const box = { hint: $("key-RDM_API_KEY-later-hint").textContent, text: $("key-RDM_API_KEY-later").textContent,
+                      type: $("key-RDM_API_KEY-later").getAttribute("type"),
+                      describedby: $("key-RDM_API_KEY-later").getAttribute("aria-describedby") };
+        click("key-RDM_API_KEY-later");
+        const after = { shown: shown(), summary: $("summary").textContent };
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ box, after, saved: asked("finish"), done: $("done-found").textContent }));
+    """, begin=NO_RAIL_KEY)
+    assert found["box"]["text"] == "Carry on without the rail key" and found["box"]["type"] == "button"
+    assert "Settings > Keys" in found["box"]["hint"]
+    assert found["box"]["describedby"] == "key-RDM_API_KEY-later-hint"
+    assert found["after"]["shown"] == ["step-finish"] and "Settings > Keys" in found["after"]["summary"]
+    [saved] = found["saved"]
+    assert saved["without_keys"] == ["RDM_API_KEY"] and "keys" not in saved
+    assert "rail key in Settings > Keys" in found["done"]
+
+
+@needs_node
+def test_a_rail_key_pasted_after_choosing_to_wait_is_sent_instead():
+    found = run_wizard(TO_KEYS + """
+        click("key-RDM_API_KEY-later");
+        for (const [type, fn] of $("step-finish").querySelector("[data-back]").listeners) if (type === "click") fn();
+        const kept = { shown: shown(), hidden: $("key-RDM_API_KEY-later-chosen").hidden };
+        typeKey("key-RDM_API_KEY", "pasted-rail-key-1");
+        const dropped = { hidden: $("key-RDM_API_KEY-later-chosen").hidden, chosen: state.railLater };
+        click("keys-next");
+        click("save");
+        await settle();
+        console.log(JSON.stringify({ kept, dropped, saved: asked("finish") }));
+    """, begin=NO_RAIL_KEY)
+    assert found["kept"] == {"shown": ["step-keys"], "hidden": False}  # still said, so it is seen going back
+    assert found["dropped"] == {"hidden": True, "chosen": False}
+    [saved] = found["saved"]
+    assert saved["keys"] == {"RDM_API_KEY": "pasted-rail-key-1"} and "without_keys" not in saved
+
+
+@needs_node
+def test_carrying_on_with_a_key_in_the_box_is_refused_and_a_malformed_one_still_is():
+    found = run_wizard(TO_KEYS + """
+        typeKey("key-RDM_API_KEY", "has spaces 12345");
+        click("key-RDM_API_KEY-later");
+        const first = { shown: shown(), error: $("key-RDM_API_KEY-error").textContent, chosen: state.railLater };
+        click("keys-next");
+        console.log(JSON.stringify({ first, shown: shown(), error: $("key-RDM_API_KEY-error").textContent }));
+    """, begin=NO_RAIL_KEY)
+    assert found["first"]["shown"] == ["step-keys"] and found["first"]["chosen"] is False
+    assert "pasted a key" in found["first"]["error"]
+    assert found["shown"] == ["step-keys"] and "exactly" in found["error"]
+
+
+@needs_node
+def test_the_choice_is_offered_only_for_the_rail_key_while_trains_are_chosen_and_it_is_not_set():
+    found = run_wizard(TO_KEYS + """
+        const first = later().hidden === true;
+        state.station = null;
+        enterKeys();
+        const noTrains = later().hidden === true;
+        state.station = { crs: "GLO", name: "Glossop" };
+        state.keys.find((key) => key.name === "RDM_API_KEY").set = true;
+        enterKeys();
+        console.log(JSON.stringify({ first, noTrains, set: later().hidden === true,
+                                     bus: $("key-BODS_API_KEY-later-box"), all: document.querySelectorAll("button").filter((b) => b.id.endsWith("-later")).length }));
+    """, begin=NO_RAIL_KEY)
+    assert found == {"first": False, "noTrains": True, "set": True, "bus": None, "all": 1}
+
+
+@needs_node
+def test_the_bus_key_is_still_needed_whatever_is_chosen_for_the_rail_key():
+    found = run_wizard(TO_KEYS + """
+        state.chosen = [{ label: "A", atco: "1800SB12341", name: "Station Road", indicator: "" }];
+        state.keys.find((key) => key.name === "BODS_API_KEY").set = false;
+        enterKeys();
+        click("key-RDM_API_KEY-later");
+        console.log(JSON.stringify({ shown: shown(), rail: $("key-RDM_API_KEY-error").textContent,
+                                     bus: $("key-BODS_API_KEY-error").textContent, focus: document.activeElement.id }));
+    """, begin=NO_RAIL_KEY)
+    assert found["shown"] == ["step-keys"] and found["focus"] == "key-BODS_API_KEY"
+    assert "go back and change" in found["bus"] and found["rail"] == ""
+
+
+@needs_node
+def test_the_station_shortcut_sends_the_choice_and_the_stops_shortcut_never_does():
+    keys_off = {**BEGIN, "keys": [dict(KEYS_SET[0], set=False), KEYS_SET[1]]}
+    station = run_wizard("""
+        click("station-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        click("key-RDM_API_KEY-later");
+        click("save");
+        await settle();
+        console.log(JSON.stringify(asked("finish")));
+    """, "?step=station", begin=keys_off, station={"station": {"crs": "GLO", "name": "Glossop", "lat": 53.44,
+                                                                "lon": -1.95, "distance_m": 2000}})
+    [saved] = station
+    assert saved["only"] == "station" and saved["station_crs"] == "GLO" and saved["without_keys"] == ["RDM_API_KEY"]
+    stops = run_wizard("""
+        const { laterKeys } = await import("./finish.js");
+        state.railLater = true;
+        console.log(JSON.stringify(laterKeys()));
+    """, "?step=stops", begin=keys_off)
+    assert stops == []

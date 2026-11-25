@@ -145,9 +145,9 @@ def test_bad_values_are_refused_and_nothing_is_written(setup, name, value, messa
 
 def test_the_whole_configuration_must_still_load(setup):
     form, config, state, secrets = setup
-    secrets.pop("RDM_API_KEY")
+    secrets.pop("TAPI_APP_KEY")
     errors = form.save(fields_of(form))
-    assert "RDM_API_KEY" in errors["_form"]
+    assert "TAPI_APP_KEY" in errors["_form"]
     assert not (state / "settings.toml").exists()
 
 

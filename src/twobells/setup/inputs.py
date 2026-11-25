@@ -295,6 +295,18 @@ def saved_message(install: Install, views: Sequence[str]) -> str:
     return " ".join(said)
 
 
+# The keys that may be left until later. Only the rail key: approval can take
+# up to 3 working days, so setup can finish without it; the others it still asks for.
+LATER_KEYS = ("RDM_API_KEY",)
+
+
+def later(value) -> tuple[str, ...]:
+    """The keys the person chose to add later, from `without_keys`: only LATER_KEYS, each once."""
+    if not isinstance(value, list) or len(value) > len(LATER_KEYS) or any(name not in LATER_KEYS for name in value):
+        raise Invalid("Only the rail key can be left until later", "without_keys")
+    return tuple(dict.fromkeys(value))
+
+
 def keys(value, names: Sequence[str]) -> dict[str, str]:
     """Keys to save: only the host's (`names`), each in the shape of a key; empty ones skipped."""
     if not isinstance(value, dict):

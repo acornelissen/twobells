@@ -166,6 +166,7 @@ Answers with `ETag: "v<version>"`, and 304 if `If-None-Match` matches.
 
 ### Fields
 
+- **No rail key:** while trains are on and `RDM_API_KEY` isn't saved (setup lets it wait; see [Keys](keys.md)), `trains` has no `rows` and `trains.status.note` says "Add the rail key in Settings > Keys for trains."; the rail service isn't asked.
 - **Status:**
   - `status` is one of `on_time`, `late`, `cancelled`, `unknown`.
   - `status_text` is always words, the same words the board uses: "On time", "Exp 07:19" (late, expected at 07:19), "Delayed" (late, no expected time yet), "Cancelled", "No report" (a train with no live report), "Timetable only" (a bus with no live position, and every Metrolink tram), "Live" (every London row). Colour only reinforces it.

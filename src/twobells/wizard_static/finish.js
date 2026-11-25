@@ -24,6 +24,16 @@ export function pastedKeys() {
   return keys;
 }
 
+// The keys chosen to be added later (keys.js), unless one was pasted after all
+// or is set: sent when saving, so the host knows it was a choice, never a slip.
+// The stops shortcut saves no trains, so says nothing of it.
+export function laterKeys() {
+  const rail = state.keys.find((key) => key.name === "RDM_API_KEY");
+  const waiting = state.railLater && state.only !== "stops" && state.station !== null
+    && rail && !rail.set && !pastedKeys().RDM_API_KEY;
+  return waiting ? ["RDM_API_KEY"] : [];
+}
+
 // Whether a shortcut's stops are today's, each by the same label.
 function sameStopsAsSaved() {
   const saved = state.saved.stops;
@@ -65,6 +75,7 @@ export function enterFinish() {
       ? h("ul", {}, state.chosenTrams.map((t) => h("li", {}, `${t.label}: ${t.name}, ${minutesText(t.code)}`)))
       : "No trams") : null,
     summaryRow("Keys to save", keys.length ? keys.join(", ") : "None; the keys already set stay"),
+    laterKeys().length ? summaryRow("Rail key", "Not yet: trains show nothing until you add it in Settings > Keys") : null,
     state.askViews ? summaryRow("Show the departures on", state.views
       .filter((view) => state.chosenViews.includes(view.name)).map((view) => view.label).join(", ")) : null,
     state.askShow && modeViews().length ? summaryRow("Modes of transport", h("ul", {}, modeViews().map((view) => {
@@ -155,6 +166,7 @@ function payload() {
     };
   }
   if (Object.keys(keys).length) body.keys = keys;
+  if (laterKeys().length) body.without_keys = laterKeys();
   if (state.chosenViews.length) body.views = state.chosenViews;
   if (state.askShow) body.show = state.chosenShow;
   if (state.askShow && Object.keys(state.chosenModes).length) body.modes = state.chosenModes;
@@ -194,6 +206,9 @@ function finished(data, job, roads) {
       items.push(`Bus company ${operator}${its.length ? `: ${its.length === 1 ? "line" : "lines"} ${its.join(", ")}` : ""}.`);
     }
     for (const text of list(found.notes).map(str).filter(Boolean)) items.push(text);
+  }
+  if (laterKeys().length) {
+    items.push(`Trains show nothing until you add the rail key in Settings > Keys. The ${state.noun} says so until then.`);
   }
   if (roads === "carried") {
     items.push("The roads for the bus maps are still being found, and finish on their own. "

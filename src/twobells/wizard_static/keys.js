@@ -5,7 +5,7 @@ import { $, h, fill, str } from "../dashboard_static/dom.js";
 import { icon } from "../dashboard_static/icons.js";
 import { call } from "./api.js";
 import { enterFinish, pastedKeys } from "./finish.js";
-import { note, refuse, setError } from "./say.js";
+import { note, refuse, say, setError } from "./say.js";
 import { state } from "./state.js";
 import { enterShow } from "./presets.js";
 import { go, once } from "./steps.js";
@@ -113,6 +113,40 @@ function signUp(key) {
     link ? h("p", {}, link) : null);
 }
 
+// The one key that may be left until later: approval can take up to 3 working
+// days. Carrying on without it is a button of its own, never the default, and
+// is sent as without_keys when saving; the others still have to be pasted.
+const LATER = "RDM_API_KEY";
+
+function laterChoice(input) {
+  const id = `key-${LATER}`;
+  const chosen = h("p", { class: "hint", id: `${id}-later-chosen`, hidden: true },
+    "Carrying on without the rail key. Add it later in Settings > Keys.");
+  const button = h("button", { type: "button", id: `${id}-later`, "aria-describedby": `${id}-later-hint` },
+    "Carry on without the rail key");
+  button.addEventListener("click", () => {
+    if (input.value.trim()) return refuse(id, "You have pasted a key. Press Next to use it, or empty the box to carry on without it.");
+    state.railLater = true;
+    showLater();
+    say("Carrying on without the rail key.");
+    return leaveKeys();
+  });
+  // A key pasted after all means it is no longer left until later.
+  input.addEventListener("input", () => {
+    if (input.value.trim()) state.railLater = false;
+    showLater();
+  });
+  return h("div", { class: "later", id: `${id}-later-box` },
+    h("p", { class: "hint", id: `${id}-later-hint` },
+      "Waiting for approval? You can carry on and add this key later in Settings > Keys. "
+      + `Until then the ${state.noun} shows no trains.`),
+    button, chosen);
+}
+
+function showLater() {
+  $(`key-${LATER}-later-chosen`).hidden = !state.railLater;
+}
+
 function drawKeys() {
   fill($("keys-list"), state.keys.map((key) => {
     const id = `key-${key.name}`;
@@ -128,7 +162,8 @@ function drawKeys() {
       h("p", { class: "needed", id: `${id}-needed` }),
       h("p", { class: "error", id: `${id}-error`, hidden: true }),
       input,
-      keyTestButton(key.name, input));
+      keyTestButton(key.name, input),
+      key.name === LATER ? laterChoice(input) : null);
   }));
   state.keysDrawn = true;
 }
@@ -140,6 +175,10 @@ export function enterKeys() {
     const needed = NEEDED[key.name] ? NEEDED[key.name]() : "";
     note(`key-${key.name}-needed`, needed && !key.set ? needed : "");
     $(`key-${key.name}-field`).hidden = !offered(key);
+    if (key.name === LATER) {
+      $(`key-${LATER}-later-box`).hidden = !(needed && !key.set);
+      showLater();
+    }
   }
 }
 
@@ -153,6 +192,10 @@ export function leaveKeys() {
     }
     const needed = NEEDED[key.name] ? NEEDED[key.name]() : "";
     if (needed && !key.set && !pasted[key.name]) {
+      if (key.name === LATER) {
+        if (state.railLater) continue; // chosen with its own button
+        return refuse(id, "Paste this key, or choose Carry on without the rail key.");
+      }
       return refuse(id, "Paste this key, or go back and change your choices.");
     }
   }

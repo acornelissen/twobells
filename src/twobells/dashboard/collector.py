@@ -365,6 +365,14 @@ class Collector:
         )
         self._hub.publish("trains", part, lookups)
 
+    def _publish_train_note(self) -> None:
+        """No trains, and why (DashboardSettings.train_note): there is no rail
+        key yet. A trains part with no rows and a note, as for the buses."""
+        settings = self._settings
+        part, lookups = trains_part(None, None, status_block(note=settings.train_note), settings.train_crs,
+                                    None, settings.walk, self._route_prefix)
+        self._hub.publish("trains", part, lookups)
+
     def _timetable_state(self) -> str:
         return "building" if self._building or not self._timetable_tried else "missing"
 
@@ -440,6 +448,8 @@ class Collector:
     def _publish_all(self) -> None:
         if self._settings.train is not None:
             self._publish_trains()
+        elif self._settings.train_note is not None:
+            self._publish_train_note()
         if self._settings.bus is not None:
             self._publish_buses()
         elif self._settings.bus_note is not None:
