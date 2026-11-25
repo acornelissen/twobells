@@ -37,13 +37,15 @@ def test_the_pi_builds_the_code_with_hashed_tools_and_fetches_nothing_else():
     build_tools = (PI / "requirements-build.txt").read_text()
     assert re.findall(r"^([a-z0-9-]+)==\S+ \\$", build_tools, re.M) == ["setuptools"]
     assert len(re.findall(r"--hash=sha256:[0-9a-f]{64}", build_tools)) >= 1
+    lines = [line.strip() for line in _function("releases.sh", "build_release").splitlines()
+             if line.strip().startswith('"$venv/bin/pip" install')]
+    tools = next(i for i, line in enumerate(lines) if "requirements-build.txt" in line)
+    assert "--require-hashes" in lines[tools] and "--no-deps" in lines[tools]
+    code = [i for i, line in enumerate(lines) if '"$build"' in line]
+    assert code and all(i > tools and "--no-build-isolation" in lines[i] for i in code)
+    # install.sh and update.sh build each release with it, and run no pip of their own.
     for name in ("install.sh", "update.sh"):
-        lines = [line.strip() for line in _script(name).splitlines()
-                 if line.strip().startswith('"$PREFIX/venv/bin/pip" install')]
-        tools = next(i for i, line in enumerate(lines) if "requirements-build.txt" in line)
-        assert "--require-hashes" in lines[tools] and "--no-deps" in lines[tools], name
-        code = [i for i, line in enumerate(lines) if '"$build"' in line]
-        assert code and all(i > tools and "--no-build-isolation" in lines[i] for i in code), name
+        assert 'build_release "$release"\n' in _script(name) and "/bin/pip" not in _script(name), name
 
 
 def test_it_runs_as_a_non_root_user_and_checks_its_health():
@@ -457,7 +459,7 @@ def test_install_and_update_install_nftables():
     # An if block: set -e ignores a failing apt-get update inside an && list.
     needed = f"if [[ ! -x {nft} ]]; then\n  apt-get update\n  apt-get install -y nftables\nfi\n"
     # Before the new code goes in, so if it fails the old code still runs.
-    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+    assert update.index(needed) < update.index(NEW_RELEASE)
 
 
 def test_update_refuses_where_nothing_is_installed_before_changing_anything():
@@ -467,10 +469,12 @@ def test_update_refuses_where_nothing_is_installed_before_changing_anything():
     needed = 'if [[ ! -x "$PREFIX/venv/bin/twobells" ]]; then\n'
     assert needed in update
     check = update.index(needed)
-    for change in ('install -m 644 "$config"', "apt-get update", '"$PREFIX/venv/bin/pip" install'):
+    for change in ('install -m 644 "$config"', "apt-get update", NEW_RELEASE):
         assert check < update.index(change), change
     block = update[check:update.index("fi\n", check)]
     assert "install.sh" in block and "exit 1" in block  # says what to run instead
+    # After putting back the venv link a power cut part way through an update left out.
+    assert update.index('source "$REPO/deploy/pi/releases.sh"\nrecover\n') < check
 
 
 def test_install_run_again_restarts_a_running_web_server_onto_its_new_unit_and_guard():
@@ -515,28 +519,32 @@ def test_install_never_starts_a_service_by_restarting_it_but_the_guard():
     assert restarts == [f"systemctl restart {GUARD_UNIT} || true"]
 
 
-def _import_checks(name: str) -> list[tuple[int, set[str]]]:
-    """Where each of the script's import checks is, and the modules it imports.
-    Each stops the script, saying why, when an import fails."""
-    stop = '  || { echo "A dependency is missing; see the error above" >&2; exit 1; }'
-    pattern = r'^"\$PREFIX/venv/bin/python" -c "import ([\w., ]+)" \\\n' + re.escape(stop) + "$"
+def _import_checks(text: str) -> list[tuple[int, set[str]]]:
+    """Where each import check in `text` is, and the modules it imports. Each
+    is in isolated mode (-I), and stops, saying why, when an import fails."""
+    stop = '    || { echo "A dependency is missing; see the error above" >&2; return 1; }'
+    pattern = r'^  "\$venv/bin/python" -I -c "import ([\w., ]+)" \\\n' + re.escape(stop) + "$"
     return [(found.start(), set(found.group(1).replace(",", " ").split()))
-            for found in re.finditer(pattern, _script(name), re.M)]
+            for found in re.finditer(pattern, text, re.M)]
 
 
-def test_update_installs_the_pis_pypi_packages_and_checks_they_import_before_the_new_code():
+def test_each_release_gets_the_pis_pypi_packages_and_is_checked_to_import_before_it_is_used():
+    build = _function("releases.sh", "build_release")
+    assert build.startswith('  local venv="$PREFIX/releases/$1/venv"\n')
+    # Made as install.sh always made the venv: Debian's python3, seeing Debian's packages.
+    assert build.index('python3 -m venv --system-site-packages "$venv"\n') == build.index("\n") + 3
     pinned = '--require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"'
-    assert f'"$PREFIX/venv/bin/pip" install {pinned}' in _script("install.sh")
-    update = _script("update.sh")
-    # A new release may pin another inky; without this the Pi kept the one it was installed with.
-    pi = update.index(f'"$PREFIX/venv/bin/pip" install --quiet {pinned}')
-    code = update.index('--force-reinstall "$build"')
-    # The same import check as install.sh: the dependencies before the new code
-    # goes in, so if one is missing the old code still runs; the new code after.
-    [(_, installed)] = _import_checks("install.sh")
-    (deps_at, deps), (new_at, new) = _import_checks("update.sh")
-    assert deps | new == installed and new == {"twobells.cli.main"}
-    assert pi < deps_at < code < new_at
+    # A new release may pin another inky, so each release gets the one it names.
+    pi = build.index(f'"$venv/bin/pip" install --quiet {pinned}')
+    code = build.index('--no-build-isolation "$build"')
+    # The code, the Pi's PyPI packages and Debian's they need, all in the new venv.
+    [(checked_at, checked)] = _import_checks(build)
+    assert checked == {"twobells.cli.main", "inky", "PIL", "numpy", "smbus2", "spidev", "gpiod"}
+    assert pi < code < checked_at
+    # Built, and checked, before anything points to it.
+    for name in ("install.sh", "update.sh"):
+        script = _script(name)
+        assert script.index(NEW_RELEASE) < script.index('switch_to "$release"\n'), name
 
 
 def test_update_installs_pygame_for_the_screen_before_the_new_code():
@@ -550,7 +558,7 @@ def test_update_installs_pygame_for_the_screen_before_the_new_code():
               "  apt-get update\n  apt-get install -y python3-pygame\nfi\n")
     assert update.index('display="$(query display)" || display=""') < update.index(needed)
     # Before the new code goes in, so if it fails the old code still runs.
-    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+    assert update.index(needed) < update.index(NEW_RELEASE)
 
 
 def test_a_screen_gets_espeak_ng_for_its_announcements_and_e_paper_does_not():
@@ -564,7 +572,7 @@ def test_a_screen_gets_espeak_ng_for_its_announcements_and_e_paper_does_not():
     needed = ('if [[ "$display" == hdmi-* && ! -x /usr/bin/espeak-ng ]]; then\n'
               "  apt-get update\n  apt-get install -y espeak-ng\nfi\n")
     assert update.index('display="$(query display)" || display=""') < update.index(needed)
-    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+    assert update.index(needed) < update.index(NEW_RELEASE)
 
 
 def test_a_screen_gets_egl_and_gles_and_e_paper_does_not():
@@ -583,7 +591,7 @@ def test_a_screen_gets_egl_and_gles_and_e_paper_does_not():
               '    || "$libraries" != *libGLESv2.so.2* ) ]]; then\n'
               f"  apt-get update\n  apt-get install -y {packages}\nfi\n")
     assert update.index('display="$(query display)" || display=""') < update.index(needed)
-    assert update.index(needed) < update.index('"$PREFIX/venv/bin/pip" install')
+    assert update.index(needed) < update.index(NEW_RELEASE)
 
 
 def test_the_screen_draws_through_gles():
@@ -812,15 +820,29 @@ def test_install_and_update_set_up_the_fetch_service():
     ]
     places = [update.index(step) for step in order]
     assert places == sorted(places)
-    units = re.search(r"for unit in (.*?); do", update, re.S).group(1)
-    assert "twobells-fetch.service" in units
+    assert "twobells-fetch.service" in _units("update.sh")
+    assert 'for unit in "${UNITS[@]}"; do\n  install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/\n' in update
 
 
 SCRIPTS = ("install.sh", "update.sh")
+NEW_RELEASE = 'build_release "$release"\n'  # where install.sh and update.sh build the new code
 
 
 def _script(name: str) -> str:
     return (PI / name).read_text()
+
+
+def _units(name: str) -> list[str]:
+    """The units the script `name` installs: its UNITS=(...) list, or its `for unit in` one."""
+    script = _script(name)
+    found = re.search(r"^UNITS=\((.*?)\)$", script, re.M | re.S) or re.search(r"for unit in (.*?); do", script, re.S)
+    return found.group(1).replace("\\", " ").split()
+
+
+def _function(name: str, function: str) -> str:
+    """The body of the shell function `function` in the script `name`."""
+    [body] = re.findall(rf"^ *{function}\(\) \{{\n(.*?)^ *\}}$", _script(name), re.M | re.S)
+    return body
 
 
 def _run_lines(name: str) -> list[str]:
@@ -953,17 +975,358 @@ def test_update_never_enables_or_disables_the_board():
             assert "twobells.timer" not in line and "twobells-screen" not in line, line
 
 
-def test_update_holds_the_boards_timer_while_the_code_is_reinstalled():
-    # pip takes the twobells command away for a moment while it puts the
-    # new code in; a tick the timer starts then fails. The timer is held from
-    # before the code goes in until the units are in, and only one that was
-    # running is started again, even when the update stops part way.
-    script = _script("update.sh")
-    held = script.index("systemctl stop twobells.timer twobells.service")
-    assert script.index("is-active --quiet twobells.timer") < held
-    assert held < script.index('--force-reinstall "$build"') < script.index("systemctl daemon-reload")
-    [trap] = [line for line in script.splitlines() if line.startswith("trap ")]
-    assert "systemctl start twobells.timer" in trap and "timer_was_running" in trap
+@pytest.mark.parametrize("name", ["install.sh", "update.sh", "releases.sh"])
+def test_nothing_is_installed_into_the_venv_in_use(name):
+    # pip into the live venv uninstalled the old code before installing the
+    # new: a power cut then left no twobells command, and a failed check left
+    # the new code in. Each release is built in its own folder instead.
+    script = _script(name)
+    assert not re.search(r"\$PREFIX/venv/bin/(pip|python)", script)
+    assert "--force-reinstall" not in script
+
+
+def test_update_switches_to_the_new_release_only_once_it_imports_and_restarts_after():
+    update = _script("update.sh")
+    steps = ["read_version\nprune\nnew_release\n", NEW_RELEASE, 'switch_to "$release"\n',
+             'install -m 644 "$REPO/deploy/pi/$unit" /etc/systemd/system/', "\nsystemctl daemon-reload\n",
+             "\nsystemctl restart twobells-fetch.path twobells-fetch.service\n",
+             "\nsystemctl try-restart twobells-web.service\n", "\nsystemctl try-restart twobells-screen.service\n",
+             'if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', "\nsay_if_unguarded\n",
+             "\nprune\necho\n"]
+    places = [update.index(step) for step in steps]
+    assert places == sorted(places)
+    # The board's timer carries on throughout: the venv it runs isn't touched until
+    # the link moves, in one step.
+    assert "systemctl stop" not in update
+    # A run that stops before switching removes the release it made, and nothing else.
+    assert "trap finish EXIT\n" in update and "discard \"$release\"" in _function("update.sh", "finish")
+
+
+def test_install_lays_out_the_app_as_update_does():
+    # A fresh install the same way, so update.sh has one case to update.
+    install = _script("install.sh")
+    steps = ['source "$REPO/deploy/pi/releases.sh"\nrecover\n', "trap finish EXIT\n",
+             "read_version\nprune\nnew_release\n", NEW_RELEASE, 'switch_to "$release"\nprune\n',
+             'install -d -m 755 "$CONF"', '"$(query display)"']
+    places = [install.index(step) for step in steps]
+    assert places == sorted(places)
+    assert "python3 -m venv" not in install  # only build_release makes one
+
+
+# The release folders (releases.sh), run for real on folders in tmp_path.
+
+
+def _gnu() -> None:
+    """Skips unless mv and ln are GNU's, as on the Pi (-T is GNU's own)."""
+    import subprocess
+
+    try:
+        said = subprocess.run(["mv", "--version"], capture_output=True, text=True,
+                              env={"PATH": "/usr/bin:/bin"}).stdout
+    except OSError:
+        said = ""
+    if "GNU" not in said:
+        pytest.skip("needs GNU mv and ln, as on the Pi")
+
+
+def _fake_venv(folder: Path, version: str) -> None:
+    """A stand-in venv: a twobells command that prints `version`, and its metadata folder."""
+    (folder / "bin").mkdir(parents=True)
+    command = folder / "bin" / "twobells"
+    command.write_text(f"#!/bin/sh\necho {version}\n")
+    command.chmod(0o755)
+    (folder / "lib" / "python3.11" / "site-packages" / f"twobells-{version}.dist-info").mkdir(parents=True)
+
+
+def _releases(prefix: Path, calls: str, cut: int | None = None):
+    """Runs `calls` in bash with releases.sh sourced and PREFIX at `prefix`.
+    With `cut`, the power goes before the change to the folders (an ln, mv,
+    install or rm) after the first `cut`: nothing more runs. sync is stood
+    in for, and install leaves owners alone (this isn't root)."""
+    import shutil
+    import subprocess
+
+    stubs = ("sync() { :; }\n"
+             "install() { local a=(); while (( $# )); do case \"$1\" in -o|-g) shift 2 ;; *) a+=(\"$1\"); shift ;;"
+             " esac; done; change; command install \"${a[@]}\"; }\n"
+             "changes=0\nchange() { changes=$((changes + 1)); if [[ -n \"$CUT\" ]] && (( changes > CUT )); then"
+             " exit 99; fi; }\n"
+             "ln() { change; command ln \"$@\"; }\nmv() { change; command mv \"$@\"; }\n"
+             "rm() { change; command rm \"$@\"; }\n")
+    script = f'set -euo pipefail\nPREFIX="$1"\nsource "$2"\n{stubs}{calls}\n'
+    return subprocess.run([shutil.which("bash") or "bash", "-c", script, "bash", str(prefix), str(PI / "releases.sh")],
+                          capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "CUT": "" if cut is None
+                                                               else str(cut)})
+
+
+def _layout(prefix: Path) -> dict:
+    """Where each link points, the release folders, and the version venv runs."""
+    import os
+    import subprocess
+
+    links = {name: os.readlink(prefix / name) if (prefix / name).is_symlink() else None
+             for name in ("venv", "previous")}
+    command = prefix / "venv" / "bin" / "twobells"
+    runs = subprocess.run([str(command)], capture_output=True, text=True).stdout.strip() if command.exists() else None
+    releases = sorted(path.name for path in (prefix / "releases").iterdir()) if (prefix / "releases").is_dir() else []
+    return {**links, "releases": releases, "runs": runs}
+
+
+def test_a_fresh_install_links_the_venv_to_its_release(tmp_path):
+    _gnu()
+    _fake_venv(tmp_path / "releases" / "0.6.0-aaaaaa" / "venv", "0.6.0")
+    done = _releases(tmp_path, "switch_to 0.6.0-aaaaaa\nprune")
+    assert done.returncode == 0, done.stderr
+    assert _layout(tmp_path) == {"venv": "releases/0.6.0-aaaaaa/venv", "previous": None,
+                                 "releases": ["0.6.0-aaaaaa"], "runs": "0.6.0"}
+
+
+def test_an_update_keeps_the_release_before_and_removes_older_ones(tmp_path):
+    _gnu()
+    for name in ("0.5.0-aaaaaa", "0.5.3-bbbbbb", "0.6.0-cccccc", "0.6.0-dddddd"):  # the last, half built
+        _fake_venv(tmp_path / "releases" / name / "venv", name[:5])
+    (tmp_path / "venv").symlink_to("releases/0.5.3-bbbbbb/venv")
+    (tmp_path / "previous").symlink_to("releases/0.5.0-aaaaaa/venv")
+    done = _releases(tmp_path, "switch_to 0.6.0-cccccc\nprune")
+    assert done.returncode == 0, done.stderr
+    assert _layout(tmp_path) == {"venv": "releases/0.6.0-cccccc/venv", "previous": "releases/0.5.3-bbbbbb/venv",
+                                 "releases": ["0.5.3-bbbbbb", "0.6.0-cccccc"], "runs": "0.6.0"}
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["previous", "releases", "venv"]
+
+
+def test_an_install_from_before_release_folders_moves_into_them_on_its_first_update(tmp_path):
+    _gnu()
+    _fake_venv(tmp_path / "venv", "0.5.3")
+    _fake_venv(tmp_path / "releases" / "0.6.0-aaaaaa" / "venv", "0.6.0")
+    done = _releases(tmp_path, "prune\nswitch_to 0.6.0-aaaaaa\nprune")
+    assert done.returncode == 0, done.stderr
+    assert _layout(tmp_path) == {"venv": "releases/0.6.0-aaaaaa/venv", "previous": "releases/0.5.3-inplace/venv",
+                                 "releases": ["0.5.3-inplace", "0.6.0-aaaaaa"], "runs": "0.6.0"}
+    assert (tmp_path / "releases/0.5.3-inplace/venv/lib/python3.11/site-packages/twobells-0.5.3.dist-info").is_dir()
+
+
+@pytest.mark.parametrize("before", ["inplace", "linked"])
+@pytest.mark.parametrize("cut", range(7))
+def test_a_power_cut_at_any_step_of_a_switch_leaves_a_working_install_that_updates_again(tmp_path, before, cut):
+    # Each step of switch_to that changes the folders, in turn, is the last
+    # before the power goes. At the next start a working release runs (once
+    # recover has looked, as update.sh and install.sh do first), and the
+    # update run again ends as one that was never cut.
+    _gnu()
+    if before == "inplace":
+        _fake_venv(tmp_path / "venv", "0.5.3")
+    else:
+        _fake_venv(tmp_path / "releases" / "0.5.3-aaaaaa" / "venv", "0.5.3")
+        (tmp_path / "venv").symlink_to("releases/0.5.3-aaaaaa/venv")
+    _fake_venv(tmp_path / "releases" / "0.6.0-bbbbbb" / "venv", "0.6.0")
+    _releases(tmp_path, "switch_to 0.6.0-bbbbbb", cut=cut)
+    assert _releases(tmp_path, "recover").returncode == 0
+    assert _layout(tmp_path)["runs"] in ("0.5.3", "0.6.0")
+    # Run again, it prunes, then builds another folder for the same release and switches to it.
+    assert _releases(tmp_path, "recover\nprune").returncode == 0
+    _fake_venv(tmp_path / "releases" / "0.6.0-cccccc" / "venv", "0.6.0")
+    done = _releases(tmp_path, "switch_to 0.6.0-cccccc\nprune")
+    assert done.returncode == 0, done.stderr
+    layout = _layout(tmp_path)
+    assert (layout["venv"], layout["runs"]) == ("releases/0.6.0-cccccc/venv", "0.6.0")
+    assert layout["previous"] in ("releases/0.5.3-inplace/venv", "releases/0.5.3-aaaaaa/venv",
+                                  "releases/0.6.0-bbbbbb/venv")
+    assert sorted(layout["releases"]) == sorted({layout["previous"].split("/")[1], "0.6.0-cccccc"})
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["previous", "releases", "venv"]
+
+
+@pytest.mark.parametrize("before, previous", [("0.5.0-zzzzzz", "releases/0.5.0-zzzzzz/venv"), ("", None)])
+def test_going_back_makes_the_release_before_current_and_removes_the_failed_one(tmp_path, before, previous):
+    _gnu()
+    for name in ("0.5.0-zzzzzz", "0.5.3-aaaaaa", "0.6.0-bbbbbb"):
+        _fake_venv(tmp_path / "releases" / name / "venv", name[:5])
+    (tmp_path / "venv").symlink_to("releases/0.6.0-bbbbbb/venv")
+    (tmp_path / "previous").symlink_to("releases/0.5.3-aaaaaa/venv")
+    done = _releases(tmp_path, f'switch_back 0.6.0-bbbbbb "{before}"')
+    assert done.returncode == 0, done.stderr
+    layout = _layout(tmp_path)
+    assert (layout["venv"], layout["previous"], layout["runs"]) == ("releases/0.5.3-aaaaaa/venv", previous, "0.5.3")
+    assert "0.6.0-bbbbbb" not in layout["releases"]
+
+
+def test_going_back_with_no_release_before_changes_nothing(tmp_path):
+    _gnu()
+    _fake_venv(tmp_path / "releases" / "0.6.0-bbbbbb" / "venv", "0.6.0")
+    (tmp_path / "venv").symlink_to("releases/0.6.0-bbbbbb/venv")
+    assert _releases(tmp_path, 'switch_back 0.6.0-bbbbbb ""').returncode == 1
+    assert _layout(tmp_path) == {"venv": "releases/0.6.0-bbbbbb/venv", "previous": None,
+                                 "releases": ["0.6.0-bbbbbb"], "runs": "0.6.0"}
+
+
+@pytest.mark.parametrize("target, name", [
+    ("releases/0.6.0-aaaaaa/venv", "0.6.0-aaaaaa"), ("{prefix}/releases/0.6.0-aaaaaa/venv", "0.6.0-aaaaaa"),
+    ("releases/../venv", ""), ("releases/./venv", ""), ("/elsewhere/releases/x/venv", ""),
+    ("releases/0.6.0-aaaaaa", ""), ("releases/a/b/venv", ""),
+])
+def test_only_a_link_to_a_release_folders_venv_names_a_release(tmp_path, target, name):
+    (tmp_path / "venv").symlink_to(target.format(prefix=tmp_path))
+    assert _releases(tmp_path, "linked venv").stdout == (f"{name}\n" if name else "")
+
+
+def test_nothing_is_pruned_or_discarded_that_a_link_points_to_or_without_a_venv_link(tmp_path):
+    _gnu()
+    _fake_venv(tmp_path / "venv", "0.5.3")  # a folder, not a link: which to keep isn't known
+    _fake_venv(tmp_path / "releases" / "0.5.3-inplace" / "venv", "0.5.3")
+    assert _releases(tmp_path, "prune").returncode == 0
+    assert _layout(tmp_path)["releases"] == ["0.5.3-inplace"]
+    (tmp_path / "previous").symlink_to("releases/0.5.3-inplace/venv")
+    assert _releases(tmp_path, "discard 0.5.3-inplace\ndiscard ''").returncode == 0
+    assert _layout(tmp_path)["releases"] == ["0.5.3-inplace"]
+
+
+@pytest.mark.parametrize("version", ["0.6.0", "10.20.300", "", "0.6", "v0.6.0", "0.6.0rc1", "0.6.0/../x", "0.6.0 "])
+def test_a_release_folder_is_named_only_by_a_plain_release_version(tmp_path, version):
+    import shutil
+    import subprocess
+    import sys
+
+    # As upgrade.sh takes them, read from pyproject.toml by Debian's python3 in isolated mode.
+    assert ((_releases(tmp_path, f'valid_release_version "{version}"').returncode == 0)
+            == (_sourced('valid_version "$1"', version).returncode == 0))
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nname = "twobells"\nversion = "{version}"\n')
+    python = tmp_path / "bin"
+    python.mkdir()
+    (python / "python3").symlink_to(sys.executable)
+    done = subprocess.run([shutil.which("bash") or "bash", "-c",
+                           'set -euo pipefail\nREPO="$1"\nsource "$2"\nread_version\necho "$version"', "bash",
+                           str(tmp_path), str(PI / "releases.sh")],
+                          capture_output=True, text=True, env={"PATH": f"{python}:/usr/bin:/bin"})
+    valid = _sourced('valid_version "$1"', version).returncode == 0
+    assert (done.returncode == 0) == valid, done.stderr
+    assert done.stdout == (f"{version}\n" if valid else "")
+
+
+def test_a_new_release_folder_is_root_s_and_readable_by_the_services():
+    new = _function("releases.sh", "new_release")
+    assert 'install -d -o root -g root -m 755 "$PREFIX" "$PREFIX/releases"\n' in new
+    # mktemp makes it 0700, whatever the umask: opened up for the services' user.
+    assert new.index('mktemp -d "$PREFIX/releases/$version-XXXXXX"') < new.index('chmod 755 "$PREFIX/releases/$release"')
+
+
+def test_the_guide_s_way_back_without_the_internet_puts_the_release_before_in_use(tmp_path):
+    import shutil
+    import subprocess
+
+    _gnu()
+    guide = PI_GUIDE[PI_GUIDE.index("### Going back to the release before"):]
+    block = re.search(r"```bash\n(.*?)```", guide, re.S).group(1)
+    assert block.startswith("cd /opt/twobells\n")
+    for name in ("0.5.3-aaaaaa", "0.6.0-bbbbbb"):
+        _fake_venv(tmp_path / "releases" / name / "venv", name[:5])
+    (tmp_path / "venv").symlink_to("releases/0.6.0-bbbbbb/venv")
+    (tmp_path / "previous").symlink_to("releases/0.5.3-aaaaaa/venv")
+    restarted = tmp_path / "restarted"
+    stubs = f'sudo() {{ "$@"; }}\nsystemctl() {{ echo "$*" >> "{restarted}"; }}\n'
+    script = "set -euo pipefail\n" + stubs + block.replace("/opt/twobells", str(tmp_path))
+    done = subprocess.run([shutil.which("bash") or "bash", "-c", script], capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin"})
+    assert done.returncode == 0, done.stderr
+    assert _layout(tmp_path) == {"venv": "releases/0.5.3-aaaaaa/venv", "previous": "releases/0.5.3-aaaaaa/venv",
+                                 "releases": ["0.5.3-aaaaaa", "0.6.0-bbbbbb"], "runs": "0.5.3"}
+    assert restarted.read_text().splitlines() == ["restart twobells-fetch.service",
+                                                  "try-restart twobells-web.service twobells-screen.service"]
+    # The next update keeps it as the one before, and removes the newer one.
+    _fake_venv(tmp_path / "releases" / "0.6.1-cccccc" / "venv", "0.6.1")
+    assert _releases(tmp_path, "switch_to 0.6.1-cccccc\nprune").returncode == 0
+    assert _layout(tmp_path)["releases"] == ["0.5.3-aaaaaa", "0.6.1-cccccc"]
+
+
+def test_the_guide_says_where_each_release_is_as_the_scripts_lay_them_out():
+    releases = _script("releases.sh")
+    for path in ("/opt/twobells/releases/<version>-<6 letters>/venv", "/opt/twobells/venv", "/opt/twobells/previous",
+                 "/opt/twobells/releases/<version>-inplace/venv", GUARD_FILE):
+        assert f"`{path}`" in PI_GUIDE, path
+    assert 'mktemp -d "$PREFIX/releases/$version-XXXXXX"' in releases and 'echo "$version-inplace"' in releases
+    assert 'ln -sfnT "releases/$2/venv" "$PREFIX/$1.new"' in releases
+    assert "#where-the-app-is" in PI_GUIDE and "about 30 MB" in PI_GUIDE
+
+
+STAY_UP = re.compile(r"^stay_up\(\) \{\n.*?^\}$", re.M | re.S)
+
+
+def _stay_up(states: dict[str, str], settle: int = 5):
+    """Runs update.sh's stay_up on the units in `states`, systemctl and sleep
+    stood in for: each unit's ActiveState:SubState, a word a second, the last
+    kept up from there."""
+    import shutil
+    import subprocess
+
+    [function] = STAY_UP.findall(_script("update.sh"))
+    stubs = ('tick=0\nsleep() { tick=$((tick + 1)); }\n'
+             'systemctl() {\n  local name="${2#--property=}" unit="$4" var states state\n'
+             '  var="STATES_${unit//[-.]/_}"\n  read -r -a states <<< "${!var}"\n'
+             '  state="${states[tick - 1]:-${states[${#states[@]} - 1]}}"\n'
+             '  if [[ "$name" == ActiveState ]]; then echo "${state%%:*}"; else echo "${state#*:}"; fi\n}\n')
+    env = {"PATH": "/usr/bin:/bin", **{"STATES_" + re.sub(r"[-.]", "_", unit): said for unit, said in states.items()}}
+    script = (f"set -euo pipefail\nSETTLE={settle}\n{stubs}{function}\n"
+              f'if stay_up {" ".join(states)}; then echo "up $tick"; else echo "down $tick"; fi')
+    return subprocess.run([shutil.which("bash") or "bash", "-c", script], capture_output=True, text=True, env=env,
+                          check=True)
+
+
+def test_update_sees_the_services_staying_up_on_the_new_release():
+    done = _stay_up({"twobells-fetch.service": "active:running", "twobells-web.service": "active:running"})
+    assert (done.stdout, done.stderr) == ("up 5\n", "")
+    # The fetch service stopping by itself (the dashboard off) isn't a crash.
+    assert _stay_up({"twobells-fetch.service": "active:running active:running inactive:dead"}).stdout == "up 5\n"
+
+
+@pytest.mark.parametrize("states", ["active:running active:running activating:auto-restart",
+                                    "active:running active:running activating:auto-restart-queued",
+                                    "active:running failed:failed"])
+def test_update_sees_a_service_crash_on_the_new_release(states):
+    done = _stay_up({"twobells-fetch.service": "active:running", "twobells-web.service": states})
+    assert done.stdout == f"down {len(states.split())}\n"
+    assert "twobells-web.service" in done.stderr and "journalctl -u twobells-web" in done.stderr
+
+
+def test_update_goes_back_to_what_ran_before_when_the_services_dont_stay_up():
+    update = _script("update.sh")
+    switched = update.index('switch_to "$release"\n')
+    # Taken before the switch: the units and guard's rules in use, the release
+    # before, and which long-running services were up.
+    for taken in ('saved="$(mktemp -d)"\n', 'cp -p "/etc/systemd/system/$unit" "$saved/"',
+                  'cp -p "$PREFIX/twobells-web.nft" "$saved/"', 'before="$(linked previous)"\n',
+                  "watched=(twobells-fetch.service)\n", 'if systemctl is-active --quiet "$unit"; then\n'):
+        assert update.index(taken) < switched, taken
+    back = _function("update.sh", "go_back")
+    steps = ['if ! switch_back "$release" "$before"; then\n', 'install -m 644 "$saved/$unit" /etc/systemd/system/',
+             'install -m 644 -o root -g root "$saved/twobells-web.nft" "$PREFIX/twobells-web.nft"',
+             "  systemctl daemon-reload\n", "  systemctl restart twobells-guard.service || true\n",
+             '  systemctl restart twobells-fetch.path "${watched[@]}"\n']
+    places = [back.index(step) for step in steps]
+    assert places == sorted(places)
+    assert _units("update.sh") == _units("install.sh")  # puts back each unit it put in
+    assert "SETTLE=30\n" in update
+
+
+@pytest.mark.parametrize("name", ["install.sh", "update.sh", "upgrade.sh", "releases.sh"])
+def test_python_run_as_root_never_imports_from_the_current_folder(name):
+    # python -c puts the current folder first on sys.path: run from /tmp, a
+    # planted inky.py or numpy.py would be imported as root. -I leaves it out
+    # (and PYTHON* variables), and the system site packages still load.
+    runs = re.findall(r"python3?\"?((?: -[A-Za-z]+)*) -c ", _script(name))
+    assert all("-I" in flags.split() for flags in runs), (name, runs)
+    # The version check and the import check.
+    assert len(runs) == (2 if name == "releases.sh" else 0), (name, runs)
+
+
+@pytest.mark.parametrize("name", ["install.sh", "update.sh"])
+def test_install_and_update_set_their_own_umask(name):
+    # sudo may pass on a umask of 077, and the venv would be unreadable to the
+    # services' user. Every file that must be private is given its mode outright.
+    script = _script(name)
+    assert "set -euo pipefail\n# " in script
+    after = script[script.index("set -euo pipefail\n"):].splitlines()
+    assert after[2] == "umask 022", after[:3]
+    for line in script.splitlines():
+        if "secrets.env" in line and line.lstrip().startswith("install "):
+            assert "-m 600" in line, line
 
 
 def test_update_restarts_a_running_screen_onto_the_new_code():
@@ -1049,11 +1412,11 @@ def _needed_on_the_pi() -> set[str]:
     needed = {"pyproject.toml", *project["project"]["license-files"]}
     needed |= {str(path.relative_to(ROOT)) for path in (ROOT / "src" / "twobells").rglob("*")
                if path.is_file() and "__pycache__" not in path.parts}
-    for name in ("install.sh", "update.sh"):
+    for name in ("install.sh", "update.sh", "releases.sh"):
         script = _script(name)
         needed |= {path for path in re.findall(r"\$REPO/([\w./-]+)", script) if not path.endswith(("/", "."))}
-        units = re.search(r"for unit in (.*?); do", script, re.S).group(1).replace("\\", " ").split()
-        needed |= {f"deploy/pi/{unit}" for unit in units}
+    for name in ("install.sh", "update.sh"):
+        needed |= {f"deploy/pi/{unit}" for unit in _units(name)}
     needed |= {"deploy/pi/install.sh", "deploy/pi/update.sh", "deploy/pi/upgrade.sh"}  # upgrade.sh runs the release's update.sh
     return needed
 
@@ -1133,7 +1496,7 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     assert {"tests", ".github", ".beads", ".claude"} <= set(excludes)  # read from release.yml, not empty
     needed = _needed_on_the_pi()
     assert {"examples/config.example.toml", "deploy/secrets.env.example", "deploy/pi/requirements-pi.txt",
-            "examples/glossop.toml", "deploy/pi/twobells-fetch.path", "LICENSE"} <= needed
+            "examples/glossop.toml", "deploy/pi/twobells-fetch.path", "LICENSE", "deploy/pi/releases.sh"} <= needed
     for path in sorted(needed):
         assert (ROOT / path).is_file(), path
         assert _in_tarball(path), path
@@ -1141,10 +1504,10 @@ def test_the_release_tarball_holds_everything_the_pi_scripts_use():
     attributes = ROOT / ".gitattributes"
     assert not attributes.exists() or "export-ignore" not in attributes.read_text()
     # And the scripts never need git: a tarball has no .git.
-    for name in ("install.sh", "update.sh", "upgrade.sh"):
+    for name in ("install.sh", "update.sh", "upgrade.sh", "releases.sh"):
         assert not re.search(r"(^|[\s;&|(])git\s", _script(name), re.M), name
     # The release checks the scripts are in the tarball it built.
-    assert "for script in install.sh update.sh upgrade.sh; do" in RELEASE
+    assert "for script in install.sh update.sh upgrade.sh releases.sh; do" in RELEASE
 
 
 # The workflows' toolchain and gates: what CI, the release and the data refresh install, and who holds a write token.

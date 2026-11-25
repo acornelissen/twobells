@@ -31,7 +31,7 @@ Stop Two Bells before you back up or put back, so nothing writes to the store pa
 
 ## On a Pi
 
-The store belongs to the services' user, `twobells`, with the folder 0750. `config.toml` and `secrets.env` in `/etc/twobells` belong to root, and `secrets.env` is 0600. One archive takes both folders, with their owners and modes.
+The store belongs to the services' user, `twobells`, with the folder 0750. `config.toml` and `secrets.env` in `/etc/twobells` belong to root, and `secrets.env` is 0600. One archive takes both folders, with their owners and modes. The app itself, in `/opt/twobells`, isn't backed up: installing the release puts it back.
 
 **Back up:**
 

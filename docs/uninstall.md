@@ -46,7 +46,7 @@ Each install keeps everything it saves in one folder, its [store](configuration.
    sudo rm -rf /opt/twobells /etc/twobells /var/lib/twobells /var/cache/twobells-screen /run/twobells-fetch
    ```
 
-   - `/opt/twobells`: the app and the network guard's rules.
+   - `/opt/twobells`: the app (the release in use and the one before, each in `releases/`; see [Where the app is](install-pi.md#where-the-app-is)) and the network guard's rules.
    - `/etc/twobells`: `config.toml` and `secrets.env`, your keys if you kept them there.
    - `/var/lib/twobells`: the store.
    - `/var/cache/twobells-screen`: the HDMI screen's graphics cache, if it ran.

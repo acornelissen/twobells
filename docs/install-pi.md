@@ -109,9 +109,42 @@ sudo ./deploy/pi/update.sh
 What `update.sh` does:
 
 - It stops before changing anything if the app isn't installed in `/opt/twobells`, and says to run `install.sh`.
-- It holds the board's timer while it works, so no tick runs half-installed code, and starts it again at the end if it was running (also if the update stops part way).
-- It first installs what the new release needs: `nftables` if it's missing, pygame, the EGL and GLES libraries and espeak-ng if `display` says `hdmi-…` and they're missing, and the Inky driver from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). It checks that the Inky driver and its libraries import, as `install.sh` does, and stops before touching the code if one doesn't, so the old code still runs.
-- Then it installs the new code, checks that imports too, refreshes the systemd units, loads the network guard afresh, restarts the fetch service, and the web server if it is running, turns the timetable timer on (an older install turned it on only if buses came from BODS when it was installed), starts a timetable build if a view that is on shows buses from BODS or Metrolink trams (`journalctl -u twobells-timetable -f` follows it), restarts the screen's service if it is running, and runs the e-paper board once if its timer is enabled.
-- `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too. The secrets file you named is then deleted with `shred -u`, which writes over it first. On an SD card or USB stick that isn't sure to reach the old contents, as the card puts each write where it chooses, so copies of the keys may stay on the card.
+- It first installs the Debian packages the new release needs: `nftables` if it's missing, and pygame, the EGL and GLES libraries and espeak-ng if `display` says `hdmi-…` and they're missing.
+- It builds the new release in a folder of its own (see [Where the app is](#where-the-app-is)), beside the one running, which it doesn't touch: the board's timer and the services carry on meanwhile. The Inky driver comes from PyPI at the versions and hashes the release pins (`deploy/pi/requirements-pi.txt`). Then it checks that the new code, the Inky driver and their libraries all import. If anything fails up to here, it removes the new folder and stops, and the old code runs on as it was.
+- Then it switches to the new release in one step, refreshes the systemd units, loads the network guard afresh, and restarts the fetch service, the web server if it is running, and the screen's service if it is running. It watches them for 30 seconds: if one crashes, it goes back to the release from before, with the units and network guard from before, restarts the services onto it, says so and which log says why, and stops.
+- Once they stay up, it turns the timetable timer on (an older install turned it on only if buses came from BODS when it was installed), starts a timetable build if a view that is on shows buses from BODS or Metrolink trams (`journalctl -u twobells-timetable -f` follows it), runs the e-paper board once if its timer is enabled, and removes any release older than the one before.
+- `--config FILE` and `--secrets FILE` replace `/etc/twobells/config.toml` and `secrets.env` too, before anything else, and stay if it goes back. The secrets file you named is then deleted with `shred -u`, which writes over it first. On an SD card or USB stick that isn't sure to reach the old contents, as the card puts each write where it chooses, so copies of the keys may stay on the card.
 
 After updating, the bus timetable may be built again once (see [After an update](buses.md#after-an-update)).
+
+### Where the app is
+
+Each release is installed in a folder of its own, and two links say which is in use:
+
+| Path | What it is |
+|---|---|
+| `/opt/twobells/releases/<version>-<6 letters>/venv` | One release: its Python environment, with the app and the Inky driver. The letters are random, so the same version installed again gets a folder of its own. |
+| `/opt/twobells/venv` | A link to the release in use. The services and every command in these guides run the app through it. |
+| `/opt/twobells/previous` | A link to the release before, kept to go back to. |
+| `/opt/twobells/twobells-web.nft` | The network guard's rules. |
+
+`install.sh` lays a new install out this way, and each time it is run again it makes a new release folder and keeps the one before, as `update.sh` does. An install from before releases had folders of their own, with the app in `/opt/twobells/venv` itself, is moved to `/opt/twobells/releases/<version>-inplace/venv` on its first update and kept as the one before. If the power goes during an update, the next run of `update.sh` or `install.sh` puts things right first, then updates.
+
+Each release takes about 30 MB: two of them, the one in use and the one before, about 60 MB, and a third while an update builds the next. `ls -l /opt/twobells` shows which version each link points to.
+
+Going back to a release from before releases had folders of their own (with `upgrade.sh`, say) runs that release's `update.sh`, which installs it over the release in use, in its folder, as it always did. The next update makes a folder of its own again.
+
+### Going back to the release before
+
+To go back, run `upgrade.sh` with the earlier version, as in [Updating](#updating): it checks and installs that release whole, units included.
+
+Without the internet, switch the link back to the release before and restart the services onto it:
+
+```bash
+cd /opt/twobells
+sudo ln -sfnT "$(readlink previous)" venv.new && sudo mv -T venv.new venv
+sudo systemctl restart twobells-fetch.service
+sudo systemctl try-restart twobells-web.service twobells-screen.service
+```
+
+That puts back the code only: the systemd units stay the newer release's. Both links then point to the same release, and the next update keeps it as the one before.

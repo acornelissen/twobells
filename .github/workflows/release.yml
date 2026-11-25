@@ -267,7 +267,7 @@ jobs:
           # Listed once, not piped to grep -q: under pipefail, tar would fail
           # writing to a grep that has already found its line and gone.
           listing="$(tar -tzf "out/twobells-$VERSION.tar.gz")"
-          for script in install.sh update.sh upgrade.sh; do
+          for script in install.sh update.sh upgrade.sh releases.sh; do
             grep -qx "twobells-$VERSION/deploy/pi/$script" <<<"$listing"
           done
       - name: Write SHA256SUMS

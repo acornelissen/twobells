@@ -8,6 +8,8 @@
 # It starts the web server (the settings site, and the dashboard when that
 # view is on) and the fetch service, and says how to start the board itself.
 set -euo pipefail
+# Whatever umask sudo passed on: the services' user must read the venv.
+umask 022
 
 if [[ $EUID -ne 0 ]]; then
   echo "Run with sudo" >&2
@@ -36,25 +38,24 @@ id twobells &>/dev/null || useradd --system --no-create-home --shell /usr/sbin/n
 # State, saved settings and the settings password live here.
 install -d -o twobells -g twobells -m 750 /var/lib/twobells
 
-python3 -m venv --system-site-packages "$PREFIX/venv"
-# Pinned versions, not the newest of each that day. Debian's own pip is used as
-# is: upgrading it would fetch and run an unpinned package as root.
-# Build from a clean copy: pip builds in the source tree, and as root that
-# leaves root-owned build/ and *.egg-info behind (and a stale build/ can leak
-# old files into the next install).
-build="$(mktemp -d)"
-trap 'rm -rf "$build"' EXIT
-cp -a "$REPO/." "$build/"
-rm -rf "$build/build" "$build"/src/*.egg-info
-# From PyPI only inky and its helper, at exact versions with their hashes; their
-# dependencies are the Debian packages above. (Not pip check: with system site
-# packages it also judges Debian's own, some of which it reports as broken.)
-"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-pi.txt"
-# The code is built with the hashed setuptools, not one fetched for the build.
-"$PREFIX/venv/bin/pip" install --require-hashes --no-deps -r "$REPO/deploy/pi/requirements-build.txt"
-"$PREFIX/venv/bin/pip" install --no-deps --no-build-isolation "$build"
-"$PREFIX/venv/bin/python" -c "import twobells.cli.main, inky, PIL, numpy, smbus2, spidev, gpiod" \
-  || { echo "A dependency is missing; see the error above" >&2; exit 1; }
+# The app goes in a release folder of its own, the venv link pointing to it
+# once it imports (releases.sh), as update.sh does it: run again, this makes a
+# new one and keeps the one before. If it stops first, the new folder goes.
+# shellcheck source=deploy/pi/releases.sh
+source "$REPO/deploy/pi/releases.sh"
+recover
+release="" build=""
+finish() {
+  if [[ -n "$build" ]]; then rm -rf "$build"; fi
+  discard "$release"
+}
+trap finish EXIT
+read_version
+prune
+new_release
+build_release "$release"
+switch_to "$release"
+prune
 
 install -d -m 755 "$CONF"
 [[ -f "$CONF/config.toml" ]] || install -m 644 "$REPO/examples/config.example.toml" "$CONF/config.toml"
