@@ -73,6 +73,10 @@ PASSED_MARGIN = 0.1
 INBOUND_WINDOW = timedelta(minutes=30)
 # The least time a bus followed in takes to turn round: a late one leaves this long after it gets in.
 TURNAROUND = timedelta(minutes=2)
+# A bus whose journey code fits a journey yesterday and today (one running
+# every day) is running the one whose time it reports in: from INBOUND_WINDOW
+# before its first stop to this long after its last.
+RUNNING_LATE = timedelta(minutes=60)
 _DAY = 24 * 60
 
 
@@ -266,19 +270,32 @@ def _live(
     (service day, id of the journey)."""
     live: dict[tuple[date, int], tuple[datetime, Progress, Vehicle]] = {}
     for vehicle in vehicles:
+        recorded = recorded_time(vehicle)
+        if recorded is None:
+            continue  # progress can't place it
         hits = [(day, j) for day, journeys in running.items() if (j := match(vehicle, journeys, day, tz))]
+        if len(hits) > 1:
+            hits = [(day, j) for day, j in hits if _running_at(j, service_minute(recorded, day, tz))]
         if len(hits) != 1:
             continue  # unmatched, or could be yesterday's journey or today's
         day, journey = hits[0]
         placed = progress(vehicle, journey, positions, day, tz, shapes)
-        recorded = recorded_time(vehicle)  # readable whenever progress places the bus
-        if placed is None or recorded is None:
+        if placed is None:
             continue
         key = (day, id(journey))
         if key in live and live[key][0] >= recorded:
             continue  # two buses on one journey: keep the latest report
         live[key] = (recorded, placed, vehicle)
     return {key: (placed, vehicle) for key, (_, placed, vehicle) in live.items()}
+
+
+def _running_at(journey: Journey, minute: int) -> bool:
+    """Whether a bus reporting at `minute` of the journey's service day could
+    be on it: from INBOUND_WINDOW before it leaves its first stop to
+    RUNNING_LATE after it is due at its last. A journey past midnight has
+    minutes past 24 hours, as service_minute counts them."""
+    early, late = INBOUND_WINDOW // timedelta(minutes=1), RUNNING_LATE // timedelta(minutes=1)
+    return journey.origin.minute - early <= minute <= journey.calls[-1].minute + late
 
 
 @dataclass(frozen=True)

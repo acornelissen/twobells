@@ -498,9 +498,32 @@ def test_yesterday_s_late_bus_is_matched_after_midnight():
     ]
 
 
-def test_a_journey_code_that_fits_yesterday_and_today_is_not_used():
+def test_a_journey_code_that_fits_yesterday_and_today_goes_to_the_one_running_now():
+    # An every-day journey has the same code both days: the report's time says which.
     vehicle = bus(*HALFWAY, at(10, 14), origin="", ref="1175")
-    assert board(at(10, 14), [vehicle])[0] == ("A", "237", "10:15", None, Status.UNKNOWN)
+    assert east(board(at(10, 14), [vehicle]))[0] == ("A", "341", "10:10", "10:19", Status.LATE)
+    [found] = live_board(schedule(), at(10, 14), [vehicle], every_day, 10)[1]
+    assert (found.journey, found.service_day) == (EAST, DAY)
+
+
+def test_a_journey_code_that_fits_yesterday_s_journey_after_midnight_goes_to_yesterday():
+    # NIGHT leaves Ashton at 23:30 and reaches Arundel Street at 00:08, every night.
+    vehicle = stop_at(ARUNDEL, at(0, 13, day=SATURDAY), origin="", ref="1999")
+    found = live_board(schedule(NIGHT), at(0, 13, day=SATURDAY), [vehicle], every_day, 10)[1]
+    assert [(f.journey, f.service_day, f.progress.delay) for f in found] == [(NIGHT, DAY, 300.0)]
+
+
+@pytest.mark.parametrize("seen", [at(8, 29), at(11, 26)])  # 09:00 less 30 min; 10:25 and an hour
+def test_a_journey_code_that_fits_two_days_is_not_used_far_from_either_journey(seen):
+    vehicle = bus(*HALFWAY, seen, origin="", ref="1175")
+    assert live_board(schedule(), seen, [vehicle], every_day, 10)[1] == []
+
+
+@pytest.mark.parametrize("seen", [at(8, 30), at(11, 25)])
+def test_a_journey_code_that_fits_two_days_is_used_up_to_the_edges(seen):
+    vehicle = bus(*HALFWAY, seen, origin="", ref="1175")
+    [found] = live_board(schedule(), seen, [vehicle], every_day, 10)[1]
+    assert (found.journey, found.service_day) == (EAST, DAY)
 
 
 def test_now_must_carry_its_time_zone():
