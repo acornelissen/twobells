@@ -244,6 +244,16 @@ def test_a_board_state_that_cant_be_read_or_isnt_there_yet():
     assert "Board Waiting" in feed(board(state={}), "Board")
 
 
+def test_the_boards_trains_waiting_for_the_rail_key_are_off_as_on_the_dashboard():
+    from twobells.sources.darwin import TRAINS_NEED_KEY
+
+    state = {"sources": {"train": {"last_attempt": "2026-10-08T08:00:00", "last_success": "2026-10-08T08:00:00",
+                                   "departures": [], "note": TRAINS_NEED_KEY}}}
+    [trains] = [f for f in overview.board_feeds(DATA, state, NOW) if f.name == "Trains"]
+    assert (trains.state, trains.updated, trains.checking, trains.note, trains.error) == (
+        "off", "Never", "No", TRAINS_NEED_KEY, "")
+
+
 def test_a_bank_holiday_uses_sunday_times_unless_they_are_ignored():
     holiday_morning = datetime(2026, 8, 31, 8, 1)  # a Monday
     holidays = frozenset({holiday_morning.date()})

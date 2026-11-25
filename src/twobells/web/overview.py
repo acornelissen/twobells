@@ -239,7 +239,11 @@ def board_feeds(data: dict, state: dict | None, now: datetime,
         if name == "bus" and schema.bus_source(data.get("bus")) == "transportapi":
             extra, over = _budget(data, state, now)
         meaning = MEANINGS["board_metro_live" if name == "metro" and schema.london_metro(data) else f"board_{name}"]
-        found.append(_board_feed(heading, as_dict(entries.get(name)), policy, stale_after, now, meaning, extra, over))
+        entry = as_dict(entries.get(name))
+        if name == "train" and entry.get("note") == TRAINS_NEED_KEY:
+            found.append(Feed(heading, "off", "Never", "No", note=TRAINS_NEED_KEY))  # no rail key yet: nothing is asked
+            continue
+        found.append(_board_feed(heading, entry, policy, stale_after, now, meaning, extra, over))
     vehicles = as_dict(state.get("vehicles"))
     if vehicles and not switched_off(data, "bus"):
         # Saved only alongside fetched departures, so too old to judge "not updating" by.
