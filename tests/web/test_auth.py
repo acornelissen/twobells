@@ -34,6 +34,7 @@ from twobells.web.auth import (
     common_password,
     csrf_matches,
     local_host,
+    origin_for,
     outsider,
     private_address,
     same_origin,
@@ -829,6 +830,34 @@ ALLOWED = frozenset({"departures.example.com"})
 ])
 def test_an_allowed_host_passes_by_its_exact_name(hosts, refused):
     assert outsider("192.168.1.5", hosts, ALLOWED) is refused
+
+
+# The other site's address, for a link from one listener to the other: the name the
+# browser used, checked, and the port given; never the header as it came.
+@pytest.mark.parametrize("host, origin", [
+    ("glossop.local:8090", "http://glossop.local:8091"),
+    ("Glossop.Local", "http://glossop.local:8091"),
+    ("192.168.1.20:8090", "http://192.168.1.20:8091"),
+    ("[fd00::1]:8090", "http://[fd00::1]:8091"),
+    ("[FD00::1]", "http://[fd00::1]:8091"),
+    ("localhost:8090", "http://localhost:8091"),
+    ("departures.example.com:8090", "http://departures.example.com:8091"),  # a name in allowed_hosts
+    (" pi:1 ", "http://pi:8091"),
+])
+def test_the_other_origin_is_the_name_used_with_the_port_given(host, origin):
+    assert origin_for(host, 8091) == origin
+
+
+@pytest.mark.parametrize("host", [None, "", "[fe80::1", "[fe80::1%eth0]:8090", "pi.local:80x", "pi.local.",
+                                  "a..local", "x_y.local", "pi/evil.local", "pi@evil.local", "evil.com/x:8090",
+                                  "pi.local:8090:1", "b\xfccher.local", "pi\r\nSet-Cookie: x", "pi.local#", ":8090"])
+def test_no_other_origin_for_a_host_not_shaped_as_one(host):
+    assert origin_for(host, 8091) is None
+
+
+@pytest.mark.parametrize("port", [0, -1, 65536])
+def test_no_other_origin_without_a_real_port(port):
+    assert origin_for("glossop.local", port) is None
 
 
 def test_an_allowed_host_still_needs_an_allowed_client():

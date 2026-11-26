@@ -639,22 +639,31 @@ def private_address(address: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
+def _split_host(host: str | None) -> str | None:
+    """The name in a Host header, lower-cased, without its brackets or port;
+    None unless it is ASCII and nothing but a port follows the name."""
+    if not host or not host.isascii():
+        return None
+    name, port = host.strip().lower(), ""
+    if name.startswith("["):  # [IPv6]:port
+        name, bracket, port = name[1:].partition("]")
+        if not bracket:
+            return None
+    elif name.count(":") == 1:
+        name, colon, port = name.partition(":")
+        port = colon + port
+    if not name or not _PORT.fullmatch(port):
+        return None
+    return name
+
+
 def local_host(host: str | None) -> bool:
     """A Host header naming this machine on the home network: a private IP, or a
     name with no dots or ending .local, .lan or .home.arpa. Anything else is how
     a DNS-rebinding page would reach us. ASCII only, and after the name
     nothing but a port."""
-    if not host or not host.isascii():
-        return False
-    name, port = host.strip().lower(), ""
-    if name.startswith("["):  # [IPv6]:port
-        name, bracket, port = name[1:].partition("]")
-        if not bracket:
-            return False
-    elif name.count(":") == 1:
-        name, colon, port = name.partition(":")
-        port = colon + port
-    if not name or not _PORT.fullmatch(port):
+    name = _split_host(host)
+    if name is None:
         return False
     try:
         ipaddress.ip_address(name.split("%")[0])
@@ -667,6 +676,30 @@ def local_host(host: str | None) -> bool:
     return name.endswith((".local", ".lan", ".home.arpa")) and all(
         part and part.replace("-", "").isalnum() for part in name.split(".")
     )
+
+
+_LABEL = re.compile(r"[a-z0-9-]{1,63}")
+
+
+def origin_for(host: str | None, port: int) -> str | None:
+    """This machine's site on `port`, at the name in `host`, a Host header the
+    server has already let in: http://<name>:<port>, an IPv6 address in
+    brackets. Only the name is taken from the header, once it is checked as
+    an IP address or dotted letters, digits and hyphens; never the rest, so
+    nothing a browser sent is echoed. None for a header not shaped as one,
+    an IPv6 address with a zone, or a port that isn't one."""
+    name = _split_host(host)
+    if name is None or not 0 < port <= 65535:
+        return None
+    try:
+        ip = ipaddress.ip_address(name)
+    except ValueError:
+        if not all(_LABEL.fullmatch(label) for label in name.split(".")):
+            return None
+        return f"http://{name}:{port}"
+    if isinstance(ip, ipaddress.IPv4Address):
+        return f"http://{ip}:{port}"
+    return None if ip.scope_id else f"http://[{ip}]:{port}"
 
 
 def outsider(address: str, hosts: Sequence[str], allowed_hosts: Set[str] = frozenset(),
