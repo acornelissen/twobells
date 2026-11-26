@@ -147,16 +147,21 @@ def test_the_header_holds_only_the_place_the_time_and_the_connection(name):
     assert not tags & {"a", "select", "button", "nav"}
 
 
+# The settings are on a port of their own: the server writes it into the link as
+# it starts (web/server.py, SETTINGS_PORT_SLOT), and settingslink.js points the
+# link there. Without it, /settings here is a page saying where they are.
+SETTINGS_LINK = {"class": "foot-link", "id": "settings-link", "href": "/settings", "data-port": "<!-- settings port -->"}
+
+
 def test_the_footer_links_to_the_performance_page_and_the_settings():
     # The Performance link has an id: the page hides it when the settings leave Performance out.
     assert _footer_links("index.html") == [{"class": "foot-link", "id": "performance-link", "href": "/performance"},
-                                           {"class": "foot-link", "href": "/settings"}]
+                                           SETTINGS_LINK]
     assert ("nav", {"class": "foot-nav", "aria-label": "Other pages"}) in _part("index.html", "footer")
 
 
 def test_the_performance_page_footer_links_back_to_the_departures_and_the_settings():
-    assert _footer_links("performance.html") == [{"class": "foot-link", "href": "/"},
-                                                 {"class": "foot-link", "href": "/settings"}]
+    assert _footer_links("performance.html") == [{"class": "foot-link", "href": "/"}, SETTINGS_LINK]
     assert ("nav", {"class": "foot-nav", "aria-label": "Other pages"}) in _part("performance.html", "footer")
     # The same Look picker as the dashboard's, its look set before the first paint.
     assert _look_options("performance.html") == _look_options("index.html")
@@ -248,6 +253,36 @@ def test_choosing_a_look_shows_it_and_keeps_it_for_this_browser():
         [["board", "board"], ["tft", "tft", "tft"], ["modern", "modern", "modern"]],
         [["modern", "modern"]],  # not a look: the Standard one
     ]
+
+
+@needs_node
+def test_the_settings_link_goes_to_their_own_port_at_the_name_this_page_was_opened_at():
+    found = run_js("""
+        import { pointSettingsLink } from "./settingslink.js";
+        const point = (hostname, port) => {
+          globalThis.location = { protocol: "http:", hostname };
+          const link = { href: "/settings", dataset: { port } };
+          document.getElementById = (id) => (id === "settings-link" ? link : null);
+          pointSettingsLink();
+          return link.href;
+        };
+        const seen = [point("glossop.local", "8091"), point("192.168.1.20", "8093"), point("[fd00::1]", "8091")];
+        // Not filled in, or not a port: the link stays as it is.
+        for (const port of ["<!-- settings port -->", "", "0", "65536", "80 91", "8091/x", "1e4", undefined]) {
+          seen.push(point("glossop.local", port));
+        }
+        document.getElementById = () => null;
+        pointSettingsLink();  // no link: nothing to do
+        console.log(JSON.stringify(seen));
+    """)
+    assert found == ["http://glossop.local:8091/settings", "http://192.168.1.20:8093/settings",
+                     "http://[fd00::1]:8091/settings", *["/settings"] * 8]
+
+
+def test_both_pages_point_their_settings_link():
+    for name in ("main.js", "performance.js"):
+        js = (STATIC / name).read_text(encoding="utf-8")
+        assert 'import { pointSettingsLink } from "./settingslink.js";' in js and "pointSettingsLink();" in js, name
 
 
 IMPORT = re.compile(

@@ -24,6 +24,7 @@ import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
 import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
+import { pointSettingsLink } from "./settingslink.js";
 import { applyScrolling, drawScrolling, setUpScrolling } from "./scrolling.js";
 import { applyFlaps } from "./flap.js";
 import { startAnnouncements, tickAnnouncements, wantsAnnouncements } from "./pa.js";
@@ -62,6 +63,7 @@ const heroContext = () => ({
 // or come off them, with the Split-flap look (flap.js).
 
 setUpLook();
+pointSettingsLink();
 setUpScrolling();
 $("look").addEventListener("change", () => { applyFlaps(); drawScrolling(); });
 

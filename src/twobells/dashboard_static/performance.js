@@ -10,6 +10,7 @@
 
 import { $, h, fill, setText, str, num, obj, list } from "./dom.js";
 import { setUpLook } from "./look.js";
+import { pointSettingsLink } from "./settingslink.js";
 import { getJSON } from "./api.js";
 import { dayText, hhmm } from "./time.js";
 import { placeName } from "./header.js";
@@ -197,5 +198,6 @@ export async function load() {
 
 if (document.getElementById("perf-status")) {
   setUpLook();
+  pointSettingsLink();
   load();
 }

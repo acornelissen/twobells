@@ -433,7 +433,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
         site.hub, site.healthy = hub, healthy
         app = dashserver.DashboardApp(
             hub,
-            dashserver.StaticFiles.load(dashserver.default_static_dir(), version=site.version),
+            dashserver.StaticFiles(),  # read once the settings' port is known, below
             healthy,
             site,
             dashboard_on=dashboard_on,
@@ -456,6 +456,9 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             return 2, None
         port, settings_port = server.ports
         site.dashboard_port = port
+        # Before anything is served: the pages' link to the settings says their port.
+        app.static = dashserver.StaticFiles.load(dashserver.default_static_dir(), version=site.version,
+                                                 settings_port=settings_port)
         if install.network_guard:
             # Whether the kernel really keeps this server off the internet; in the log and on the Overview,
             # which asks again as it is drawn.

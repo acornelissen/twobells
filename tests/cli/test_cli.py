@@ -1478,6 +1478,9 @@ def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served
     assert app.settings.version == wanted
     # How the footer shows it is tests/web/test_server.py's; here, that the page is given this version.
     assert f"twobells {wanted}" in app.static.get("index.html").body.decode()
+    # And the port its link to the settings goes to, the one they listen on (Stopped's).
+    for page in ("index.html", "performance.html"):
+        assert b'id="settings-link" href="/settings" data-port="8091"' in app.static.get(page).body, page
 
 
 @pytest.mark.parametrize("argv, host, ports, attempts, browser", [

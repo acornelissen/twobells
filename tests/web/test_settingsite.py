@@ -2335,6 +2335,50 @@ def test_the_wizard_page_and_its_api_need_signing_in_and_its_files_do_not(pi):
     assert pi("GET", "/settings/setup/wizard_static/wizard.js")[0].status == 200
 
 
+# What a page, script or stylesheet of the wizard's or the settings' asks the browser to load.
+_REFERENCES = [
+    re.compile(r'<(?:link|script)\b[^>]*\b(?:href|src)="([^"]+)"'),
+    re.compile(r'^\s*import\b[^"\n]*?"([^"]+)";', re.M),
+    re.compile(r'\bimport\("([^"]+)"\)'),
+    re.compile(r'new URL\(`\$\{LEAFLET\}([^`]+)`, import\.meta\.url\)'),
+    # Quoted, as ours are; leaflet.css's own unquoted ones are for controls and markers the maps don't use.
+    re.compile(r'url\("([^"]+)"\)'),
+]
+
+
+def test_everything_the_wizard_and_the_settings_load_is_on_the_settings_own_port(pi):
+    # The dashboard's files and API are on the other listener now: the wizard's
+    # page, its modules and the stylesheets must ask for nothing there.
+    from urllib.parse import urljoin
+
+    cookie = pi.session()
+    leaflet = "/settings/setup/dashboard_static/vendor/leaflet-1.9.4/"
+    queue, seen = ["/settings/setup/", "/settings", "/settings/style.css", "/settings/settings.js"], set()
+    while queue:
+        path = queue.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.endswith(".woff2"):  # a font, which asks for nothing more
+            conn = http.client.HTTPConnection("127.0.0.1", pi.port, timeout=10)
+            conn.request("GET", path, headers={"Host": f"localhost:{pi.port}"})
+            assert conn.getresponse().status == 200, path
+            conn.close()
+            continue
+        response, text = pi("GET", path, cookie=cookie)
+        assert response.status == 200, path
+        for pattern in _REFERENCES:
+            for found in pattern.findall(text):
+                if found.startswith(("https://", "#")):
+                    continue
+                base = leaflet if pattern.pattern.startswith("new URL") else path
+                queue.append(urljoin(f"http://x{base}", found).removeprefix("http://x"))
+    assert {"/settings/setup/wizard_static/wizard.js", "/settings/setup/dashboard_static/basemap.js",
+            f"{leaflet}leaflet.css", f"{leaflet}leaflet-src.esm.js",
+            "/settings/setup/dashboard_static/vendor/inter-4.1/InterVariable.woff2"} <= seen
+    assert not [path for path in seen if path.startswith(("/static/", "/api/")) or not path.startswith("/settings")]
+
+
 def test_the_wizard_page_and_its_files_are_served_from_an_allowlist(pi):
     cookie = pi.session()
     response, page = pi("GET", "/settings/setup/", cookie=cookie)

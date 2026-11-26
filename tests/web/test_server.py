@@ -397,6 +397,19 @@ def test_files_are_read_once_at_start(server, static_dir):
     assert server.request("/static/new.css")[0].status == 404
 
 
+def test_the_pages_link_to_the_settings_knows_their_port(tmp_path):
+    folder = tmp_path / "static"
+    folder.mkdir()
+    link = b'<a id="settings-link" href="/settings" data-port="<!-- settings port -->">Settings</a>'
+    for name in ("index.html", "performance.html", "app.css"):
+        (folder / name).write_bytes(link)
+    static = StaticFiles.load(folder, settings_port=8093)
+    for name in ("index.html", "performance.html"):
+        assert static.get(name).body == link.replace(b"<!-- settings port -->", b"8093"), name
+    assert static.get("app.css").body == link  # the pages only
+    assert StaticFiles.load(folder).get("index.html").body == link  # no port, nothing changed: the link stays /settings
+
+
 def test_the_page_says_which_version_is_running_in_its_footer(tmp_path):
     folder = tmp_path / "static"
     folder.mkdir()

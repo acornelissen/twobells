@@ -148,6 +148,8 @@ _GONE = (ConnectionError, TimeoutError)
 
 # Where each page's footer says which version is running, filled in at start.
 VERSION_SLOT = b"<!-- version -->"
+# Where each page's link to the settings says their port, for settingslink.js, filled in at start.
+SETTINGS_PORT_SLOT = b"<!-- settings port -->"
 PAGES = ("index.html", "performance.html")
 
 NOT_BUILT = (
@@ -193,10 +195,12 @@ class StaticFiles:
     present: bool = False  # False when the folder is missing: the front end isn't built
 
     @classmethod
-    def load(cls, folder: Path | str | None, version: str | None = None) -> StaticFiles:
+    def load(cls, folder: Path | str | None, version: str | None = None,
+             settings_port: int | None = None) -> StaticFiles:
         """Every file under `folder` with a known extension, skipping hidden
         files, symlinks, odd names and anything too big. With `version`,
-        each page's VERSION_SLOT says it, escaped, in a line of its own."""
+        each page's VERSION_SLOT says it, escaped, in a line of its own; with
+        `settings_port`, its SETTINGS_PORT_SLOT is that number."""
         if folder is None or not Path(folder).is_dir():
             return cls({}, False)
         root = Path(folder)
@@ -216,6 +220,8 @@ class StaticFiles:
                 if relative in PAGES and version is not None:
                     line = f'<p class="version">{html.escape(about(version))}</p>'
                     body = body.replace(VERSION_SLOT, line.encode("utf-8"))
+                if relative in PAGES and settings_port is not None:
+                    body = body.replace(SETTINGS_PORT_SLOT, b"%d" % settings_port)
                 found[relative] = StaticFile(body, content_type, f'"{hashlib.sha256(body).hexdigest()}"')
         return cls(found, True)
 
