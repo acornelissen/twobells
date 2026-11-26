@@ -1162,6 +1162,19 @@ def test_a_signed_in_save_redirects_to_its_page_which_says_what_changed(signed):
     assert "notice-ok" not in signed("GET", path + "?saved", cookie=cookie)[1]  # said once
 
 
+def test_a_saved_notice_is_kept_for_the_page_the_owner_opens(signed):
+    # Another port's link to ?saved (the dashboard's, say) is let in as a navigation, but doesn't use it up.
+    cookie, csrf = signed.sign_in()
+    path = "/settings/trains-and-buses"
+    fields = fields_from(signed("GET", path, cookie=cookie)[1])
+    signed("POST", path, fields | {"csrf": csrf, "title": "Our house"}, cookie=cookie)
+    linked = {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+    response, page = signed("GET", path + "?saved", cookie=cookie, headers=linked)
+    assert response.status == 200 and "notice-ok" not in page
+    opened = {**linked, "Sec-Fetch-Site": "same-origin"}  # the save's own redirect
+    assert "notice-ok" in signed("GET", path + "?saved", cookie=cookie, headers=opened)[1]
+
+
 def test_a_save_on_the_pi_says_when_the_board_shows_it(pi_signed):
     cookie, csrf = pi_signed.sign_in("/settings/board")
     fields = fields_from(pi_signed("GET", "/settings/board", cookie=cookie)[1])

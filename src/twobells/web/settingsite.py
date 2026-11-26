@@ -462,8 +462,9 @@ class SettingsSite:
             return self._used(headers, reply) if opened else reply
         if tab is not None:
             page = self._keys if tab == "keys" else self._forms[tab]
-            reply = self._pages.settings_page(headers, page, self._title(tab), saved=query in ("saved", "tested"),
-                                              here=NEXT_NAMES[tab])
+            # What changed is said once, to the page the owner opened: never to another page's link to it.
+            reply = self._pages.settings_page(headers, page, self._title(tab),
+                                              saved=opened and query in ("saved", "tested"), here=NEXT_NAMES[tab])
             return self._used(headers, reply) if opened else reply
         if path == PREFIX + "/":
             return redirect(PREFIX)
