@@ -360,6 +360,23 @@ def test_after_a_boot_in_a_closed_window_transportapi_spends_nothing_and_stays_m
     assert lookups == ["atco-a", "atco-a"] and not timer.results[-1].view.section("bus").stale
 
 
+def test_after_a_boot_in_a_closed_window_a_panel_that_fails_every_run_still_tries_once_only(timer, monkeypatch):
+    from twobells.board.displays.display import PngDisplay
+
+    timer.run(at("09:18"))
+    timer.boot()
+
+    def broken(display, image):
+        raise OSError("GPIO busy")
+
+    monkeypatch.setattr(PngDisplay, "show", broken)
+    for minute in range(30):
+        with pytest.raises(OSError, match="GPIO busy"):
+            timer.run(THU_2100 + timedelta(minutes=minute))  # the panel may be half drawn: each run draws
+    assert timer.calls == 2  # the one fetch for the boot, not one every interval
+    assert json.loads((timer.folder / "since-boot.json").read_text())["tried"] == ["train"]
+
+
 def test_a_rollback_reads_the_state_as_ever_whatever_the_runtime_folder_holds(timer):
     # A release that knows none of these files reads only state.json, and
     # last-render.json as it wrote it; neither has anything new in it.
