@@ -135,10 +135,11 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
     None, and trusts what was saved, as ever.
 
     While the state can't be saved, the last redraw and what each source
-    last fetched and tried are kept in memory instead (board/unsaved.py),
-    so the next minute's run, reading the state afresh, doesn't take the
-    panel to show something else and draw it again, ask each source again
-    before its interval, nor lose a mark that showed as a window closed.
+    and the forecast last fetched and tried are kept in memory instead
+    (board/unsaved.py), so the next minute's run, reading the state afresh,
+    doesn't take the panel to show something else and draw it again, ask
+    each source or the forecast again before its interval, nor lose a mark
+    that showed as a window closed.
     They are forgotten before each save, and kept again only after one that
     fails with the board drawn, so what is there is never older than the
     state on the card; a draw that failed may have left the panel half

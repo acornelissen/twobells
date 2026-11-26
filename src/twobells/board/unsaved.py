@@ -6,8 +6,8 @@ the next run would take the panel to show something else and draw it
 again, every minute. While the state can't be saved, the run keeps its last
 redraw (what was drawn, when, and which page) in a small file in the unit's
 runtime folder, /run/twobells (board/runfolder.py), and what each source
-last fetched and tried in another (KeptSources). Once a save works the
-files go.
+and the forecast last fetched and tried in another (KeptSources). Once a
+save works the files go.
 
 What is read back counts only if it is exactly the shape written; anything
 else counts as nothing kept, and the board draws.
@@ -20,13 +20,14 @@ from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
+from ..core.bounded import finite
 from .runfolder import MOST_SOURCES, SOURCE, RunFile
 from .state import NOT_UPDATING, departure_from_dict, is_mark, is_time
 
 NAME = "last-render.json"
 MAX_BYTES = 256  # what is written is about 120
 SOURCES_NAME = "unsaved-sources.json"
-SOURCES_MAX_BYTES = 65536  # three sources of 6 departures are about 5000
+SOURCES_MAX_BYTES = 65536  # three sources of 6 departures are about 5000, a forecast of 48 hours about 3700
 _KEYS = frozenset({"signature", "at", "page"})
 _PAGES = frozenset({"departures", "route", "clock", "code", "setup"})
 _SIGNATURE = re.compile(r"[0-9a-f]{64}")  # board/app.py's _render_key, a SHA-256
@@ -104,54 +105,92 @@ def _entry(entry: object) -> bool:
             and all(_CHECKS[key](value) for key, value in entry.items()))
 
 
-def _sources(kept: object) -> bool:
-    """Whether `kept` is sources' entries as KeptSources keeps them, by name."""
-    if not isinstance(kept, dict) or len(kept) > MOST_SOURCES:
+# The rain warning's forecast (board/app.py's _poll_weather), kept beside
+# the sources' entries under its own name, which no source has: the state
+# has it beside "sources", not in them.
+WEATHER = "weather"
+_WEATHER_KEYS = frozenset({"hours", "last_attempt", "last_success"})
+_HOUR_KEYS = frozenset({"start", "probability", "precipitation"})
+_MOST_HOURS = 72  # sources/weather.py's parse_forecast reads no more
+
+
+def _hour(item: object) -> bool:
+    """Whether `item` is an hour of the forecast as sources/weather.py's hours_to_dicts writes it."""
+    if not isinstance(item, dict) or set(item) != _HOUR_KEYS or not is_time(item["start"]):
         return False
-    return all(isinstance(name, str) and SOURCE.fullmatch(name) and _entry(entry) for name, entry in kept.items())
+    chance, rainfall = item["probability"], item["precipitation"]
+    if chance is not None and (type(chance) is not int or not 0 <= chance <= 100):
+        return False
+    if rainfall is None:
+        return True
+    number = finite(rainfall)
+    return number is not None and number >= 0
+
+
+def _hours(value: object) -> bool:
+    return isinstance(value, list) and len(value) <= _MOST_HOURS and all(_hour(item) for item in value)
+
+
+_WEATHER_CHECKS = {"hours": _hours, "last_attempt": is_time, "last_success": is_time}
+
+
+def _weather(entry: object) -> bool:
+    """Whether `entry` is what KeptSources keeps of the forecast, and nothing more."""
+    return (isinstance(entry, dict) and set(entry) <= _WEATHER_KEYS
+            and all(_WEATHER_CHECKS[key](value) for key, value in entry.items()))
+
+
+def _sources(kept: object) -> bool:
+    """Whether `kept` is sources' entries as KeptSources keeps them, by
+    name, and the forecast's, if there is one. A file from before the
+    forecast was kept has none."""
+    if not isinstance(kept, dict) or (WEATHER in kept and not _weather(kept[WEATHER])):
+        return False
+    sources = {name: entry for name, entry in kept.items() if name != WEATHER}
+    if len(sources) > MOST_SOURCES:
+        return False
+    return all(isinstance(name, str) and SOURCE.fullmatch(name) and _entry(entry) for name, entry in sources.items())
 
 
 class KeptSources:
-    """What the board's sources, of `names`, last fetched and tried, kept in
-    `folder` while the state can't be saved: each one's departures, notices,
-    last attempt and success, last error and note, and "not updating" mark,
-    as the state has them. A file of its own, so a release that knows
-    nothing of it still reads the last redraw.
+    """What the board's sources, of `names`, and its forecast last fetched
+    and tried, kept in `folder` while the state can't be saved: each
+    source's departures, notices, last attempt and success, last error and
+    note, and "not updating" mark, and the forecast's hours, last attempt
+    and success, as the state has them. A file of its own, so a release
+    that knows nothing of it still reads the last redraw.
 
     On a card that can't be written, each run would read what the card had
-    before it failed: every source due again at once (the timer asking
-    every minute, not at its interval), what it fetched gone, and a mark
-    that showed as a window closed gone after the close. Kept here, each
-    entry is put back in place of the card's, unless the card's has been
-    tried since (by a release that knows nothing of this file, say), so is
-    newer. A mark is still honoured only while the source's last success is
-    the one it was made against (board/app.py's _is_stale)."""
+    before it failed: every source and the forecast due again at once (the
+    timer asking every minute, not at its interval), what they fetched
+    gone, and a mark that showed as a window closed gone after the close.
+    Kept here, each entry is put back in place of the card's, unless the
+    card's has been tried since (by a release that knows nothing of this
+    file, say), so is newer. A mark is still honoured only while the
+    source's last success is the one it was made against (board/app.py's
+    _is_stale)."""
 
     def __init__(self, folder: Path, names: Iterable[str]) -> None:
         self._file = RunFile(folder, SOURCES_NAME, SOURCES_MAX_BYTES, _sources, "what each source last fetched")
         self._names = frozenset(names)
 
     def carry(self, state: dict) -> None:
-        """Puts the entries kept into the state's sources, in place of the card's."""
+        """Puts the entries kept into the state's sources and forecast, in place of the card's."""
         kept = self._file.read()
         if not isinstance(kept, dict):
             return
         sources = state.setdefault("sources", {})
         for name, entry in kept.items():
-            if name not in self._names:
-                continue
-            card = sources.setdefault(name, {})
-            if _newer(card.get("last_attempt"), entry.get("last_attempt")):
-                continue
-            for key in _ENTRY_KEYS:
-                if key in entry:
-                    card[key] = entry[key]
-                else:
-                    card.pop(key, None)
+            if name in self._names:
+                _put(sources.setdefault(name, {}), entry, _ENTRY_KEYS)
+        if WEATHER in kept:
+            if not isinstance(state.get(WEATHER), dict):
+                state[WEATHER] = {}
+            _put(state[WEATHER], kept[WEATHER], _WEATHER_KEYS)
 
     def keep(self, state: dict) -> bool:
-        """Keeps the entries the state's sources have, in place of any kept
-        before, saying whether it could. One that isn't of the shape is left
+        """Keeps the entries the state's sources and forecast have, in place
+        of any kept before, saying whether it could. One that isn't of the shape is left
         out, and the next run reads the card's for it."""
         kept = {}
         for name, entry in state.get("sources", {}).items():
@@ -160,6 +199,11 @@ class KeptSources:
             part = {key: entry[key] for key in _ENTRY_KEYS if key in entry}
             if part and _entry(part):
                 kept[name] = part
+        weather = state.get(WEATHER)
+        if isinstance(weather, dict):
+            part = {key: weather[key] for key in _WEATHER_KEYS if key in weather}
+            if part and _weather(part):
+                kept[WEATHER] = part
         if not kept:
             self._file.forget()
             return True
@@ -167,6 +211,17 @@ class KeptSources:
 
     def forget(self) -> None:
         self._file.forget()
+
+
+def _put(card: dict, entry: dict, keys: frozenset[str]) -> None:
+    """Puts what `entry` kept of `keys` in place of the card's, unless the card's was tried since (_newer)."""
+    if _newer(card.get("last_attempt"), entry.get("last_attempt")):
+        return
+    for key in keys:
+        if key in entry:
+            card[key] = entry[key]
+        else:
+            card.pop(key, None)
 
 
 def _newer(card: object, kept: object) -> bool:

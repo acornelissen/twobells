@@ -534,3 +534,77 @@ def test_a_rollback_reads_the_state_as_ever_whatever_the_runtime_folder_holds(ti
                                               "not_updating", "messages"}
     record = json.loads((timer.folder / "since-boot.json").read_text())
     assert record == {"fetched": {"train": "2026-10-08T09:18:00"}, "tried": []}
+
+
+# --- 4. The forecast on a card that can't be saved ---
+
+
+class Forecast:
+    """Open-Meteo for the timer's board, in the trains' window: rain likely
+    from 08:00 that day, or failing."""
+
+    def __init__(self, timer, monkeypatch, tmp_path):
+        from twobells.sources.weather import Hour, OpenMeteoSource
+
+        self.calls = 0
+        self.error: Exception | None = None
+
+        def fetch(source):
+            self.calls += 1
+            if self.error is not None:
+                raise self.error
+            return [Hour(THU_0700.replace(hour=hour), 70 if hour >= 8 else 5, 0.0) for hour in range(24)]
+
+        monkeypatch.setattr(OpenMeteoSource, "fetch", fetch)
+        (tmp_path / "config.toml").write_text(
+            f'state_file = "{timer.state}"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+            '[weather]\nlat = 53.44\nlon = -1.95\n')
+
+
+@pytest.fixture
+def forecast(timer, monkeypatch, tmp_path):
+    return Forecast(timer, monkeypatch, tmp_path)
+
+
+def rain(timer):
+    return timer.results[-1].view.rain
+
+
+@pytest.mark.parametrize("saved_first", [True, False])  # a card that failed after a save; one that never saved
+def test_a_card_that_cant_be_saved_asks_for_the_forecast_at_its_interval_not_every_minute(timer, forecast,
+                                                                                          saved_first):
+    timer.full = not saved_first
+    timer.run(at("07:00"))
+    timer.full = True
+    for minute in range(1, 60):
+        assert timer.run(at("07:00") + timedelta(minutes=minute)) != 0
+        assert rain(timer) == "Rain from 08:00 (70%)", minute  # the forecast it fetched, kept in memory
+    assert forecast.calls == 2  # 07:00 and 07:30, every 30 minutes
+    assert timer.calls == 30  # the trains every 2 minutes, as ever
+
+
+def test_a_forecast_that_fails_on_a_card_that_cant_be_saved_waits_its_interval_to_try_again(timer, forecast):
+    timer.full = True
+    forecast.error = OSError("network down")
+    for minute in range(60):
+        assert timer.run(at("07:00") + timedelta(minutes=minute)) != 0
+    assert forecast.calls == 2  # 07:00 and 07:30, not every minute
+
+
+def test_the_forecast_kept_in_memory_goes_to_the_card_once_it_saves_with_no_second_fetch(timer, forecast):
+    timer.full = True
+    for minute in range(21):
+        timer.run(at("07:00") + timedelta(minutes=minute))
+    assert forecast.calls == 1
+    kept = json.loads((timer.folder / "unsaved-sources.json").read_text())
+    assert kept["weather"]["last_attempt"] == "2026-10-08T07:00:00"
+    timer.full = False
+    assert timer.run(at("07:21")) == 0
+    assert not (timer.folder / "unsaved-sources.json").exists()  # the card has it now
+    saved = json.loads(timer.state.read_text())["weather"]
+    assert saved["last_attempt"] == saved["last_success"] == "2026-10-08T07:00:00" and len(saved["hours"]) == 24
+    for minute in range(22, 30):
+        timer.run(at(f"07:{minute}"))
+    assert forecast.calls == 1 and rain(timer) == "Rain from 08:00 (70%)"
+    timer.run(at("07:30"))
+    assert forecast.calls == 2

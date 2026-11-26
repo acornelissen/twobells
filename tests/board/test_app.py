@@ -1971,6 +1971,18 @@ def test_a_full_card_never_stops_a_screen_and_is_warned_of_once(scrolling, caplo
 
 
 @pytest.mark.parametrize("scrolling", [False, True])
+@pytest.mark.parametrize("failing", [False, True])
+def test_a_screen_on_a_full_card_asks_for_the_forecast_at_its_interval(scrolling, failing):
+    # One process: what it fetched and tried stays in memory, the card or not.
+    weather, board, _, state = weather_setup(trains=[train("08:12")])
+    weather.error = OSError("network down") if failing else None
+    screen, wall = (ScrollingScreen() if scrolling else FakeScreen()), WallClock(1000.0)
+    run_loop(board, state, screen, endless(at("07:00"), 60), 1, ticks=60, sleep=wall.sleep, store=FullStore(),
+             frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall)
+    assert weather.calls == 2  # 07:00 and 07:30, every 30 minutes, worked or not
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
 def test_a_screen_fault_on_a_full_card_still_says_what_the_fault_was(scrolling):
     trains, buses, board, display, state = setup()
     if scrolling:

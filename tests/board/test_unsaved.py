@@ -4,7 +4,7 @@ import os
 import pytest
 
 from twobells.board.state import departure_to_dict
-from twobells.board.unsaved import MAX_BYTES, NAME, SOURCES_NAME, KeptRender, KeptSources
+from twobells.board.unsaved import MAX_BYTES, NAME, SOURCES_MAX_BYTES, SOURCES_NAME, KeptRender, KeptSources
 from twobells.core.model import Departure, Status
 
 DRAWN = {"signature": "a" * 64, "at": "2026-10-08T07:00:00", "page": "departures"}
@@ -158,3 +158,101 @@ def test_an_entry_not_of_the_shape_is_never_kept(run):
     KeptSources(run, ("train", "bus")).keep({"sources": {"train": {"not_updating": {"last_success": "soon"}},
                                                          "bus": {"last_attempt": "2026-10-08T09:29:00"}}})
     assert json.loads((run / SOURCES_NAME).read_text()) == {"bus": {"last_attempt": "2026-10-08T09:29:00"}}
+
+
+# --- The forecast, kept beside the sources ---
+
+HOUR = {"start": "2026-10-08T08:00:00", "probability": 70, "precipitation": 0.4}
+FORECAST = {"hours": [HOUR, {**HOUR, "start": "2026-10-08T09:00:00", "probability": None, "precipitation": None}],
+            "last_attempt": "2026-10-08T09:30:00", "last_success": "2026-10-08T09:00:00"}
+
+
+def test_the_forecast_goes_back_in_place_of_the_card_s(run):
+    state = {"sources": {"train": ENTRY}, "weather": {**FORECAST, "other": 1}}
+    assert KeptSources(run, ("train",)).keep(state)
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY, "weather": FORECAST}
+    card = {"sources": {}, "weather": {"last_attempt": "2026-10-08T07:00:00", "hours": [], "other": 2}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": ENTRY}, "weather": {**FORECAST, "other": 2}}
+    card = {"sources": {}, "weather": None}  # a hand-edited state.json, say
+    KeptSources(run, ()).carry(card)
+    assert card == {"sources": {}, "weather": FORECAST}
+
+
+def test_a_failed_forecast_kept_puts_back_its_try_and_no_older_forecast(run):
+    tried = {"last_attempt": "2026-10-08T09:30:00"}
+    KeptSources(run, ()).keep({"weather": tried})
+    card = {"weather": {"last_attempt": "2026-10-08T09:00:00", "last_success": "2026-10-08T09:00:00",
+                        "hours": [HOUR]}}
+    KeptSources(run, ()).carry(card)
+    assert card["weather"] == tried  # as the run that kept it had it
+
+
+def test_a_card_whose_forecast_was_tried_since_keeps_its_own(run):
+    KeptSources(run, ()).keep({"weather": FORECAST})
+    newer = {"last_attempt": "2026-10-08T10:00:00", "last_success": "2026-10-08T10:00:00", "hours": []}
+    card = {"sources": {}, "weather": dict(newer)}
+    KeptSources(run, ()).carry(card)
+    assert card["weather"] == newer
+
+
+def test_a_file_from_before_the_forecast_was_kept_still_goes_back(run):
+    (run / SOURCES_NAME).write_text(json.dumps({"train": ENTRY}))
+    card = {"sources": {}, "weather": dict(FORECAST)}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": ENTRY}, "weather": FORECAST}  # the card's forecast stands
+
+
+@pytest.mark.parametrize("change", [
+    {"hours": None}, {"hours": [HOUR] * 73}, {"hours": [{**HOUR, "x": 1}]}, {"hours": [{"start": HOUR["start"]}]},
+    {"hours": ["2026-10-08T08:00:00"]}, {"hours": [{**HOUR, "start": "2026-10-08T08:00:00+01:00"}]},
+    {"hours": [{**HOUR, "start": "9999-12-31T23:00:00"}]}, {"hours": [{**HOUR, "start": "1969-12-31T23:00:00"}]},
+    {"hours": [{**HOUR, "start": 1}]}, {"hours": [{**HOUR, "probability": 101}]},
+    {"hours": [{**HOUR, "probability": -1}]}, {"hours": [{**HOUR, "probability": 50.5}]},
+    {"hours": [{**HOUR, "probability": True}]}, {"hours": [{**HOUR, "precipitation": -0.1}]},
+    {"hours": [{**HOUR, "precipitation": "0.4"}]}, {"hours": [{**HOUR, "precipitation": False}]},
+    {"hours": [{**HOUR, "precipitation": 10**400}]}, {"last_attempt": "09:30"},
+    {"last_success": "3000-01-01T00:00:00"}, {"last_success": None}, {"other": 1},
+])
+def test_a_forecast_kept_with_one_part_not_of_the_shape_puts_nothing_back(run, change):
+    (run / SOURCES_NAME).write_text(json.dumps({"train": ENTRY, "weather": {**FORECAST, **change}}))
+    card = {"sources": {}, "weather": {"last_attempt": "2026-10-08T07:00:00"}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {}, "weather": {"last_attempt": "2026-10-08T07:00:00"}}  # the card's stands
+
+
+@pytest.mark.parametrize("change", [{"hours": [{**HOUR, "probability": 101}]}, {"last_success": "soon"}])
+def test_a_forecast_not_of_the_shape_is_never_kept(run, change):
+    KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}, "weather": {**FORECAST, **change}})
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY}  # the sources still are
+
+
+@pytest.mark.parametrize("body", [
+    '{"weather": NaN}',
+    '{"weather": {"hours": [{"start": "2026-10-08T08:00:00", "probability": 70, "precipitation": NaN}]}}',
+])
+def test_a_forecast_that_isnt_json_as_written_puts_nothing_back(run, body):
+    (run / SOURCES_NAME).write_text(body)
+    card = {"sources": {}}
+    KeptSources(run, ()).carry(card)
+    assert card == {"sources": {}}
+
+
+def test_eight_sources_and_the_forecast_are_the_most_kept(run):
+    sources = {f"s{chr(97 + n)}": {"last_attempt": "2026-10-08T09:29:00"} for n in range(8)}
+    (run / SOURCES_NAME).write_text(json.dumps({**sources, "weather": FORECAST}))
+    card = {"sources": {}}
+    KeptSources(run, sources).carry(card)
+    assert card == {"sources": sources, "weather": FORECAST}
+
+
+def test_the_longest_forecast_with_full_sections_keeps_well_within_the_file_s_size(run):
+    hours = [{**HOUR, "start": f"2026-10-{8 + h // 24:02}T{h % 24:02}:00:00", "precipitation": 12.345678901234567}
+             for h in range(72)]
+    entry = {**ENTRY, "departures": ENTRY["departures"] * 6}
+    state = {"sources": {"train": entry, "bus": entry, "metro": entry}, "weather": {**FORECAST, "hours": hours}}
+    assert KeptSources(run, ("train", "bus", "metro")).keep(state)
+    assert (run / SOURCES_NAME).stat().st_size < SOURCES_MAX_BYTES // 4
+    card = {}
+    KeptSources(run, ("train", "bus", "metro")).carry(card)
+    assert card == state
