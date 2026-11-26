@@ -868,18 +868,47 @@ def test_the_address_is_drawn_across_the_panel(panel):
 def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
     from twobells.board.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
 
-    long_url = "http://my-very-long-departure-board-name.local:8091/settings"
+    long_url = "http://my-long-departure-board.local:8091/settings"
     one_line = _biggest_bold(long_url, 200, 40)
     assert one_line.size < MIN_ADDRESS_PX  # too small to read on one line
     lines, font = address_lines(long_url, 200, 40)
-    assert lines == ["http://my-very-long-departure-board-name.local", ":8091/settings"]
-    assert font.size > one_line.size  # bigger, broken in two
+    assert lines == ["http://my-long-departure-board.local", ":8091/settings"]
+    assert font.size >= MIN_ADDRESS_PX > one_line.size  # readable, broken in two
     for line in lines:
         left, _, right, _ = font.getbbox(line, mode="1")
         assert right - left <= 200
     # A usual name stays on one line.
     lines, _ = address_lines("http://pi.local:8091/settings", 200, 40)
     assert lines == ["http://pi.local:8091/settings"]
+
+
+@pytest.mark.parametrize("panel", PANELS)
+def test_the_longest_host_name_wraps_whole_rather_than_shrinking_past_reading_or_being_cut(panel, monkeypatch):
+    from twobells.board import render as render_module
+    from twobells.board.render import MIN_ADDRESS_PX, address_lines
+    from twobells.cli.common import setup_url
+
+    name = "a" * 30 + "-" + "b" * 32  # 63 characters, the most a host name has
+    assert len(name) == 63
+    view = SetupView(setup_url(name))
+    drawn = []
+
+    def spy(url, width, height):
+        drawn.append((width, height, *address_lines(url, width, height)))
+        return drawn[-1][2:]
+
+    monkeypatch.setattr(render_module, "address_lines", spy)
+    left, top, right, bottom = ink_box(render_setup(view, PALETTE, panel), PALETTE.white)
+    assert left > 0 and top > 0 and right < panel.width and bottom < panel.height  # none of it runs off
+    [(width, height, lines, font)] = drawn
+    assert "".join(lines) == view.shown  # nothing dropped
+    assert font.size >= MIN_ADDRESS_PX
+    assert lines[-1].endswith(":8091/settings")  # the port and path are never split
+    assert len(lines) == 1 or lines[-1] == ":8091/settings"
+    for line in lines:
+        box_left, box_top, box_right, box_bottom = font.getbbox(line, mode="1")
+        assert box_right - box_left <= width
+        assert box_bottom - box_top <= height / len(lines)
 
 
 @pytest.mark.parametrize("panel", PANELS)

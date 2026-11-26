@@ -1001,14 +1001,39 @@ MIN_ADDRESS_PX = 8
 def address_lines(url: str, width: float, height: float) -> tuple[list[str], ImageFont.FreeTypeFont]:
     """The settings address as drawn in `width` x `height`: on one line if it
     fits there at MIN_ADDRESS_PX or more, else broken before its port (a
-    long board name), both lines at the one size that fits half the height."""
+    long board name), both lines at the one size that fits half the height.
+    A name too long for a line at MIN_ADDRESS_PX is wrapped there, at its
+    hyphens where it can: a cut address is of no use."""
     font = _biggest_bold(url, width, height)
     left, _, right, _ = font.getbbox(url, mode="1")
     cut = url.rfind(":")
     if (font.size >= MIN_ADDRESS_PX and right - left <= width) or cut <= len("https:"):
         return [url], font
     lines = [url[:cut], url[cut:]]
-    return lines, min((_biggest_bold(line, width, height / 2) for line in lines), key=lambda f: f.size)
+    font = min((_biggest_bold(line, width, height / 2) for line in lines), key=lambda f: f.size)
+    if font.size >= MIN_ADDRESS_PX:
+        return lines, font
+    font = load_font(BOLD, MIN_ADDRESS_PX)
+    return [*_wrapped(lines[0], font, width), lines[1]], font
+
+
+def _wrapped(text: str, font: ImageFont.FreeTypeFont, width: float) -> list[str]:
+    """`text` in as few lines as `font` draws within `width`, whole: each
+    broken after a hyphen if its line has one past the first character,
+    else after as many characters as fit (at least one, so it always ends)."""
+    lines = []
+    while text:
+        keep = max(1, _longest_fit(1, len(text), lambda n: _drawn_width(font, text[:n]) <= width))
+        if keep < len(text) and "-" in text[1:keep]:
+            keep = text.rindex("-", 1, keep) + 1
+        lines.append(text[:keep])
+        text = text[keep:]
+    return lines
+
+
+def _drawn_width(font: ImageFont.FreeTypeFont, text: str) -> float:
+    left, _, right, _ = font.getbbox(text, mode="1")
+    return right - left
 
 
 def _biggest_bold(text: str, width: float, height: float) -> ImageFont.FreeTypeFont:
