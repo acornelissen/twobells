@@ -277,6 +277,8 @@ class _Handler(BaseHTTPRequestHandler):
     unread = 0  # the bytes this request may still send: of its line and headers, then of its body
     too_big = False  # whether it tried to send more
     headers_in = False  # whether its line and headers were all read
+    answered = False  # whether an answer to it was begun
+    _body_start: int | None = None  # where its body starts in rfile, once its headers are parsed
     raw_requestline: bytes  # http.server's, which its stubs leave out
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
     _reads: _Reads  # the connection's reads, behind rfile's buffer
@@ -300,11 +302,14 @@ class _Handler(BaseHTTPRequestHandler):
         # come first, as its 64 KiB line is past our 32 KiB.
         self.deadline = time.monotonic() + self.server.request_seconds
         self.unread = MAX_HEADER_BYTES
-        self.too_big = self.headers_in = False
+        self.too_big = self.headers_in = self.answered = False
+        self._body_start = None
         self.command = self.requestline = ""  # until the request line is read, as the answer looks at them
         super().handle_one_request()
         if self.too_big:
             self._too_big(413 if self.headers_in else 431)
+        elif self.answered and self._unfinished():
+            self._linger()
 
     def parse_request(self) -> bool:
         if len(str(self.raw_requestline, "iso-8859-1").split()) == 2:
@@ -316,6 +321,7 @@ class _Handler(BaseHTTPRequestHandler):
             parsed = super().parse_request()  # raises _TooBig, as any read, past the budget
         self.headers_in = True
         if parsed:
+            self._body_start = self.rfile.tell()
             # The body's budget: MAX_BODY_BYTES, less what the buffer read
             # ahead of the headers' end, which is the body's start. So that
             # read-ahead counts once, against the body, and the whole
@@ -337,6 +343,27 @@ class _Handler(BaseHTTPRequestHandler):
         except OSError:  # the browser went away, or stopped reading
             return
         self._linger()
+
+    def _unfinished(self) -> bool:
+        """Whether part of the request may still be unread or unsent: its
+        line or headers not all parsed, a body it declared not all read
+        (or one it gave no plain length for), bytes past it already in."""
+        if self._body_start is None:
+            return True
+        lengths = self.headers.get_all("Content-Length") or ["0"]
+        length = lengths[0].strip()
+        if self.headers.get("Transfer-Encoding") is not None or len(lengths) > 1 or not (
+                length.isascii() and length.isdigit() and len(length) <= 9):
+            return True
+        if self.rfile.tell() - self._body_start < int(length) or self._reads.tell() > self.rfile.tell():
+            return True
+        self.connection.settimeout(0)
+        try:
+            return bool(self.connection.recv(1, socket.MSG_PEEK))  # more already on the wire
+        except OSError:  # nothing more yet, or the client is gone
+            return False
+        finally:
+            self.connection.settimeout(self.timeout)
 
     def _linger(self) -> None:
         """After an answer that leaves part of the request unsent or unread:
@@ -402,6 +429,7 @@ class _Handler(BaseHTTPRequestHandler):
               extra: dict[str, str] | None = None, security: dict[str, str] | None = None) -> None:
         if security is None:
             security = self._security if self._security is not None else self._security_for(None)
+        self.answered = True
         self.send_response(status)
         for name, value in security.items():
             self.send_header(name, value)
@@ -616,8 +644,6 @@ class _Handler(BaseHTTPRequestHandler):
         query = raw.split("#", 1)[0].partition("?")[2]
         reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], self.rfile)
         self._send(reply.status, reply.body, reply.content_type, extra=reply.headers)
-        if reply.headers.get("Connection") == "close":  # a body refused unread (formpages.read_body)
-            self._linger()
 
     # Server-sent events
 

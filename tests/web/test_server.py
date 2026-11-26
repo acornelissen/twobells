@@ -1116,7 +1116,8 @@ def test_a_post_to_the_dashboards_api_is_refused_with_its_body_unread(static_dir
         with sock:
             reply = send_and_read(sock, request)
         assert refusal(reply)[0] == "HTTP/1.0 405 Method Not Allowed"
-        assert counted.taken < len(request)
+        assert counted.answered < len(request)  # answered with the body unread, then lingered
+        assert counted.taken - counted.answered <= LINGER_BYTES
     finally:
         running.close()
 
@@ -1158,19 +1159,43 @@ def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir, m
         running.close()
 
 
+MORE = b"a=MARK" + b"b" * (4 * 1024 * 1024)  # what a client still sends after the answer
+
+
+def post_to(path, body, method="POST", origin="http://localhost", length=None):
+    """A form POST (or `method`), its Content-Length `length` or the body's."""
+    return (f"{method} {path} HTTP/1.1\r\nHost: localhost\r\nOrigin: {origin}\r\n"
+            f"Content-Type: application/x-www-form-urlencoded\r\n"
+            f"Content-Length: {len(body) if length is None else length}\r\n\r\n").encode() + body
+
+
+# Each answered while part of its request is unread or unsent, with MORE behind it, and its status line.
+UNFINISHED = {
+    "headers": (padded(GET_HEALTH, MAX_HEADER_BYTES + 1) + MORE, "431"),
+    "length": (post_to("/settings/login", MORE), "413"),  # refused by its length, unread
+    "too-many-headers": (GET_HEALTH + b"X-Pad: MARK\r\n" * 100 + b"\r\n" + MORE, "431"),  # http.server's own
+    "bad-request-line": (b"GET\r\n" + MORE, "400"),
+    "http-0.9": (b"GET /healthz\r\n" + MORE, "400"),
+    "cross-site": (post_to("/settings/login", MORE, origin="http://evil.example"), "403"),
+    "settings-method": (post_to("/settings/login", MORE, method="PUT"), "405"),
+    "unknown-step": (post_to("/settings/setup/api/no_where", MORE), "404"),
+    "dashboard-post": (post_to("/api/snapshot", MORE), "405"),
+    "junk-after-the-body": (post_to("/settings/login", MORE, length=0), "403"),  # the sign-in page
+}
+
+
 def refused_mid_send(past):
-    """A request refused part way, with 4 MiB more behind it, and the start of its answer."""
-    more = b"a=" + b"b" * (4 * 1024 * 1024)
-    if past == "headers":
-        return padded(GET_HEALTH, MAX_HEADER_BYTES + 1) + more, "HTTP/1.0 431 "
-    return form_post("/settings/login", more), "HTTP/1.0 413 "  # refused by its length, unread
+    """A request answered part way, with 4 MiB more behind it, and the start of its answer."""
+    request, status = UNFINISHED[past]
+    return request, f"HTTP/1.0 {status} "
 
 
-@pytest.mark.parametrize("past", ["headers", "length"])
-def test_a_client_still_sending_after_its_refusal_has_a_second_to_read_it_then_is_closed_on(static_dir, past):
+@pytest.mark.parametrize("past", list(UNFINISHED))
+def test_a_client_still_sending_after_its_answer_has_a_second_to_read_it_then_is_closed_on(static_dir, past):
     """Closing on bytes not yet read resets the connection, which can lose
-    the answer on its way; so the server waits up to LINGER_S, throwing
-    away no more than LINGER_BYTES, then closes."""
+    the answer on its way; so after any answer that leaves part of the
+    request unread, the server waits up to LINGER_S, throwing away no
+    more than LINGER_BYTES, then closes."""
     running = start(static_dir)
     request, answer = refused_mid_send(past)
     try:
@@ -1186,8 +1211,8 @@ def test_a_client_still_sending_after_its_refusal_has_a_second_to_read_it_then_i
         running.close()
 
 
-@pytest.mark.parametrize("past", ["headers", "length"])
-def test_a_client_done_sending_after_its_refusal_is_closed_on_at_once(static_dir, past):
+@pytest.mark.parametrize("past", list(UNFINISHED))
+def test_a_client_done_sending_after_its_answer_is_closed_on_at_once(static_dir, past):
     running = start(static_dir)
     request, answer = refused_mid_send(past)
     request = request[:len(request) - 4 * 1024 * 1024 + 100]  # 100 bytes of the 4 MiB, then done
@@ -1199,6 +1224,68 @@ def test_a_client_done_sending_after_its_refusal_is_closed_on_at_once(static_dir
             took = time.monotonic() - began
         assert reply.startswith(answer.encode())
         assert took < server_module.LINGER_S / 2
+    finally:
+        running.close()
+
+
+def test_the_server_ends_its_side_at_once_and_lingers_after(static_dir):
+    """The client sees the end of the answer (a FIN) straight away, though
+    it neither stops sending nor closes; the server still takes what it
+    sends after that, while it lingers."""
+    running = start(static_dir)
+    request = padded(GET_HEALTH, MAX_HEADER_BYTES + 1) + b"x" * 100
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            began = time.monotonic()
+            sock.sendall(request)
+            reply = b""
+            while chunk := sock.recv(65536):
+                reply += chunk
+            took = time.monotonic() - began
+            sock.sendall(b"MORE")  # still lingering: taken and thrown away
+            until = time.monotonic() + 2
+            while counted.taken < len(request) + 4 and time.monotonic() < until:
+                time.sleep(0.01)
+        assert reply.startswith(b"HTTP/1.0 431 ")
+        assert took < server_module.LINGER_S / 2
+        assert counted.taken == len(request) + 4
+    finally:
+        running.close()
+
+
+def holds_no_slot(running, request):
+    """Whether, once `request` is answered and the client has read to the
+    end (keeping its connection open), the server lets go of its slot
+    well inside LINGER_S: the server here takes one connection an address."""
+    with socket.create_connection(("127.0.0.1", running.port), timeout=5) as sock:
+        sock.sendall(request)
+        reply = b""
+        while chunk := sock.recv(65536):
+            reply += chunk
+        until = time.monotonic() + server_module.LINGER_S / 2
+        while time.monotonic() < until:
+            try:
+                if running.request("/healthz")[1] == b"ok":
+                    return reply
+            except (ConnectionError, http.client.HTTPException):
+                time.sleep(0.02)
+    return None
+
+
+@pytest.mark.parametrize("request_bytes, status", [
+    (GET_HEALTH + b"\r\n", "200"),
+    (b"HEAD /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n", "200"),
+    (b"GET /api/snapshot HTTP/1.1\r\nHost: localhost\r\n\r\n", "200"),
+    (post_to("/settings/login", b"password=MARK"), "403"),  # read whole, and the sign-in page: no password set
+    (post_to("/settings/login", b""), "403"),
+], ids=["get", "head", "api", "form-post", "empty-post"])
+def test_an_answer_to_a_request_read_whole_lets_go_at_once(static_dir, request_bytes, status):
+    running = start(static_dir, limits={"max_per_client": 1})
+    try:
+        reply = holds_no_slot(running, request_bytes)
+        assert reply is not None, "the slot was held"
+        assert reply.startswith(f"HTTP/1.0 {status} ".encode())
     finally:
         running.close()
 
