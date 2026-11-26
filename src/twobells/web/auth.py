@@ -631,14 +631,22 @@ def same_origin(headers) -> bool:
 _PORT = re.compile(r"(:[0-9]{0,5})?")  # what may follow a Host header's name: nothing, or its port
 
 
+_THIS_NETWORK = ipaddress.ip_network("0.0.0.0/8")
+
+
 def private_address(address: str) -> bool:
-    """Loopback, link-local or a private range: the home network, not the internet."""
+    """Loopback, link-local or a private range: the home network, not the
+    internet. Never an unspecified address or one in 0.0.0.0/8, which
+    Python counts as private: no client connects from one, and as a Host it
+    is how a page from the internet reaches a server on this computer."""
     try:
         ip = ipaddress.ip_address(address.split("%")[0])
     except ValueError:
         return False
-    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
+    if ip.is_unspecified or ip in _THIS_NETWORK:
+        return False
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 

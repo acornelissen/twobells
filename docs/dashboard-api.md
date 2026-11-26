@@ -497,7 +497,7 @@ While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot 
 
 Checked in this order, before anything else. Each refusal has a plain-text body and the security headers below.
 
-- **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address, a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`, in plain ASCII letters, digits and hyphens, with nothing after it but a port. This stops DNS rebinding.
+- **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address (never one in `0.0.0.0/8`, nor `::`; nor is such a client let in), a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`, in plain ASCII letters, digits and hyphens, with nothing after it but a port. This stops DNS rebinding.
 - Then everything under `/settings` is the page saying where the settings are (see the top of this page).
 - **405** with `Allow: GET, HEAD` for any other method.
 - **404** when the request target is over 512 characters, doesn't start with `/`, or holds `..`, a backslash, or an encoded dot, slash, backslash or NUL (`%2e`, `%2f`, `%5c`, `%00`, in any case).

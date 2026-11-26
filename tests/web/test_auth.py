@@ -779,6 +779,36 @@ def test_internet_addresses_are_not_private(address):
     assert not private_address(address)
 
 
+# "This network" and the unspecified addresses, which Python counts as private. A browser
+# sends 0.0.0.0 to a server listening on this computer: the way a page from the internet
+# reaches a loopback listener ("0.0.0.0-day"). No client connects from one either.
+UNSPECIFIED = ["0.0.0.0", "0.1.2.3", "0.255.255.255", "::", "0:0:0:0:0:0:0:0", "::ffff:0.0.0.0",
+               "::ffff:0.1.2.3", "0.0.0.0%eth0"]
+
+
+@pytest.mark.parametrize("address", UNSPECIFIED)
+def test_unspecified_and_this_network_addresses_are_not_private(address):
+    assert not private_address(address)
+
+
+@pytest.mark.parametrize("address", UNSPECIFIED)
+def test_unspecified_and_this_network_addresses_are_no_local_host(address):
+    host = f"[{address}]" if ":" in address else address
+    for named in (host, f"{host}:8090"):
+        assert not local_host(named), named
+        assert outsider("127.0.0.1", [named]), named  # refused, from this computer too
+    assert outsider(address, ["localhost"])  # nor let in as a client
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1", "127.1.2.3", "::1", "1.0.0.1", "10.0.0.1", "192.168.1.20",
+                                     "172.16.0.9", "169.254.1.1", "fd00::5", "fe80::1", "::ffff:192.168.1.2"])
+def test_loopback_and_the_home_ranges_still_pass_beside_them(address):
+    private = address != "1.0.0.1"  # just past 0.0.0.0/8, on the internet
+    assert private_address(address) is private
+    host = f"[{address}]" if ":" in address else address
+    assert local_host(f"{host}:8090") is private
+
+
 @pytest.mark.parametrize("host", ["192.168.1.20:8080", "twobells:8080", "raspberrypi.local", "pi.lan:8080",
                                   "board.home.arpa", "[fe80::1]:8080", "[::1]", "localhost:8080", "my-pi", "PI.LOCAL"])
 def test_local_host_names_pass(host):

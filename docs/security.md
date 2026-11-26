@@ -24,7 +24,7 @@ What protects the settings site and the dashboard, and, on a Pi, what keeps the 
 
 The dashboard and the settings, on either port, answer only when the address in the browser is one of these:
 
-- an IP address on the home network (such as `192.168.1.20`),
+- an IP address on the home network (such as `192.168.1.20`), but never `0.0.0.0` or another in `0.0.0.0/8`, nor `::`, which a browser sends to a server on its own computer when a page from the internet asks it to,
 - a name with no dots (such as `glossop` or `nas`),
 - a name ending `.local`, `.lan` or `.home.arpa` (such as `glossop.local`).
 
