@@ -20,6 +20,13 @@ def test_it_is_systemd_s_runtime_directory_only(run, tmp_path):
         assert here({"RUNTIME_DIRECTORY": given}) is None, given
 
 
+def test_a_folder_named_with_a_colon_is_not_used(tmp_path):
+    # systemd joins several RuntimeDirectory= folders with ":"; this one is a real folder of this user's alone.
+    folder = tmp_path / "run:twobells"
+    folder.mkdir(mode=0o700)
+    assert here({"RUNTIME_DIRECTORY": str(folder)}) is None
+
+
 def test_a_folder_others_can_open_or_a_link_to_one_is_not_used(run, tmp_path):
     os.chmod(run, 0o750)
     assert here({"RUNTIME_DIRECTORY": str(run)}) is None

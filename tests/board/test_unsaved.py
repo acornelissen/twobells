@@ -94,6 +94,15 @@ def test_no_marks_keeps_no_file(run):
     assert card == {"sources": {"train": {"not_updating": MARK}}}  # the card's own stays
 
 
+@pytest.mark.parametrize("mark", [None, {"last_success": "soon"}, {"last_success": None, "x": 1},
+                                  {"last_success": "2026-10-08T09:18:00+01:00"}])
+def test_marks_kept_with_one_that_isnt_a_mark_are_not_put_back(run, mark):
+    (run / MARKS_NAME).write_text(json.dumps({"bus": MARK, "train": mark}))
+    card = {"sources": {"train": {"not_updating": MARK}}}
+    KeptMarks(run, ("train", "bus")).carry(card)
+    assert card == {"sources": {"train": {"not_updating": MARK}}}  # neither kept mark: the card's stands
+
+
 def test_a_mark_that_isnt_one_is_never_kept(run):
     KeptMarks(run, ("train",)).keep({"sources": {"train": {"not_updating": {"last_success": "soon"}}}})
     assert not (run / MARKS_NAME).exists()
