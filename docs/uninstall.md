@@ -52,7 +52,7 @@ Each install keeps everything it saves in one folder, its [store](configuration.
    - `/var/lib/twobells`: the store.
    - `/var/cache/twobells-screen`: the HDMI screen's graphics cache, if it ran.
    - `/run/twobells-fetch`: in memory, and gone at the next restart anyway.
-   - `/run/twobells`: the e-paper board's last redraw, kept there only while the SD card can't be written; in memory too.
+   - `/run/twobells`: the e-paper board's note of what it has checked since the Pi started and, while the SD card can't be written, its last redraw and what each check fetched; in memory too.
    - `/run/twobells-deploy.lock`: the lock that keeps `install.sh` and `update.sh` from running at once; in memory too.
 
 5. Remove the user the services ran as:
