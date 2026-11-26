@@ -731,11 +731,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _moved(self) -> None:
         """Every path under /settings on the dashboard's listener: for a GET
         or HEAD, a fixed page saying where the settings are now; any other
-        method is refused with its body unread. The settings site is never
-        asked, so nothing here reads a cookie, sets one or shows a form token."""
+        method is refused with its body unread (handle_one_request then
+        lingers, as after any answer that leaves part of a request unread).
+        The settings site is never asked, so nothing here reads a cookie,
+        sets one or shows a form token."""
         if self.command not in ("GET", "HEAD"):
             self._error(405, {"Allow": "GET, HEAD", "Connection": "close"})
-            self._linger()
             return
         port = self.server.settings_port or SETTINGS_PORT
         address = origin_for(self.headers.get("Host"), port)
