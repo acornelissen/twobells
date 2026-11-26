@@ -15,6 +15,12 @@ a fetch of it is saved in the state: the next run reads the state afresh,
 and one whose save failed still has what came before. Only the board's
 sources' names count, and a record of any other shape counts as nothing
 fetched or tried.
+
+A record only means something if it can be kept: one that can't (a folder
+in its place, /run full) would read as nothing fetched every minute, and
+the board would mark and fetch over and over. Each run first writes back
+what it read (cli/run.py's _single); if that fails, the run goes without
+a record, trusting what was saved, as off the Pi.
 """
 
 from __future__ import annotations
@@ -49,7 +55,7 @@ class SinceBoot:
     Pi started, kept in `folder`."""
 
     def __init__(self, folder: Path, names: Iterable[str]) -> None:
-        self._file = RunFile(folder, NAME, MAX_BYTES, _valid, "what was fetched since the Pi started")
+        self._file = RunFile(folder, NAME, MAX_BYTES, _valid, "what was fetched since the Pi started", quiet=True)
         self._names = frozenset(names)
 
     def read(self) -> Started:
@@ -60,6 +66,11 @@ class SinceBoot:
         return Started({name for name in record["fetched"] if name in self._names},
                        {name for name in record["tried"] if name in self._names})
 
-    def keep(self, started: Started) -> None:
-        self._file.keep({"fetched": sorted(started.fetched & self._names),
-                         "tried": sorted(started.tried & self._names)})
+    def keep(self, started: Started) -> bool:
+        """Keeps `started`, saying whether it could; why not, if not, in `problem`."""
+        return self._file.keep({"fetched": sorted(started.fetched & self._names),
+                                "tried": sorted(started.tried & self._names)})
+
+    @property
+    def problem(self) -> str | None:
+        return self._file.problem

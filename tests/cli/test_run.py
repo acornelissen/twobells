@@ -74,7 +74,7 @@ class Timer:
     def boot(self):
         """The Pi restarts: /run is emptied, and systemd makes the folder afresh."""
         for path in self.folder.iterdir():
-            path.unlink()
+            path.rmdir() if path.is_dir() else path.unlink()
 
 
 @pytest.fixture
@@ -147,6 +147,78 @@ def test_a_bad_record_counts_as_nothing_fetched_since_the_start(timer):
     timer.error = OSError("network down")
     timer.run(THU_0700 + timedelta(minutes=1))
     assert timer.marked
+
+
+def unwritable(timer, monkeypatch, name, how):
+    """`name` in the runtime folder can't be written from now on: a folder in
+    its place, or /run full (ENOSPC for that file alone)."""
+    import errno
+
+    from twobells.core import files
+
+    if how == "folder":
+        (timer.folder / name).unlink(missing_ok=True)
+        (timer.folder / name).mkdir()
+        return
+    real = files.write_atomic
+
+    def full(path, data, mode):
+        if path.name == name:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        real(path, data, mode)
+
+    monkeypatch.setattr(files, "write_atomic", full)
+
+
+@pytest.mark.parametrize("how", ["folder", "full"])
+def test_a_record_that_cant_be_written_after_a_boot_trusts_the_card_as_before(timer, monkeypatch, how, caplog):
+    # Without a record that holds, "nothing fetched since" would be read every
+    # run: marked, then fetched, then marked again, and outside the windows a
+    # fetch for the start every interval.
+    timer.run(at("09:18"))
+    timer.boot()
+    unwritable(timer, monkeypatch, "since-boot.json", how)
+    drawn = timer.drawn
+    with caplog.at_level("WARNING"):
+        for minute in range(30):
+            assert timer.run(THU_2100 + timedelta(minutes=minute)) == 0
+            assert not timer.marked, minute
+    assert timer.calls == 1 and timer.drawn - drawn <= 1
+    warned = [r for r in caplog.records if "since the Pi started" in r.getMessage()]
+    assert len(warned) == 30  # one line a run, not more
+
+
+@pytest.mark.parametrize("how", ["folder", "full"])
+def test_a_record_that_stops_taking_writes_in_a_window_never_flaps(timer, monkeypatch, how):
+    timer.run(at("09:18"))
+    timer.boot()
+    timer.error = OSError("network down")
+    timer.run(THU_2100)  # the boot's try fails: the record names nothing fetched
+    unwritable(timer, monkeypatch, "since-boot.json", how)
+    timer.error = None
+    friday = datetime(2026, 10, 9, 6, 30)
+    drawn, calls = timer.drawn, timer.calls
+    for minute in range(30):
+        timer.run(friday + timedelta(minutes=minute))
+        assert not timer.marked, minute
+    assert timer.calls - calls == 15 and timer.drawn - drawn <= 1  # every 2 minutes, as ever
+
+
+@pytest.mark.parametrize("name", ["last-render.json", "not-updating.json"])
+@pytest.mark.parametrize("how", ["folder", "full"])
+def test_a_file_kept_for_a_card_that_cant_be_saved_that_cant_be_written_does_no_harm(timer, monkeypatch, name, how):
+    timer.run(at("09:18"))
+    unwritable(timer, monkeypatch, name, how)
+    drawn = timer.drawn
+    for minute in range(20, 30):  # a working card: what isn't kept isn't needed
+        assert timer.run(at(f"09:{minute}")) == 0
+    assert timer.drawn == drawn and not timer.marked
+    timer.full = True
+    for minute in range(31, 40):
+        assert timer.run(at(f"09:{minute}")) != 0  # drawn and failing, as off the Pi; never a crash
+    # Without the marks the redraw is still kept; without the redraw, each
+    # run draws, as on a full card with no runtime folder at all.
+    assert timer.drawn - drawn <= (1 if name == "not-updating.json" else 9)
 
 
 def test_the_first_run_after_an_update_marks_until_each_source_is_due_with_two_redraws_at_most(timer):

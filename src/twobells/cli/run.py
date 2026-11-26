@@ -128,8 +128,9 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
     screen's are, and outside its windows it has one fetch for the start. A
     source is counted as fetched only once the state is saved with its
     fetch; one tried is counted either way, so it isn't tried again every
-    minute. Without the folder `draw` is given None, and trusts what was
-    saved, as ever.
+    minute. Each run first writes back the record it read: if it can't, it
+    goes without one. Without the folder or the record, `draw` is given
+    None, and trusts what was saved, as ever.
 
     While the state can't be saved, the last redraw and the sources' "not
     updating" marks are kept in memory instead (board/unsaved.py), so the
@@ -150,6 +151,11 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
     if marks is not None:
         marks.carry(state)
     before = boot.read() if boot is not None else None
+    if boot is not None and before is not None and not boot.keep(before):
+        # A record that can't be kept would read as nothing fetched every run.
+        logging.warning("Not counting what is fetched since the Pi started, so trusting what was saved: %s",
+                        boot.problem)
+        boot = before = None
     started = Started(set(before.fetched), set(before.tried)) if before is not None else None
     try:
         result = draw(started)

@@ -58,13 +58,22 @@ def here(environ: Mapping[str, str] | None = None) -> Path | None:
 
 class RunFile:
     """One file in the runtime folder: `name`, at most `most_bytes`, holding
-    JSON that `valid` passes. `what` names it in warnings."""
+    JSON that `valid` passes. `what` names it in warnings; `quiet` leaves
+    them to the caller, with what went wrong in `problem`."""
 
-    def __init__(self, folder: Path, name: str, most_bytes: int, valid: Callable[[object], bool], what: str) -> None:
+    def __init__(self, folder: Path, name: str, most_bytes: int, valid: Callable[[object], bool], what: str,
+                 quiet: bool = False) -> None:
         self._path = folder / name
         self._most_bytes = most_bytes
         self._valid = valid
         self._what = what
+        self._quiet = quiet
+        self.problem: str | None = None
+
+    def _warn(self, message: str, *args: object) -> None:
+        self.problem = message % args
+        if not self._quiet:
+            log.warning(message, *args)
 
     def read(self) -> object | None:
         """What is kept, or None if nothing is, or what is there isn't of its shape."""
@@ -73,7 +82,7 @@ class RunFile:
         except FileNotFoundError:
             return None
         except OSError as error:  # a link, or something else that won't open as a file
-            log.warning("Ignoring %s kept in memory: %s", self._what, error.strerror or error)
+            self._warn("Ignoring %s kept in memory: %s", self._what, error.strerror or error)
             return None
         try:
             info = os.fstat(fd)
@@ -93,24 +102,28 @@ class RunFile:
             except ValueError:  # bad JSON or bad UTF-8
                 value = None
         if not self._valid(value):
-            log.warning("Ignoring %s kept in memory: it isn't of the shape kept", self._what)
+            self._warn("Ignoring %s kept in memory: it isn't of the shape kept", self._what)
             return None
         return value
 
-    def keep(self, value: object) -> None:
-        """Keep `value` in place of anything kept before. One that isn't of
-        the shape, or is too big, is never written, and what was kept goes."""
+    def keep(self, value: object) -> bool:
+        """Keep `value` in place of anything kept before, saying whether it
+        is. One that isn't of the shape, or is too big, is never written,
+        and what was kept goes."""
         text = json.dumps(value, sort_keys=True) if self._valid(value) else None
         if text is None or len(text.encode("utf-8")) > self._most_bytes:
+            self.problem = "it isn't of the shape kept"
             self.forget()
-            return
+            return False
         try:
             files.write_atomic(self._path, text, 0o600)
         except OSError as error:
-            log.warning("Can't keep %s in memory: %s", self._what, error.strerror or error)
+            self._warn("Can't keep %s in memory: %s", self._what, error.strerror or error)
+            return False
+        return True
 
     def forget(self) -> None:
         try:
             self._path.unlink(missing_ok=True)
         except OSError as error:
-            log.warning("Can't remove %s kept in memory: %s", self._what, error.strerror or error)
+            self._warn("Can't remove %s kept in memory: %s", self._what, error.strerror or error)
