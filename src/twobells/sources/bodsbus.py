@@ -27,7 +27,7 @@ from ..timetable import build as timetable
 from ..timetable.model import Journey, Schedule, StopPosition
 from ..timetable.routesetup import DEFAULT_LIMITS, DocumentLimits
 from . import holidays, lastbus, livebus
-from .bods import BodsVehicleSource, HttpGetBytes, Vehicle
+from .bods import MAX_RESPONSE_BYTES, AnswerTooBig, BodsVehicleSource, HttpGetBytes, Vehicle, recorded_time
 from .livebus import LiveDeparture, LiveJourney
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,25 @@ _MARGIN = 0.01
 # Manchester answered with 1.1 MB, and its own with 0.2 MB.
 _MAX_BOX_KM2 = 500
 _KM_PER_DEGREE = 111.32
+# When even that box's answer is over the cap (bods.AnswerTooBig), as a
+# modest box over London's was at 3.4 MB, the buses are asked for again in
+# small boxes round the same stops (the 20 calls before yours, as a box too
+# big is drawn), and put together: a bus in two of them is kept once, by its
+# operator and VehicleRef, as it was seen last. They are squares of a grid
+# with one centred on your stops, each taken only if one of those stops is
+# in it, nearest your stops first, and cut to the one box. Every part of it
+# is bounded, whatever the area:
+SMALL_BOX_DEGREES = (0.036, 0.06)  # south to north, west to east: about 4 by 4 km in England
+MAX_SMALL_BOXES = 6  # so a check asks BODS 7 times at most: the one box, then these
+SMALL_BOX_BYTES = MAX_RESPONSE_BYTES // 2  # each answer's cap: one over it is skipped, and the rest asked
+SMALL_BOXES_BYTES = MAX_RESPONSE_BYTES  # all their answers together: one full answer's worth
+SMALL_BOXES_TIME = timedelta(seconds=30)  # and no more is asked for once a check has taken this long
+# A box found too big is remembered, so the checks after go straight to the
+# small boxes rather than download 2 MB to throw away, for this long; then
+# it is tried again, as the buses in an area change. Only in memory, as the
+# timetable read is: the minutely e-paper run, a new process each time,
+# starts without it.
+BIG_BOX_RETRY = timedelta(hours=6)
 
 
 def unusable(schedule: Schedule | None, stops: Mapping[str, str], now: datetime) -> str | None:
@@ -85,6 +104,61 @@ def _km2(box: tuple[float, float, float, float]) -> float:
     west, south, east, north = box
     across = (east - west) * _KM_PER_DEGREE * math.cos(math.radians((south + north) / 2))
     return across * (north - south) * _KM_PER_DEGREE
+
+
+def _small_boxes(schedule: Schedule, box: tuple[float, float, float, float]) -> list[tuple[float, float, float, float]]:
+    """(west, south, east, north) of each small box to ask for in place of
+    `box`, nearest your stops first, MAX_SMALL_BOXES at most; none if there
+    are no stops before yours."""
+    approaches = [position for atco, position in schedule.positions.items() if atco not in schedule.turning_only]
+    yours = [schedule.positions[atco] for atco in schedule.stops.values() if atco in schedule.positions]
+    yours = yours or approaches
+    if not approaches:
+        return []
+    high, wide = SMALL_BOX_DEGREES
+    middle_lat = sum(p.lat for p in yours) / len(yours)
+    middle_lon = sum(p.lon for p in yours) / len(yours)
+
+    def centre(square: tuple[int, int]) -> tuple[float, float]:
+        return middle_lat + square[0] * high, middle_lon + square[1] * wide
+
+    def distance(square: tuple[int, int]) -> float:
+        lat, lon = centre(square)
+        return min(_km_apart(lat, lon, position) for position in yours)
+
+    squares = {(math.floor((p.lat - middle_lat) / high + 0.5), math.floor((p.lon - middle_lon) / wide + 0.5))
+               for p in approaches}
+    west, south, east, north = box
+    found = []
+    for square in sorted(squares, key=lambda square: (distance(square), square))[:MAX_SMALL_BOXES]:
+        lat, lon = centre(square)
+        found.append((max(west, lon - wide / 2), max(south, lat - high / 2),
+                      min(east, lon + wide / 2), min(north, lat + high / 2)))
+    return found
+
+
+def _km_apart(lat: float, lon: float, position: StopPosition) -> float:
+    across = (lon - position.lon) * _KM_PER_DEGREE * math.cos(math.radians(lat))
+    return math.hypot(across, (lat - position.lat) * _KM_PER_DEGREE)
+
+
+def _merged(answers: list[list[Vehicle]]) -> list[Vehicle]:
+    """The buses of every answer, each once: one seen in more than one
+    (by its operator and VehicleRef) as it was seen last. One without a
+    VehicleRef is told apart by everything it says."""
+    found: dict[object, Vehicle] = {}
+    for vehicles in answers:
+        for vehicle in vehicles:
+            key = (vehicle.operator, vehicle.vehicle_ref) if vehicle.vehicle_ref else vehicle
+            kept = found.get(key)
+            if kept is None or _seen_after(vehicle, kept):
+                found[key] = vehicle
+    return list(found.values())
+
+
+def _seen_after(vehicle: Vehicle, other: Vehicle) -> bool:
+    when, then = recorded_time(vehicle), recorded_time(other)
+    return when is not None and (then is None or when > then)
 
 
 @dataclass(frozen=True)
@@ -146,6 +220,9 @@ class BodsBusSource:
         # with the timetable file and the day they were worked out for: once a
         # day, not on every look. They hold none of the timetable.
         self._last_days: tuple[tuple[int, int] | None, date, dict[date, lastbus.DayGroups]] | None = None
+        # The box whose answer was last over the cap, and when (the clock's,
+        # aware): until BIG_BOX_RETRY after, it is asked for in small boxes.
+        self._too_big: tuple[tuple[float, float, float, float], datetime] | None = None
 
     def _schedule(self) -> Schedule | None:
         """The saved timetable, read again only when the file changes (the board
@@ -208,15 +285,68 @@ class BodsBusSource:
         if box is None:
             return [], None, None
         lines = {journey.line for journey in schedule.journeys}
-        source = BodsVehicleSource(
-            self._api_key, box, lines, self._base_url, self._http_get, now=self._clock
-        )
         try:
-            return source.fetch(), None, None
+            return self._live(schedule, box, lines), None, None
         except Exception as error:  # noqa: BLE001 - without positions, timetabled times still show
             log.warning("bus: live positions failed, showing timetabled times: %s", safe_message(error))
             return ([], f"Timetabled times only; live positions failed: {safe_message(error)}",
                     f"Timetabled times only; live positions failed: {public_problem(error)}")
+
+    def _live(self, schedule: Schedule, box: tuple[float, float, float, float], lines: set[str]) -> list[Vehicle]:
+        """The buses in `box`; or, if its answer is over the cap, or was
+        less than BIG_BOX_RETRY ago, in the small boxes round your stops."""
+        started = self._clock()
+        if not self._known_too_big(box, started):
+            source = BodsVehicleSource(self._api_key, box, lines, self._base_url, self._http_get, now=self._clock)
+            try:
+                vehicles = source.fetch()
+            except AnswerTooBig:
+                log.info("bus: BODS's answer for the box round your stops is over %s bytes; asking for smaller "
+                         "boxes round them instead, for %g hours", f"{MAX_RESPONSE_BYTES:,}",
+                         BIG_BOX_RETRY / timedelta(hours=1))
+                self._too_big = (box, started)
+            else:
+                self._too_big = None
+                return vehicles
+        return self._in_small_boxes(schedule, box, lines, started)
+
+    def _known_too_big(self, box: tuple[float, float, float, float], now: datetime) -> bool:
+        """Whether `box` was found too big less than BIG_BOX_RETRY ago. A
+        clock gone back past when it was can't say how long ago: it is tried."""
+        if self._too_big is None or self._too_big[0] != box:
+            return False
+        found = self._too_big[1]
+        return found <= now < found + BIG_BOX_RETRY
+
+    def _in_small_boxes(self, schedule: Schedule, box: tuple[float, float, float, float], lines: set[str],
+                        started: datetime) -> list[Vehicle]:
+        """The buses in the small boxes in place of `box` (_small_boxes), put
+        together, within the bounds above: a box whose answer is over its cap
+        is skipped. AnswerTooBig if none could be read; any other failure
+        stops the asking and is raised, as the one box's is."""
+        used: list[int] = []  # the bytes of each answer read, and the cap of each refused
+
+        def counted(url: str, max_bytes: int) -> bytes:
+            body = self._http_get(url, max_bytes)
+            used.append(len(body))
+            return body
+
+        answers = []
+        for small in _small_boxes(schedule, box):
+            left = SMALL_BOXES_BYTES - sum(used)
+            if left <= 0 or self._clock() - started >= SMALL_BOXES_TIME:
+                break
+            cap = min(SMALL_BOX_BYTES, left)
+            source = BodsVehicleSource(self._api_key, small, lines, self._base_url, counted, now=self._clock)
+            try:
+                answers.append(source.fetch(cap))
+            except AnswerTooBig:
+                log.debug("bus: a small box's answer was over %s bytes; skipped", f"{cap:,}")
+                used.append(cap)  # as much was read before it was refused
+        if not answers:
+            raise AnswerTooBig("BODS's answer for the box round your stops was too big, and no smaller box's "
+                               "could be read")
+        return _merged(answers)
 
     def _board(self, schedule: Schedule, now: datetime, rows: int) -> BusBoard:
         names = _holiday_names(self._folder, now.date())

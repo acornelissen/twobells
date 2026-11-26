@@ -8,8 +8,19 @@ import pytest
 from tests.paths import FIXTURES
 from twobells.core.errors import NoTimetable
 from twobells.core.model import Departure, Status, strip_key
+from twobells.core.net import TooLarge
 from twobells.sources import holidays
-from twobells.sources.bodsbus import BodsBusSource, unusable
+from twobells.sources.bods import MAX_RESPONSE_BYTES
+from twobells.sources.bodsbus import (
+    BIG_BOX_RETRY,
+    MAX_SMALL_BOXES,
+    SMALL_BOX_BYTES,
+    SMALL_BOX_DEGREES,
+    SMALL_BOXES_BYTES,
+    SMALL_BOXES_TIME,
+    BodsBusSource,
+    unusable,
+)
 from twobells.timetable import build as timetable
 from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
 
@@ -39,16 +50,17 @@ def at(hh, mm, ss=0, day=date(2026, 10, 9)):
     return datetime(day.year, day.month, day.day, hh, mm, ss, tzinfo=LONDON)
 
 
-def siri(recorded: datetime, lat: float, lon: float, origin_aimed: str) -> bytes:
+def siri(recorded: datetime, lat: float, lon: float, origin_aimed: str, ref: str = "BNML-1",
+         operator: str = "BNML") -> bytes:
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Siri xmlns="http://www.siri.org.uk/siri" version="2.0"><ServiceDelivery><VehicleMonitoringDelivery>
 <VehicleActivity><RecordedAtTime>{recorded.isoformat()}</RecordedAtTime>
 <MonitoredVehicleJourney><LineRef>341</LineRef><DirectionRef>outbound</DirectionRef>
-<PublishedLineName>341</PublishedLineName><OperatorRef>BNML</OperatorRef>
+<PublishedLineName>341</PublishedLineName><OperatorRef>{operator}</OperatorRef>
 <DestinationName>Hadfield</DestinationName><OriginRef>{ARUNDEL}</OriginRef>
 <OriginAimedDepartureTime>{origin_aimed}</OriginAimedDepartureTime>
 <VehicleLocation><Longitude>{lon}</Longitude><Latitude>{lat}</Latitude></VehicleLocation>
-<Bearing>80.0</Bearing><VehicleRef>BNML-1</VehicleRef></MonitoredVehicleJourney></VehicleActivity>
+<Bearing>80.0</Bearing><VehicleRef>{ref}</VehicleRef></MonitoredVehicleJourney></VehicleActivity>
 </VehicleMonitoringDelivery></ServiceDelivery></Siri>""".encode()
 
 
@@ -140,6 +152,279 @@ def test_a_box_too_big_is_drawn_round_the_20_stops_before_yours_only(tmp_path):
     west, south, east, north = asked_box(bus)
     assert west > -2.0 and south > 53.4
     assert west < -1.95326 - 20 * 0.001 and east > -1.948157  # the 20 calls before, and your stop
+
+
+# A city: when the one box's answer is over the cap, small boxes round your stops
+
+HIGH, WIDE = SMALL_BOX_DEGREES
+HENRY = POSITIONS[HENRY_A]
+# Stops before yours in a 5 by 5 grid of small boxes centred on Henry Street,
+# 18 by 17 km in all: 25 boxes to choose from.
+GRID = {
+    f"G{i}{j}": StopPosition(f"Grid {i} {j}", HENRY.lat + i * HIGH, HENRY.lon + j * WIDE)
+    for i in range(-2, 3) for j in range(-2, 3)
+}
+OVERSIZED = b" " * (MAX_RESPONSE_BYTES + 1)
+
+
+def box_of(url: str) -> tuple[float, ...]:
+    return tuple(map(float, url.split("boundingBox=")[1].split("&")[0].split("%2C")))
+
+
+def small(box: tuple[float, ...]) -> bool:
+    west, south, east, north = box
+    return north - south <= HIGH + 1e-9 and east - west <= WIDE + 1e-9
+
+
+def middle(box: tuple[float, ...]) -> tuple[float, float]:
+    west, south, east, north = box
+    return (south + north) / 2, (west + east) / 2
+
+
+def inside(box: tuple[float, ...], lat: float, lon: float) -> bool:
+    west, south, east, north = box
+    return west <= lon <= east and south <= lat <= north
+
+
+class Bods:
+    """BODS answering each box with `answer(box)`: bytes, refused as get_bytes
+    refuses them if over the cap asked for, or an error to raise. Remembers
+    each box asked for with its cap, and moves `clock` on `takes` a request."""
+
+    def __init__(self, answer, now: datetime, takes: timedelta = timedelta(0)):
+        self.answer = answer
+        self.now = now
+        self.takes = takes
+        self.asked: list[tuple[tuple[float, ...], int]] = []
+
+    def clock(self) -> datetime:
+        return self.now
+
+    def __call__(self, url: str, max_bytes: int) -> bytes:
+        box = box_of(url)
+        self.asked.append((box, max_bytes))
+        self.now += self.takes
+        body = self.answer(box)
+        if isinstance(body, Exception):
+            raise body
+        if len(body) > max_bytes:
+            raise TooLarge(f"Response larger than {max_bytes} bytes")
+        return body
+
+    def boxes(self) -> list[tuple[float, ...]]:
+        return [box for box, _ in self.asked]
+
+
+def a_bus_in(box: tuple[float, ...], seen: datetime | None = None, **changes) -> bytes:
+    """A 341 in the middle of `box`, named for where it is, seen at `seen`
+    (10:03 if not given)."""
+    lat, lon = middle(box)
+    return siri(seen or at(10, 3), lat, lon, "2026-10-09T09:00:00+00:00", ref=changes.pop("ref", f"{lat:.3f},{lon:.3f}"),
+                **changes)
+
+
+def city(box: tuple[float, ...]) -> bytes:
+    """Too many buses for the one box; one in each small one."""
+    return a_bus_in(box) if small(box) else OVERSIZED
+
+
+def city_source(folder, bods: Bods, **changes) -> BodsBusSource:
+    timetable.save(folder, schedule(positions={**POSITIONS, **GRID}, **changes))
+    return BodsBusSource(folder, STOPS, "secret", LONDON, operators=["BNML"], rows=2, http_get=bods,
+                         clock=bods.clock)
+
+
+def test_a_normal_area_is_asked_for_in_one_box_every_check(tmp_path):
+    bods = Bods(lambda box: a_bus_in(box), at(10, 4))
+    bus = city_source(tmp_path, bods)
+    bus.fetch_live()
+    bods.now = at(10, 6)
+    board = bus.fetch_live()
+    assert len(bods.asked) == 2 and not any(small(box) for box in bods.boxes())
+    assert bods.asked[0] == bods.asked[1] and bods.asked[0][1] == MAX_RESPONSE_BYTES
+    assert board.vehicles_ok and len(board.vehicles) == 1
+
+
+def test_an_answer_over_the_cap_is_asked_for_again_in_small_boxes_and_put_together(tmp_path):
+    bods = Bods(city, at(10, 4))
+    board = city_source(tmp_path, bods).fetch_live()
+    big, *smalls = bods.boxes()
+    assert not small(big) and len(smalls) == MAX_SMALL_BOXES and all(small(box) for box in smalls)
+    assert inside(smalls[0], HENRY.lat, HENRY.lon)  # yours first
+    assert len(set(smalls)) == len(smalls)
+    for west, south, east, north in smalls:  # each inside the one box
+        assert big[0] <= west < east <= big[2] and big[1] <= south < north <= big[3]
+    assert board.vehicles_ok and board.note is None
+    assert sorted(v.vehicle_ref for v in board.vehicles) == sorted(
+        "{:.3f},{:.3f}".format(*middle(box)) for box in smalls)
+
+
+def test_the_small_boxes_go_nearest_your_stops_first(tmp_path):
+    bods = Bods(city, at(10, 4))
+    city_source(tmp_path, bods).fetch_live()
+    _, *smalls = bods.boxes()
+    # Yours, then the four beside it, then one of the four corners: none further out.
+    assert all(abs(lat - HENRY.lat) < 1.5 * HIGH and abs(lon - HENRY.lon) < 1.5 * WIDE
+               for lat, lon in map(middle, smalls))
+
+
+def test_the_small_boxes_are_round_the_stops_before_yours_only(tmp_path):
+    # Grid stops all marked as placed only for a bus turning round: no small box
+    # is drawn round them, only round the stops of the 20 calls before yours.
+    bods = Bods(city, at(10, 4))
+    city_source(tmp_path, bods, turning_only=frozenset(GRID)).fetch_live()
+    _, *smalls = bods.boxes()
+    assert len(smalls) == 1 and inside(smalls[0], HENRY.lat, HENRY.lon)
+
+
+def test_a_bus_in_two_small_boxes_is_kept_once_as_last_seen(tmp_path):
+    seen = iter(range(MAX_SMALL_BOXES))
+
+    def answer(box):
+        if not small(box):
+            return OVERSIZED
+        return siri(at(10, 2, next(seen)), *HALFWAY, "2026-10-09T09:00:00+00:00", ref="BNML-7")
+
+    bods = Bods(answer, at(10, 4))
+    board = city_source(tmp_path, bods).fetch_live()
+    assert [(v.vehicle_ref, v.recorded_at) for v in board.vehicles] == [
+        ("BNML-7", at(10, 2, MAX_SMALL_BOXES - 1).isoformat())]
+
+
+def test_buses_of_two_operators_sharing_a_vehicle_ref_are_both_kept(tmp_path):
+    operators = iter(["BNML", "HIPK"] * MAX_SMALL_BOXES)
+
+    def answer(box):
+        return a_bus_in(box, ref="3017", operator=next(operators)) if small(box) else OVERSIZED
+
+    board = city_source(tmp_path, Bods(answer, at(10, 4))).fetch_live()
+    assert sorted(v.operator for v in board.vehicles) == ["BNML", "HIPK"]
+
+
+def test_a_small_box_over_its_cap_is_skipped_and_the_rest_asked(tmp_path):
+    first = []
+
+    def answer(box):
+        if not small(box):
+            return OVERSIZED
+        first.append(box)
+        return OVERSIZED if len(first) == 1 else a_bus_in(box)
+
+    bods = Bods(answer, at(10, 4))
+    board = city_source(tmp_path, bods).fetch_live()
+    _, *smalls = bods.asked
+    assert len(smalls) == MAX_SMALL_BOXES and all(cap <= SMALL_BOX_BYTES for _, cap in smalls)
+    assert board.vehicles_ok and len(board.vehicles) == MAX_SMALL_BOXES - 1
+    assert inside(smalls[0][0], HENRY.lat, HENRY.lon)
+    assert not any(inside(smalls[0][0], v.lat, v.lon) for v in board.vehicles)  # the skipped one's
+
+
+def test_the_small_boxes_answers_keep_within_their_byte_budget(tmp_path):
+    # 600 kB a box: three fit, the fourth is asked with what is left and is
+    # over it, and that is all the budget.
+    def answer(box):
+        return a_bus_in(box).ljust(600_000) if small(box) else OVERSIZED
+
+    bods = Bods(answer, at(10, 4))
+    board = city_source(tmp_path, bods).fetch_live()
+    _, *smalls = bods.asked
+    caps = [cap for _, cap in smalls]
+    assert caps == [SMALL_BOX_BYTES, SMALL_BOX_BYTES, SMALL_BOXES_BYTES - 1_200_000, SMALL_BOXES_BYTES - 1_800_000]
+    assert 3 * 600_000 + caps[-1] <= SMALL_BOXES_BYTES
+    assert len(board.vehicles) == 3
+
+
+def test_every_small_box_over_its_cap_shows_timetabled_times(tmp_path, caplog):
+    bods = Bods(lambda box: OVERSIZED, at(10, 0))
+    board = city_source(tmp_path, bods).fetch_live()
+    # Two refused at their full cap spend the budget: no more is asked.
+    assert len(bods.asked) == 1 + SMALL_BOXES_BYTES // SMALL_BOX_BYTES
+    assert not board.vehicles_ok and board.vehicles == []
+    assert board.note is not None and board.note.startswith("Timetabled times only; live positions failed: ")
+    assert [l.departure.scheduled for l in board.departures] == ["10:02"]
+    assert "secret" not in caplog.text
+
+
+def test_no_small_box_is_asked_for_once_a_check_has_taken_its_time(tmp_path):
+    # Each request takes 12 s: the one box, then two small ones by 24 s; at 36 s none.
+    bods = Bods(city, at(10, 4), takes=timedelta(seconds=12))
+    board = city_source(tmp_path, bods).fetch_live()
+    assert timedelta(seconds=30) == SMALL_BOXES_TIME
+    assert len(bods.asked) == 3 and len(board.vehicles) == 2
+
+
+def test_a_box_found_too_big_goes_straight_to_small_boxes_until_tried_again(tmp_path):
+    def answer(box):
+        return a_bus_in(box, seen=bods.now - timedelta(minutes=1)) if small(box) else OVERSIZED
+
+    bods = Bods(answer, at(10, 4))
+    bus = city_source(tmp_path, bods)
+    bus.fetch_live()
+    assert len(bods.asked) == 1 + MAX_SMALL_BOXES
+    bods.asked.clear()
+    bods.now = at(10, 4) + BIG_BOX_RETRY - timedelta(seconds=1)
+    assert len(bus.fetch_live().vehicles) == MAX_SMALL_BOXES
+    assert len(bods.asked) == MAX_SMALL_BOXES and all(small(box) for box in bods.boxes())  # no 2 MB thrown away
+    # Then the one box is tried again; under the cap now, it is used, and forgotten as too big.
+    bods.asked.clear()
+    bods.answer = lambda box: a_bus_in(box, seen=bods.now)
+    bods.now = at(10, 4) + BIG_BOX_RETRY
+    bus.fetch_live()
+    bus.fetch_live()
+    assert len(bods.asked) == 2 and not any(small(box) for box in bods.boxes())
+
+
+def test_a_box_found_too_big_is_tried_again_once_the_clock_goes_back(tmp_path):
+    bods = Bods(city, at(10, 4))
+    bus = city_source(tmp_path, bods)
+    bus.fetch_live()
+    bods.asked.clear()
+    bods.now = at(10, 3)
+    bus.fetch_live()
+    assert not small(bods.boxes()[0])
+
+
+def test_another_box_is_tried_whole_though_the_last_was_too_big(tmp_path):
+    bods = Bods(city, at(10, 4))
+    bus = city_source(tmp_path, bods)
+    bus.fetch_live()
+    # The timetable rebuilt with a stop further out: its box is asked for first.
+    bods.asked.clear()
+    far = StopPosition("Further out", HENRY.lat + 3 * HIGH, HENRY.lon)
+    timetable.save(tmp_path, schedule(positions={**POSITIONS, **GRID, "FAR": far}))
+    bus.fetch_live()
+    assert not small(bods.boxes()[0]) and inside(bods.boxes()[0], far.lat, far.lon)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<Siri><ServiceDelivery>",  # cut short
+        b'<!DOCTYPE x [<!ENTITY a "aaaa">]><Siri>&a;</Siri>',  # entity tricks
+        OSError("GET https://x/?api_key=secret failed"),
+    ],
+)
+def test_a_small_box_that_fails_otherwise_stops_the_asking(tmp_path, caplog, body):
+    caplog.set_level("DEBUG")
+    bods = Bods(lambda box: body if small(box) else OVERSIZED, at(10, 0))
+    board = city_source(tmp_path, bods).fetch_live()
+    assert len(bods.asked) == 2  # the one box, and the first small one
+    assert not board.vehicles_ok and board.vehicles == []
+    assert [l.departure.scheduled for l in board.departures] == ["10:02"]
+    assert "secret" not in caplog.text and "secret" not in str(board.note)
+
+
+def test_a_small_box_s_buses_off_the_map_are_dropped(tmp_path):
+    def answer(box):
+        if not small(box):
+            return OVERSIZED
+        lat, lon = middle(box)
+        return siri(at(10, 3), 91.0 if lat > HENRY.lat else lat, lon, "2026-10-09T09:00:00+00:00",
+                    ref=f"{lat:.3f},{lon:.3f}")
+
+    board = city_source(tmp_path, Bods(answer, at(10, 4))).fetch_live()
+    assert board.vehicles and all(-90 <= v.lat <= 90 and v.lat <= HENRY.lat + 1e-9 for v in board.vehicles)
+    assert len(board.vehicles) < MAX_SMALL_BOXES
 
 
 def test_without_live_positions_the_timetabled_times_still_show(tmp_path, caplog):
