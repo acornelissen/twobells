@@ -2357,6 +2357,55 @@ def test_a_hostile_stop_name_is_shown_as_text():
     assert found == {"imgs": 0, "text": True}
 
 
+HELD = """
+const realFetch = globalThis.fetch;
+const gates = {};
+const holdBack = (name) => { gates[name] = {}; gates[name].wait = new Promise((resolve) => { gates[name].release = resolve; }); };
+globalThis.fetch = async (url, init) => {
+  const name = url.replace(/^api\\//, "");
+  if (gates[name] && init && init.body) await gates[name].wait;
+  return realFetch(url, init);
+};
+"""
+
+
+@needs_node
+def test_the_stop_code_box_waits_for_the_list_of_stops_near_home():
+    # The list, when it lands, is drawn afresh: a stop added before it would be lost without a word.
+    found = run_wizard(BY_CODE + HELD + """
+        const { enterStops } = await import("./stops.js");
+        holdBack("stops");
+        state.stopsFor = "";
+        const entering = enterStops();
+        await settle();
+        const waiting = { box: $("stops-find").hidden === true };
+        await addCode("manatdaw");          // sent all the same, as a script or a held Enter might
+        waiting.asked = asked("stop");
+        gates.stops.release(); await entering; await settle();
+        const listed = { box: $("stops-find").hidden === true, rows: rows() };
+        await addCode("manatdaw");
+        console.log(JSON.stringify({ waiting, listed, after: rows(), focus: document.activeElement.id }));
+    """, "?step=stops", stop={"stop": FAR_STOP})
+    assert found["waiting"] == {"box": True, "asked": []}
+    near = [["1800SB12341", True], ["1800SB12342", False], ["1800SB99999", True]]
+    assert found["listed"] == {"box": False, "rows": near}
+    assert found["after"] == [*near, ["1800NE43431", True]] and found["focus"] == "stop-3"
+
+
+@needs_node
+def test_a_stop_found_by_code_after_home_changed_is_not_listed():
+    # Its distance was measured from the old home, and the list it would join is the old one.
+    found = run_wizard(BY_CODE + HELD + """
+        holdBack("stop");
+        const adding = addCode("manatdaw");
+        await settle();
+        state.home = { ...state.home, lat: state.home.lat + 0.5 };
+        gates.stop.release(); await adding; await settle();
+        console.log(JSON.stringify({ rows: rows(), added: said.live.filter((text) => text.includes("added")) }));
+    """, "?step=stops", stop={"stop": FAR_STOP})
+    assert found == {"rows": [["1800SB12341", True], ["1800SB12342", False], ["1800SB99999", True]], "added": []}
+
+
 @needs_node
 def test_without_home_there_is_no_stop_code_box():
     found = run_wizard("""

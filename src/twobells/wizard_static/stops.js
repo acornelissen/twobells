@@ -134,8 +134,11 @@ async function addByCode(event) {
   event.preventDefault();
   const input = $("stops-code");
   const code = input.value.trim();
+  // Not while the list is being found: it is drawn afresh when it lands, and a stop added before would go.
+  if ($("stops-find").hidden) return false;
   setError("stops-code", "");
   if (!code) return refuseCode("Type the stop's code first.");
+  const home = homeKey();
   await once(event.submitter || $("stops-find").querySelector("button"), async () => {
     let found = null;
     try {
@@ -145,6 +148,8 @@ async function addByCode(event) {
       refuseCode(error.message);
       return;
     }
+    // Home changed while it was looked for: its distance is from the old one, and so is the list.
+    if (homeKey() !== home) return;
     if (!found) {
       refuseCode(`The ${state.noun} sent a stop that doesn't fit. Try again.`);
       return;
@@ -194,8 +199,12 @@ export async function enterStops() {
   if (state.home && state.stopsFor === homeKey()) return;
   state.stops = [];
   fill($("stops-list"));
-  if (state.home) await findStops();
-  else note("stops-status", "Home isn't saved, so only your stops now are listed. To find others, run the full setup.");
+  // The code box comes with the list: a stop added while it was on its way would be drawn over.
+  $("stops-find").hidden = true;
+  if (state.home) {
+    await findStops();
+    $("stops-find").hidden = false;
+  } else note("stops-status", "Home isn't saved, so only your stops now are listed. To find others, run the full setup.");
   if (state.only) keepSavedStops();
   // Today's stops ticked, with their labels, wherever they are listed.
   state.labels = new Map(state.saved.stops.filter((saved) => state.stops.some((stop) => stop.atco === saved.atco))
