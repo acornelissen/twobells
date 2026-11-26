@@ -1,6 +1,7 @@
 """The settings site, end to end through the one server (dashserver), on a
 Pi (codes on the board) and in Docker (codes in the log)."""
 
+import contextlib
 import errno
 import http.client
 import json
@@ -2649,14 +2650,15 @@ def raw_exchange(running, data):
     with socket.create_connection(("127.0.0.1", running.port), timeout=5) as raw:
         raw.sendall(data)
         reply = b""
-        while chunk := raw.recv(4096):
-            reply += chunk
+        with contextlib.suppress(ConnectionResetError):  # closed on with some of `data` unread
+            while chunk := raw.recv(4096):
+                reply += chunk
     return reply.decode("latin-1")
 
 
 @pytest.mark.parametrize("data, status", [
     (b"GET /settings HTTP/1.0\r\n" + b"X: y\r\n" * 101 + b"\r\n", "431"),  # too many headers
-    (b"GET /" + b"a" * 70000 + b" HTTP/1.0\r\n\r\n", "414"),
+    (b"GET /" + b"a" * 70000 + b" HTTP/1.0\r\n\r\n", "431"),  # http.server's 414, but past our 32 KiB first
 ], ids=["too-many-headers", "path-too-long"])
 def test_http_servers_own_errors_carry_the_headers_and_no_html(pi, data, status):
     reply = raw_exchange(pi, data)

@@ -6,11 +6,13 @@ a local host (or one in allowed_hosts), in one Host header, which blocks
 DNS rebinding from outside websites; API calls from another site's page
 are refused too. Connections are capped, in all and from any one
 address, and so are event streams; a request's line, headers and body
-must all arrive within REQUEST_DEADLINE_S, and come to no more than
-MAX_REQUEST_BYTES. So a misbehaving client, or one sending its request a
+must all arrive within REQUEST_DEADLINE_S, its line and headers come to
+no more than MAX_HEADER_BYTES and its body to no more than
+MAX_BODY_BYTES. So a misbehaving client, or one sending its request a
 byte at a time, can't use up the threads, nor one sending huge headers
 the memory. One past its deadline is dropped unanswered; one past its
-bytes is answered 431 or 413, with nothing more of it read.
+bytes is answered 431 (its line and headers) or 413 (its body), with
+nothing more of it read.
 
 Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
@@ -75,10 +77,12 @@ MAX_STREAMS = 12
 MAX_STREAMS_PER_CLIENT = 4
 REQUEST_TIMEOUT_S = 10  # the longest one read waits
 REQUEST_DEADLINE_S = 15  # the longest a request's line, headers and body take all told
-# A request's line and headers: a browser's are a few kB, the wizard's no more; nginx allows 32 kB.
+# A request's line and headers, to the blank line ending them: a browser's are a few kB,
+# the wizard's no more; nginx allows 32 kB.
 MAX_HEADER_BYTES = 32 * 1024
-# The most a request may send: its line and headers, and the largest body a POST may have.
-MAX_REQUEST_BYTES = MAX_HEADER_BYTES + max(MAX_FORM_BODY, setupapi.MAX_BODY)
+# A request's body, after its headers: the largest a POST may have, whatever the headers took.
+MAX_BODY_BYTES = max(MAX_FORM_BODY, setupapi.MAX_BODY)
+MAX_REQUEST_BYTES = MAX_HEADER_BYTES + MAX_BODY_BYTES  # the most a request may send all told
 MAX_PATH = 512
 HEARTBEAT_S = 15.0
 STREAM_SECONDS = 30 * 60
@@ -226,16 +230,22 @@ class _Reads(io.RawIOBase):
     client sending its request a byte at a time lets go of its thread then,
     and none taking more than the request's byte budget off the wire, so
     neither http.server nor the buffer in front of this holds more of it.
-    Only reads: an event stream, which only writes, runs on."""
+    Only reads: an event stream, which only writes, runs on. tell() is the
+    bytes taken so far, so the buffer's own tell() says how many of them it
+    has handed on."""
 
     def __init__(self, connection: socket.socket, handler: _Handler, timeout: float) -> None:
         super().__init__()
         self._connection = connection
         self._handler = handler
         self._timeout = timeout
+        self._taken = 0
 
     def readable(self) -> bool:
         return True
+
+    def tell(self) -> int:
+        return self._taken
 
     def readinto(self, buffer) -> int:
         left = self._handler.deadline - time.monotonic()
@@ -252,6 +262,7 @@ class _Reads(io.RawIOBase):
         finally:
             self._connection.settimeout(self._timeout)  # writes keep the usual timeout
         self._handler.unread -= got
+        self._taken += got
         return got
 
 
@@ -259,15 +270,17 @@ class _Handler(BaseHTTPRequestHandler):
     timeout = REQUEST_TIMEOUT_S  # a client that stalls lets go of its thread
     server: DashboardServer
     deadline = 0.0  # when this request must be in by, on time.monotonic()
-    unread = 0  # the bytes this request may still send
+    unread = 0  # the bytes this request may still send: of its line and headers, then of its body
     too_big = False  # whether it tried to send more
     headers_in = False  # whether its line and headers were all read
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
+    _reads: _Reads  # the connection's reads, behind rfile's buffer
 
     def setup(self) -> None:
         super().setup()
         self.rfile.close()  # http.server's own reader, in place of ours
-        self.rfile = io.BufferedReader(_Reads(self.connection, self, REQUEST_TIMEOUT_S))
+        self._reads = _Reads(self.connection, self, REQUEST_TIMEOUT_S)
+        self.rfile = io.BufferedReader(self._reads)
 
     def handle_one_request(self) -> None:
         # http.server reads the request line and headers here, and the
@@ -276,8 +289,12 @@ class _Handler(BaseHTTPRequestHandler):
         # sent. Past the deadline it closes the connection unanswered; past
         # the budget it is told why first. HTTP/1.0: one request a
         # connection, so what the buffer read ahead is this request's.
+        # The line and headers have MAX_HEADER_BYTES; parse_request gives
+        # the body its own. http.server's own limits answer through
+        # send_error, with our headers; of them only its 100 headers can
+        # come first, as its 64 KiB line is past our 32 KiB.
         self.deadline = time.monotonic() + self.server.request_seconds
-        self.unread = MAX_REQUEST_BYTES
+        self.unread = MAX_HEADER_BYTES
         self.too_big = self.headers_in = False
         self.command = self.requestline = ""  # until the request line is read, as the answer looks at them
         super().handle_one_request()
@@ -287,6 +304,13 @@ class _Handler(BaseHTTPRequestHandler):
     def parse_request(self) -> bool:
         parsed = super().parse_request()  # raises _TooBig, as any read, past the budget
         self.headers_in = True
+        if parsed:
+            # The body's budget: MAX_BODY_BYTES, less what the buffer read
+            # ahead of the headers' end, which is the body's start. So that
+            # read-ahead counts once, against the body, and the whole
+            # request stays within MAX_REQUEST_BYTES.
+            ahead = self._reads.tell() - self.rfile.tell()
+            self.unread = MAX_BODY_BYTES - ahead
         return parsed
 
     def _too_big(self, status: int) -> None:

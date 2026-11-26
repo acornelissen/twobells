@@ -20,6 +20,7 @@ from twobells.web import server as server_module
 from twobells.web import settingsite
 from twobells.web.formpages import MAX_FORM_BODY
 from twobells.web.server import (
+    MAX_BODY_BYTES,
     MAX_CONNECTIONS,
     MAX_HEADER_BYTES,
     MAX_PER_CLIENT,
@@ -888,12 +889,17 @@ def counted_from(running, address="192.168.1.66"):
     return ours, counted
 
 
-def send_and_read(sock, data):
+def send_and_read(sock, data, step=None):
     """Send `data` from a thread of its own (the server may stop reading part
-    way), and read what comes back until the server closes the connection."""
+    way), all at once or `step` bytes a send, and read what comes back until
+    the server closes the connection."""
     def send():
         with contextlib.suppress(OSError):
-            sock.sendall(data)
+            if step is None:
+                sock.sendall(data)
+            else:
+                for at in range(0, len(data), step):
+                    sock.sendall(data[at:at + step])
 
     sender = threading.Thread(target=send, daemon=True)
     sender.start()
@@ -924,47 +930,175 @@ def assert_refused(reply, status, phrase):
     assert b"MARK" not in reply  # nothing of what was sent
 
 
-def test_headers_past_the_request_byte_budget_are_refused_with_431_and_no_more_is_read(static_dir):
-    """The audit's case: http.server takes 100 header lines of 64 KiB, about
-    6.5 MB a request, all read and parsed before the outsider check, so 16
-    such connections from one device took a test server from 51 MB to 440 MB
-    (a Pi's unit has MemoryMax=128M). What the server reads, its reader's
-    read-ahead included, stays within MAX_REQUEST_BYTES; then it says why, and closes."""
+GET_HEALTH = b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n"
+# What each path answers once it has read a body: no password is set, nor anyone signed in.
+READ = {"/settings/login": "HTTP/1.0 403 Forbidden", "/settings/setup/api/begin": "HTTP/1.0 401 Unauthorized"}
+
+
+def padded(head, size, lines=1):
+    """`head`, a request line and headers, padded with `lines` X-Pad headers
+    saying MARK to `size` bytes, the blank line ending them included."""
+    each, extra = divmod(size - len(head) - len(b"\r\n"), lines)
+    pads = [b"X-Pad: MARK" + b"a" * (each - 13) + b"\r\n" for _ in range(lines)]
+    pads[0] = b"X-Pad: MARK" + b"a" * (each + extra - 13) + b"\r\n"
+    request = head + b"".join(pads) + b"\r\n"
+    assert len(request) == size
+    return request
+
+
+def padded_post(path, body, size, lines=1):
+    """form_post's request, its line and headers padded to `size` bytes."""
+    head = form_post(path, body).partition(b"\r\n\r\n")[0] + b"\r\n"
+    return padded(head, size, lines) + body
+
+
+def taking_any_length(monkeypatch):
+    """The settings site caps a body by its Content-Length before reading it;
+    lifted, so a test reaches the server's own cap behind that."""
+    monkeypatch.setattr(settingsite, "max_body", lambda path: 10**9)
+
+
+# With Host and the blank line, 98 headers are the 100 lines http.server takes.
+@pytest.mark.parametrize("lines", [1, 98], ids=["one-long-line", "many-short-lines"])
+@pytest.mark.parametrize("step", [None, 1], ids=["one-write", "byte-by-byte"])
+def test_a_line_and_headers_of_32_kib_are_answered(static_dir, lines, step):
     running = start(static_dir)
-    line = b"X-A: MARK" + b"a" * (64 * 1024 - 11) + b"\r\n"  # 64 KiB, the longest line http.server takes
+    request = padded(GET_HEALTH, MAX_HEADER_BYTES, lines)
     try:
         sock, counted = counted_from(running)
         with sock:
-            # With Host and the blank line, the 100 lines http.server takes: it read and answered them all.
-            reply = send_and_read(sock, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n" + line * 98 + b"\r\n")
+            reply = send_and_read(sock, request, step)
+        line, _, body = refusal(reply)
+        assert line == "HTTP/1.0 200 OK" and body == b"ok"
+        assert counted.taken == len(request)
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("lines", [1, 98], ids=["one-long-line", "many-short-lines"])
+@pytest.mark.parametrize("step", [None, 1], ids=["one-write", "byte-by-byte"])
+def test_a_line_and_headers_past_32_kib_are_refused_with_431_and_no_more_is_read(static_dir, lines, step):
+    """Even with no body at all: the line and headers have a budget of
+    their own, not a share of the whole request's."""
+    running = start(static_dir)
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, padded(GET_HEALTH, MAX_HEADER_BYTES + 1, lines), step)
         assert_refused(reply, 431, "Request Header Fields Too Large")
-        assert counted.taken <= MAX_REQUEST_BYTES < 128 * 1024
+        assert counted.taken == MAX_HEADER_BYTES
         assert running.request("/healthz")[1] == b"ok"  # and the server still answers
     finally:
         running.close()
 
 
-@pytest.mark.parametrize("path", ["/settings/login", "/settings/setup/api/begin", "/api/snapshot"])
-def test_a_body_past_the_request_byte_budget_is_refused_with_413_and_no_more_is_read(static_dir, path):
-    # Each part within its own limit, but not both: long headers, then the largest body the path takes.
+@pytest.mark.parametrize("request_bytes", [
+    GET_HEALTH + b"X-A: MARK" + b"a" * (40 * 1024) + b"\r\n\r\n",  # a line http.server would take
+    GET_HEALTH + b"X-A: MARK" + b"a" * (70 * 1024) + b"\r\n\r\n",  # one it would refuse, after 64 KiB
+    b"GET /MARK" + b"a" * (40 * 1024) + b" HTTP/1.0\r\nHost: localhost\r\n\r\n",
+    b"GET /MARK" + b"a" * (70 * 1024) + b" HTTP/1.0\r\nHost: localhost\r\n\r\n",  # 414 from http.server
+], ids=["40-kib-header", "70-kib-header", "40-kib-request-line", "70-kib-request-line"])
+def test_one_enormous_line_is_refused_with_431_once_32_kib_are_in(static_dir, request_bytes):
     running = start(static_dir)
-    largest = settingsite.max_body(path) if settingsite.owns(path) else MAX_FORM_BODY
-    body = b"a=MARK" + b"b" * (largest - 6)
-    request = form_post(path, body)
-    pad = b"X-Pad: " + b"a" * 1000 + b"\r\n"
-    head, blank, _ = request.partition(b"\r\n\r\n")
-    lines = (MAX_REQUEST_BYTES - len(head) - largest // 2) // len(pad)
-    request = head + b"\r\n" + pad * lines + blank[2:] + body
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, request_bytes)
+        assert_refused(reply, 431, "Request Header Fields Too Large")
+        assert counted.taken == MAX_HEADER_BYTES
+    finally:
+        running.close()
+
+
+def test_the_audits_six_megabytes_of_headers_stop_at_32_kib(static_dir):
+    """The audit's case: http.server takes 100 header lines of 64 KiB, about
+    6.5 MB a request, all read and parsed before the outsider check, so 16
+    such connections from one device took a test server from 51 MB to 440 MB
+    (a Pi's unit has MemoryMax=128M). What the server reads, its reader's
+    read-ahead included, stays within MAX_HEADER_BYTES; then it says why, and closes."""
+    running = start(static_dir)
+    line = b"X-A: MARK" + b"a" * (64 * 1024 - 11) + b"\r\n"  # 64 KiB, the longest line http.server takes
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n" + line * 98 + b"\r\n")
+        assert_refused(reply, 431, "Request Header Fields Too Large")
+        assert counted.taken == MAX_HEADER_BYTES
+        assert running.request("/healthz")[1] == b"ok"
+    finally:
+        running.close()
+
+
+def test_too_many_headers_get_http_servers_431_with_our_headers_and_nothing_of_the_request(static_dir):
+    # Well under 32 KiB, but past the 100 lines http.server takes: its own answer, as ours looks.
+    running = start(static_dir)
+    request = GET_HEALTH + b"X-Pad: MARK\r\n" * 100 + b"\r\n"
     try:
         sock, counted = counted_from(running)
         with sock:
             reply = send_and_read(sock, request)
-        if path == "/api/snapshot":  # the dashboard's API takes no POST, so reads no body
-            assert refusal(reply)[0] == "HTTP/1.0 405 Method Not Allowed"
-        else:
-            assert_refused(reply, 413, HTTPStatus(413).phrase)
-        assert counted.taken <= MAX_REQUEST_BYTES
+        line, headers, body = refusal(reply)
+        assert line == "HTTP/1.0 431 Request Header Fields Too Large" and body == b"Request Header Fields Too Large"
+        assert headers["content-type"] == "text/plain; charset=utf-8" and headers["cache-control"] == "no-store"
+        for name, value in SECURITY.items():
+            assert headers[name.lower()] == value, name
+        assert b"MARK" not in reply
+        assert counted.taken == len(request)
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("head_size", [1024, MAX_HEADER_BYTES - 100])
+@pytest.mark.parametrize("step", [None, 1], ids=["one-write", "byte-by-byte"])
+def test_a_body_is_read_whole_whatever_its_headers_read_ahead_of_it(static_dir, head_size, step):
+    """The reader in front of the socket reads ahead, so part of the body
+    may be in before the headers are parsed: none of it counts against the
+    headers' budget, nor is any of it lost to the body's."""
+    running = start(static_dir)
+    request = padded_post("/settings/login", b"a=MARK" + b"b" * (60 * 1024 - 6), head_size)
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, request, step)
+        assert refusal(reply)[0] == READ["/settings/login"]
+        assert counted.taken == len(request)
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("head_size", [256, 1024, MAX_HEADER_BYTES], ids=["small-headers", "1-kib", "32-kib"])
+@pytest.mark.parametrize("path", ["/settings/login", "/settings/setup/api/begin"])
+def test_a_body_has_its_own_64_kib_and_past_them_is_refused_with_413(static_dir, monkeypatch, head_size, path):
+    """However short the headers, the body has its own allowance, no more:
+    so the whole request comes to at most MAX_REQUEST_BYTES."""
+    taking_any_length(monkeypatch)
+    running = start(static_dir)
+    try:
+        for length in (MAX_BODY_BYTES, MAX_BODY_BYTES + 1):
+            request = padded_post(path, b"a=MARK" + b"b" * (length - 6), head_size)
+            sock, counted = counted_from(running)
+            with sock:
+                reply = send_and_read(sock, request)
+            if length == MAX_BODY_BYTES:
+                assert refusal(reply)[0] == READ[path]
+                assert counted.taken == len(request)
+            else:
+                assert_refused(reply, 413, HTTPStatus(413).phrase)
+                assert counted.taken == head_size + MAX_BODY_BYTES <= MAX_REQUEST_BYTES
         assert running.request("/healthz")[1] == b"ok"
+    finally:
+        running.close()
+
+
+def test_a_post_to_the_dashboards_api_is_refused_with_its_body_unread(static_dir):
+    running = start(static_dir)
+    request = padded_post("/api/snapshot", b"a=MARK" + b"b" * (MAX_BODY_BYTES - 6), 1024)
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            reply = send_and_read(sock, request)
+        assert refusal(reply)[0] == "HTTP/1.0 405 Method Not Allowed"
+        assert counted.taken < len(request)
     finally:
         running.close()
 
@@ -987,16 +1121,19 @@ def test_a_length_past_the_cap_is_refused_with_413_before_any_body_is_sent(stati
         running.close()
 
 
-def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir):
+@pytest.mark.parametrize("past, status", [("headers", 431), ("body", 413)])
+def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir, monkeypatch, past, status):
     """A browser posting too much keeps sending as the server stops reading:
     the answer still reaches it, and the server lets go within its deadline."""
+    taking_any_length(monkeypatch)
     running = start(static_dir, limits={"request_seconds": 3})
     try:
-        request = form_post("/settings/login", b"a=" + b"b" * (MAX_FORM_BODY - 2), MAX_REQUEST_BYTES // 2)
+        body = b"a=" + b"b" * (4 * 1024 * 1024)  # well past the request
+        request = padded_post("/settings/login", body, MAX_HEADER_BYTES + 1 if past == "headers" else 1024)
         with socket.create_connection(("127.0.0.1", running.port), timeout=10) as sock:
             began = time.monotonic()
-            reply = send_and_read(sock, request + b"x" * (4 * 1024 * 1024))  # and on, well past the request
-        assert_refused(reply, 413, HTTPStatus(413).phrase)
+            reply = send_and_read(sock, request)
+        assert_refused(reply, status, HTTPStatus(status).phrase)
         assert time.monotonic() - began < 5
         assert running.request("/healthz")[1] == b"ok"
     finally:
@@ -1042,17 +1179,19 @@ def test_the_largest_form_with_the_longest_headers_allowed_is_still_answered(sta
     request = form_post("/settings/login", body, MAX_HEADER_BYTES - (len(request) - len(body)))
     assert len(request) == MAX_HEADER_BYTES + MAX_FORM_BODY
     try:
-        sock, _ = counted_from(running)
+        sock, counted = counted_from(running)
         with sock:
             reply = send_and_read(sock, request)
-        assert reply.startswith(b"HTTP/1.0 ") and not reply.startswith(b"HTTP/1.0 413 ")
+        assert refusal(reply)[0] == READ["/settings/login"]
+        assert counted.taken == MAX_REQUEST_BYTES  # the documented total, all of it taken
     finally:
         running.close()
 
 
 def test_the_budget_holds_the_largest_body_the_settings_take():
+    assert MAX_REQUEST_BYTES == MAX_HEADER_BYTES + MAX_BODY_BYTES
     for path in ("/settings/login", "/settings/keys", "/settings/setup/api/finish"):
-        assert settingsite.max_body(path) <= MAX_REQUEST_BYTES - MAX_HEADER_BYTES
+        assert settingsite.max_body(path) <= MAX_BODY_BYTES
 
 
 def test_a_stream_writes_far_past_the_request_byte_budget(server):
