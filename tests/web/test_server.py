@@ -1733,6 +1733,18 @@ def test_the_dashboards_settings_say_where_they_are_now(pair, host, link):
     assert response.getheader("X-Frame-Options") == "DENY" and response.getheader("Cache-Control") == "no-store"
 
 
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST"])
+@pytest.mark.parametrize("host", ["evil.com", "evil.com:8090", "8.8.8.8", "glossop.local.evil.com"])
+def test_the_dashboards_settings_page_keeps_the_host_check(pair, method, host):
+    # Refused before anything else: no page, and no link made from a host the server doesn't answer to.
+    for path in ("/settings", "/settings/login", "/settings/setup/api/session"):
+        response, body = pair.request(path, method, host=host, body=b"" if method == "POST" else None)
+        assert response.status == 403, (path, host)
+        assert b"evil" not in body and b"8.8.8.8" not in body and b"href" not in body, (path, host)
+        assert response.getheader("Location") is None
+    assert pair.app.settings.asked == []
+
+
 def test_the_moved_page_never_echoes_what_the_browser_sent(pair):
     response, body = pair.request("/settings/<script>?x=<b>", headers={"Cookie": "settings_session=<i>"})
     assert response.status == 200
