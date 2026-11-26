@@ -99,16 +99,16 @@ def _run(args) -> int:
         return _run_first(args)
     if not _board_on(found):
         return _run_off(args)
-    # A single run on a Pi hands the bank holidays' cache it kept in memory,
-    # while the card wouldn't take it, back to bank_holidays (_single).
-    folder = None if args.loop else runfolder.here()
+    # On a Pi the bank holidays' cache kept in memory, while the card
+    # wouldn't take it, goes back to bank_holidays (_single, _KeptStore).
+    folder = runfolder.here()
     unsaved = Unsaved(KeptSources(folder, ()).holidays()) if folder is not None else None
     settings = load_settings(args, unsaved=unsaved)
     display = _open_display(args, settings)
     store = StateStore(settings.state_file)
     state = store.load()
     if args.loop:
-        return _run_loop(settings, display, store, state, args)
+        return _run_loop(settings, display, store, state, args, folder, unsaved)
     # A fresh install (nothing fetched yet, though the set-me-up page may have
     # been drawn) fetches everything once, so the panel isn't blank until the
     # next poll window opens. Decided once what was kept in memory while the
@@ -220,7 +220,7 @@ def _count_since_boot(boot: SinceBoot | None, started: Started | None, state: di
                         "fetched again: %s", boot.problem)
 
 
-def _save(store: StateStore, state: dict) -> bool:
+def _save(store: StateStore | _KeptStore, state: dict) -> bool:
     """Saves the state, saying whether it could. A full or read-only SD card
     is warned of, never raised: it mustn't hide a fault already on its way
     out, nor turn a clean stop or a restart into a crash."""
@@ -236,13 +236,49 @@ class _Restart(Exception):
     """A change the running display can't take on: start again."""
 
 
+class _KeptStore:
+    """A running screen's state store on a Pi. While the state can't be
+    saved, what each source and the forecast last fetched and tried, and the
+    bank holidays' cache the card wouldn't take (`unsaved`), are kept in
+    memory beside it (`entries`), as the e-paper timer keeps them (_single),
+    so a start after systemd restarts the screen, which reads the card
+    afresh, doesn't ask every source again; once a save works, they go,
+    but for the holidays while the card still won't take their cache.
+
+    Kept as each save is tried, which a running board does as what it
+    fetched changes, before a budgeted fetch, every few minutes and as it
+    stops (board/app.py's _Saves, _run_loop), and written only when what is
+    kept has changed (board/runfolder.py). The last redraw and what was
+    fetched since the Pi started are the timer's alone: a screen starts
+    blank, and counts from its own start (board/app.py's run_loop)."""
+
+    def __init__(self, store: StateStore, entries: KeptSources, unsaved: Unsaved | None) -> None:
+        self._store = store
+        self._entries = entries
+        self._unsaved = unsaved
+
+    def save(self, state: dict) -> None:
+        holidays = self._unsaved.record if self._unsaved is not None else None
+        try:
+            self._store.save(state)
+        except OSError:
+            self._entries.keep(state, holidays)
+            raise
+        if holidays is None:
+            self._entries.forget()
+        else:
+            self._entries.keep({}, holidays)  # the state saved, but not the holidays' cache
+
+
 class _Watcher:
     """Notices when config, secrets or saved settings change, and reloads them.
-    Changes to the display itself need a fresh start."""
+    Changes to the display itself need a fresh start. `unsaved` goes to the
+    bank holidays as at the start (_run)."""
 
-    def __init__(self, args, settings) -> None:
+    def __init__(self, args, settings, unsaved: Unsaved | None = None) -> None:
         self._args = args
         self._settings = settings
+        self._unsaved = unsaved
         self._paths = open_store(args).watched()
         self._stamp = self._stamps()
 
@@ -266,7 +302,7 @@ class _Watcher:
             return None
         self._stamp = stamp
         try:
-            new = load_settings(self._args)
+            new = load_settings(self._args, unsaved=self._unsaved)
         except ConfigError as error:
             logging.warning("Settings changed but don't load (%s); keeping the current ones", error)
             return None
@@ -277,7 +313,18 @@ class _Watcher:
         return new.board
 
 
-def _run_loop(settings, display, store, state, args) -> int:
+def _run_loop(settings, display, store, state, args, folder: Path | None = None,
+              unsaved: Unsaved | None = None) -> int:
+    """A running board (a screen's service). On a Pi, with its runtime
+    `folder`, what was kept in memory while the card couldn't be saved goes
+    back in the state first, and is kept as it goes (_KeptStore)."""
+    # As for a single run: only a fresh install fetches outside windows,
+    # decided as there once what was kept is back.
+    fresh = "sources" not in state
+    if folder is not None:
+        entries = KeptSources(folder, {config.source.name for config in settings.board.sources})
+        entries.carry(state)
+        store = _KeptStore(store, entries, unsaved)
     zone = ZoneInfo(settings.timezone)
 
     def clock() -> datetime:
@@ -294,9 +341,8 @@ def _run_loop(settings, display, store, state, args) -> int:
             ticks=args.ticks,
             sleep=sleep_to_the_tick,
             store=store,
-            # As for a single run: only a fresh install fetches outside windows.
-            prime="sources" not in state,
-            reload=_Watcher(args, settings),
+            prime=fresh and not state.get("sources"),
+            reload=_Watcher(args, settings, unsaved),
             # A screen draws frames between ticks while text scrolls; e-paper never animates.
             frame_seconds=None if display.panel.epaper else SCROLL_FRAME_S,
             # A screen can speak, while [board] show says so; it outlives a settings reload.

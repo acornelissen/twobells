@@ -868,3 +868,97 @@ def test_a_box_found_too_big_kept_in_memory_of_any_other_shape_is_none(timer, ci
     (timer.folder / "unsaved-sources.json").write_text(json.dumps(kept))
     assert timer.run(at("07:02")) != 0
     assert city.big_asks == 2
+
+
+# --- 7. A running screen (--loop) that systemd restarts on a card that can't be saved ---
+
+
+class Screen:
+    """twobells-screen.service's runs, on the timer's board, card and clock:
+    each start runs `ticks` ticks of a second, its clock moving on a second
+    a tick, then stops, as a fault would stop it for systemd to restart.
+    Counts the writes of what is kept in memory."""
+
+    def __init__(self, timer, monkeypatch):
+        from twobells.cli import run
+        from twobells.core import files
+
+        self.timer = timer
+        self.writes = 0
+        real = files.write_atomic
+
+        def write(path, data, mode):
+            if path.name == "unsaved-sources.json":
+                self.writes += 1
+            real(path, data, mode)
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                moment = timer.now.replace(tzinfo=tz)
+                timer.now += timedelta(seconds=1)
+                return moment
+
+        monkeypatch.setattr(files, "write_atomic", write)
+        monkeypatch.setattr(run, "datetime", Clock)
+        monkeypatch.setattr(run, "sleep_to_the_tick", lambda seconds: None)
+
+    def start(self, at_time, ticks=1) -> int:
+        self.timer.now = at_time
+        return main([*self.timer.args, "--loop", "--tick", "1", "--ticks", str(ticks)])
+
+
+@pytest.fixture
+def screen(timer, monkeypatch):
+    return Screen(timer, monkeypatch)
+
+
+@pytest.mark.parametrize("saved_first", [True, False])  # a card that failed after a save; one that never saved
+def test_a_screen_restarted_over_and_over_on_a_card_that_cant_be_saved_keeps_each_source_to_its_interval(
+        timer, screen, saved_first):
+    timer.full = not saved_first
+    screen.start(THU_0700)
+    timer.full = True
+    for minute in range(1, 21):  # systemd starting it again each minute, after each fault
+        screen.start(THU_0700 + timedelta(minutes=minute))
+    assert timer.calls == 11  # every 2 minutes, not at every start
+
+
+def test_what_a_screen_keeps_in_memory_goes_once_the_card_saves(timer, screen):
+    timer.full = True
+    screen.start(THU_0700)
+    assert (timer.folder / "unsaved-sources.json").exists()
+    timer.full = False
+    screen.start(THU_0700 + timedelta(minutes=1))
+    assert not (timer.folder / "unsaved-sources.json").exists()  # the card has it
+    assert json.loads(timer.state.read_text())["sources"]["train"]["last_success"] == "2026-10-08T07:00:00"
+    screen.start(THU_0700 + timedelta(minutes=1, seconds=30))
+    assert timer.calls == 1
+
+
+def test_a_screen_on_a_card_that_cant_be_saved_keeps_what_was_fetched_only_as_it_changes(timer, screen):
+    timer.full = True
+    assert screen.start(THU_0700, ticks=600) == 0  # ten minutes
+    assert timer.calls == 6  # 07:00, then every 2 minutes less the slack
+    assert 1 <= screen.writes <= timer.calls  # as each fetch changes it; never every tick, nor as it stops
+
+
+def test_a_screen_whose_card_saves_keeps_nothing_in_memory(timer, screen):
+    for minute in range(3):
+        screen.start(THU_0700 + timedelta(minutes=minute), ticks=5)
+    assert screen.writes == 0 and not (timer.folder / "unsaved-sources.json").exists()
+    assert timer.calls == 2
+
+
+def test_a_screen_keeps_neither_its_last_redraw_nor_a_note_of_what_it_fetched_since_the_pi_started(timer, screen):
+    # A screen starts blank and counts from its own start: those are the e-paper timer's alone.
+    timer.full = True
+    screen.start(THU_0700)
+    assert sorted(path.name for path in timer.folder.iterdir()) == ["unsaved-sources.json"]
+
+
+def test_a_screen_restarted_on_a_card_that_cant_be_saved_asks_gov_uk_once(timer, screen, gov_uk):
+    timer.full = True
+    for minute in range(10):
+        screen.start(THU_0700 + timedelta(minutes=minute))
+    assert gov_uk.calls == 1

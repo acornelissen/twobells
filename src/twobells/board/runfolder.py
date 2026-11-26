@@ -6,7 +6,9 @@ or must not outlive a restart of the Pi, goes in the unit's
 RuntimeDirectory, /run/twobells: in memory, made by systemd for the service
 user alone, kept between runs and empty again once the Pi restarts. Off the
 Pi there is no such folder ($RUNTIME_DIRECTORY isn't set), and nothing is
-kept.
+kept. A running screen keeps what its sources fetched in a folder of its
+own, /run/twobells-screen, from one start to the next while systemd starts
+it again (cli/run.py's _KeptStore).
 
 Each file has one fixed shape, which its reader checks: the last redraw
 and what each source last fetched while the state can't be saved
@@ -69,6 +71,9 @@ class RunFile:
         self._what = what
         self._quiet = quiet
         self.problem: str | None = None
+        # What this one last wrote, so a running screen, keeping it as it
+        # goes, doesn't write the same again (board/unsaved.py's KeptSources).
+        self._written: str | None = None
 
     def _warn(self, message: str, *args: object) -> None:
         self.problem = message % args
@@ -115,14 +120,19 @@ class RunFile:
             self.problem = "it isn't of the shape kept" if text is None else "it is too big to keep"
             self.forget()
             return False
+        if text == self._written:
+            return True
         try:
             files.write_atomic(self._path, text, 0o600)
         except OSError as error:
+            self._written = None
             self._warn("Can't keep %s in memory: %s", self._what, error.strerror or error)
             return False
+        self._written = text
         return True
 
     def forget(self) -> None:
+        self._written = None
         try:
             self._path.unlink(missing_ok=True)
         except OSError as error:

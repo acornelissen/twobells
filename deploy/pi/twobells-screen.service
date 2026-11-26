@@ -14,6 +14,14 @@ Group=twobells
 SupplementaryGroups=video render audio
 StateDirectory=twobells
 StateDirectoryMode=0750
+# In memory, kept while systemd starts the screen again after a fault and gone
+# when it stops (board/runfolder.py): while the state can't be saved (a full or
+# read-only SD card), what each source last fetched, so a start doesn't ask
+# each source again before its interval (board/unsaved.py). A folder of its
+# own: /run/twobells is the e-paper timer's.
+RuntimeDirectory=twobells-screen
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
 EnvironmentFile=/etc/twobells/secrets.env
 Environment=SDL_VIDEODRIVER=kmsdrm
 # pygame's surface reaches the screen through an SDL renderer: left to choose,

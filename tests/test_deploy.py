@@ -826,6 +826,22 @@ def test_the_e_paper_run_keeps_its_last_redraw_in_memory_of_its_own_only():
             assert "twobells" not in _unit(name).get("RuntimeDirectory", []), name
 
 
+def test_the_screen_keeps_what_it_fetched_in_memory_of_its_own_across_restarts_only():
+    # While the card can't be saved, a screen systemd starts again after a
+    # fault carries what each source fetched (cli/run.py's _KeptStore), in a
+    # folder only the service user can open, gone once the service stops.
+    kept = {"RuntimeDirectory": ["twobells-screen"], "RuntimeDirectoryMode": ["0700"],
+            "RuntimeDirectoryPreserve": ["restart"]}
+    screen = _unit("twobells-screen.service")
+    assert {key: screen.get(key) for key in kept} == kept and screen["User"] == ["twobells"]
+    assert screen["Restart"] == ["on-failure"]
+    for name in SERVICES:
+        if name != "twobells-screen.service":
+            assert "twobells-screen" not in _unit(name).get("RuntimeDirectory", []), name
+    uninstall = (ROOT / "docs" / "uninstall.md").read_text()
+    assert " /run/twobells-screen " in uninstall or " /run/twobells-screen\n" in uninstall
+
+
 def test_a_fetch_service_that_keeps_stopping_at_once_is_given_up_on_not_looped():
     # With the dashboard off, each run waits a minute for more, so ten starts in two minutes is a loop.
     for name in ("twobells-fetch.service", "twobells-fetch.path"):

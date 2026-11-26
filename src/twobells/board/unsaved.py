@@ -8,7 +8,8 @@ redraw (what was drawn, when, and which page) in a small file in the unit's
 runtime folder, /run/twobells (board/runfolder.py), and what each source
 and the forecast last fetched and tried in another (KeptSources), with the
 bank holidays' cache while the card won't take that either. Once a save
-works the files go.
+works the files go. A running screen, one process, keeps the second only,
+for its next start after a fault (cli/run.py's _KeptStore).
 
 What is read back counts only if it is exactly the shape written; anything
 else counts as nothing kept, and the board draws.
