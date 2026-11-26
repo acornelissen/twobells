@@ -593,9 +593,10 @@ class FormPages:
 
     def wizard_cross_site(self, headers: Headers) -> Reply | None:
         """The refusal for any request to the wizard's API from another
-        site's page (Sec-Fetch-Site: cross-site), session or not, before
-        anything else is looked at; None for any other request."""
-        if (headers.get("Sec-Fetch-Site") or "").strip().lower() == "cross-site":
+        site's page (Sec-Fetch-Site: cross-site) or another port of this
+        address, such as the dashboard's (same-site), session or not,
+        before anything else is looked at; None for any other request."""
+        if (headers.get("Sec-Fetch-Site") or "").strip().lower() in ("cross-site", "same-site"):
             return self._json(403, {"error": "Not from another site"})
         return None
 

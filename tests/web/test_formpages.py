@@ -691,10 +691,12 @@ def test_a_step_that_is_not_sensible_json_never_runs(host, body):
 
 def test_another_sites_page_gets_nothing_from_the_wizard_signed_in_or_not(host):
     cookie, _ = host.signed_in()
-    for sent in (headers(Sec_Fetch_Site="cross-site"), headers(cookie, Sec_Fetch_Site=" Cross-Site")):
+    # Same-site is another port on this address: the dashboard's, now the settings have their own.
+    for sent in (headers(Sec_Fetch_Site="cross-site"), headers(cookie, Sec_Fetch_Site=" Cross-Site"),
+                 headers(cookie, Sec_Fetch_Site="same-site"), headers(Sec_Fetch_Site="Same-Site ")):
         reply = host.pages.wizard_cross_site(sent)
         assert reply.status == 403 and json.loads(reply.body) == {"error": "Not from another site"}
-    for site in (None, "same-origin", "same-site", "none"):
+    for site in (None, "same-origin", "none"):
         sent = headers(cookie) if site is None else headers(cookie, Sec_Fetch_Site=site)
         assert host.pages.wizard_cross_site(sent) is None
 
