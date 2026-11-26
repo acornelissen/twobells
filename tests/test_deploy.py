@@ -936,8 +936,12 @@ def test_install_and_update_watch_the_settings_for_a_timetable_check(name):
 
 
 def test_update_starts_a_timetable_build_only_when_the_settings_want_one():
-    build = "if query needs-timetable >/dev/null; then\n  systemctl start --no-block twobells-timetable.service\n"
-    assert build in _script("update.sh")
+    # Unless the card refused the board's state (see _end_of_update's tests).
+    build = ('if query needs-timetable >/dev/null; then\n  if [[ -n "$card" ]]; then\n'
+             '    echo "{told}" >&2\n  else\n    systemctl start --no-block twobells-timetable.service\n')
+    script = _script("update.sh")
+    told = re.search(r'^    echo "([^"\n]*timetable[^"\n]*)" >&2$', script, re.M)
+    assert told and build.format(told=told.group(1)) in script
 
 
 @pytest.mark.parametrize("config, saved, wanted", [
@@ -1023,7 +1027,7 @@ def test_update_switches_to_the_new_release_only_once_it_imports_and_restarts_af
              "\nsystemctl restart twobells-fetch.path twobells-fetch.service\n",
              "\nsystemctl try-restart twobells-web.service\n", "\nsystemctl try-restart twobells-screen.service\n",
              'if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', "\nsay_if_unguarded\n",
-             '" \\\n  prune\n', 'if [[ -n "$card" ]]; then\n', '  exit "$KEPT_UNSAVED"\nfi\necho\n']
+             '" \\\n  prune\n', '\nif [[ -n "$card" ]]; then\n  tidy\n', '  exit "$KEPT_UNSAVED"\nfi\necho\n']
     places = [update.index(step) for step in steps]
     assert places == sorted(places)
     # The board's timer carries on throughout: the venv it runs isn't touched until
@@ -1779,15 +1783,18 @@ DRAWING = 'if $epaper; then\n  echo "Drawing the e-paper board on the new releas
 NEW, BEFORE, OLDER = "0.6.0-cccccc", "0.5.3-bbbbbb", "0.5.0-aaaaaa"
 
 
-def _end_of_update(tmp_path: Path, card: str | None, room: bool = False, enable: str = "", rm: str = ""):
+def _end_of_update(tmp_path: Path, card: str | None, room: bool = False, enable: str = "", rm: str = "",
+                   failed: int = 1, timetable: bool = False):
     """Runs update.sh from the e-paper board's run on the new release to its
     end, then its finish trap, on release folders in tmp_path (the new one
     current, the one before previous, an older one), with what reaches past
     them stood in for. `card`: None, the board drew and saved; "full" or
     "read-only": it drew, but the card refused its state. `room`: whether
     room_to_save finds room by the end. `enable`: what systemctl enable says
-    as it fails ("": it doesn't fail); `rm`: what rm says as it fails, of
-    each file it can't remove. Each systemctl call goes in tmp_path/calls."""
+    as it fails ("": it doesn't fail, and says the link it made), with
+    status `failed`; `rm`: what rm says as it fails, of each file it can't
+    remove. `timetable`: whether the settings want a timetable. Each
+    systemctl call goes in tmp_path/calls."""
     import shutil
     import subprocess
 
@@ -1804,9 +1811,10 @@ def _end_of_update(tmp_path: Path, card: str | None, room: bool = False, enable:
                         for name in ("refused_by_card", "card_step", "tidy", "finish"))
     stubs = ('draws() { [[ -z "$CARD" ]]; }\ncard_refused_save() { [[ -n "$CARD" ]]; }\n'
              'card_read_only() { [[ "$CARD" == read-only ]]; }\nroom_to_save() { [[ -n "$ROOM" ]]; }\n'
-             'go_back() { echo "went back"; }\njournalctl() { :; }\nquery() { return 1; }\nhostname() { echo pi; }\n'
+             'go_back() { echo "went back"; }\njournalctl() { :; }\nquery() { [[ -n "$TIMETABLE" ]]; }\nhostname() { echo pi; }\n'
              'systemctl() {\n  echo "systemctl $*" >> "$CALLS"\n'
-             '  if [[ "$1" == enable && -n "$ENABLE" ]]; then echo "$ENABLE" >&2; return 1; fi\n'
+             '  if [[ "$1" == enable && -n "$ENABLE" ]]; then echo "$ENABLE" >&2; return "$FAILED"; fi\n'
+             '  if [[ "$1" == enable ]]; then echo "Created symlink for ${*: -1}." >&2; fi\n'
              '  [[ "$1" != is-active ]]\n}\n'
              'rm() {\n  local file\n  if [[ -z "$RM" ]]; then command rm "$@"; return; fi\n'
              '  for file in "$@"; do [[ "$file" == -* ]] || echo "rm: cannot remove \'$file/x\': $RM" >&2; done\n'
@@ -1818,7 +1826,8 @@ def _end_of_update(tmp_path: Path, card: str | None, room: bool = False, enable:
     return subprocess.run([shutil.which("bash") or "bash", "-c", script, "bash", str(prefix), str(PI / "releases.sh"),
                            str(tmp_path)], capture_output=True, text=True,
                           env={"PATH": "/usr/bin:/bin", "CARD": card or "", "ROOM": "yes" if room else "",
-                               "ENABLE": enable, "RM": rm, "CALLS": str(tmp_path / "calls")})
+                               "ENABLE": enable, "RM": rm, "CALLS": str(tmp_path / "calls"), "FAILED": str(failed),
+                               "TIMETABLE": "yes" if timetable else ""})
 
 
 TMP = re.compile(r"/tmp\b(?!/)")  # /tmp itself, not a folder in it (as tmp_path may be)
@@ -1901,6 +1910,47 @@ def test_after_the_card_refused_the_state_any_other_failure_still_stops_the_upda
     assert done.returncode == 1
     assert said in done.stderr and "rm: cannot remove" not in done.stderr
     assert [line for line in done.stderr.splitlines() if TMP.search(line)]
+
+
+@pytest.mark.parametrize("card", ["full", "read-only"])
+@pytest.mark.parametrize("failed", [1, 5])
+def test_an_update_stopped_after_keeping_its_release_says_the_release_is_in_use(tmp_path, card, failed):
+    # Its status stays the failing command's (systemctl's 5, say), whatever the exit trap
+    # does after; and it ends saying which release is in use, after the error, not as one undone.
+    said = "Failed to enable unit: Unit file twobells-timetable.timer does not exist."
+    done = _end_of_update(tmp_path, card, enable=said, failed=failed, rm=READ_ONLY if card == "read-only" else "")
+    assert done.returncode == failed
+    lines = done.stderr.splitlines()
+    named = [at for at, line in enumerate(lines) if "0.6.0" in line]
+    assert named and named[0] > lines.index(said), done.stderr
+    assert f"{tmp_path}/opt/previous" in done.stderr and "went back" not in done.stdout
+    assert _layout(tmp_path / "opt")["venv"] == f"releases/{NEW}/venv"
+
+
+def test_an_update_that_stopped_before_keeping_anything_says_nothing_of_a_release_in_use(tmp_path):
+    done = _end_of_update(tmp_path, None, enable="Failed to enable unit: Access denied")
+    assert done.returncode == 1 and "0.6.0" not in done.stderr
+
+
+def test_a_step_the_card_took_after_the_keep_still_shows_what_it_said(tmp_path):
+    done = _end_of_update(tmp_path, "full")
+    assert done.returncode == KEPT_UNSAVED, done.stderr
+    for unit in ("twobells-timetable.timer", "twobells-timetable.path"):
+        assert f"Created symlink for {unit}." in done.stdout + done.stderr
+
+
+@pytest.mark.parametrize("card", ["full", "read-only"])
+def test_after_the_keep_the_timetable_build_is_left_to_its_units(tmp_path, card):
+    # Its downloads (Metrolink's timetable is about 45 MB) would take the room prune made.
+    done = _end_of_update(tmp_path, card, room=True, timetable=True)
+    assert done.returncode == KEPT_UNSAVED, done.stderr
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert "systemctl start --no-block twobells-timetable.service" not in calls
+    assert len(_lines_naming(done.stderr, "timetable")) == 1, done.stderr
+    # Without the card's refusal, the build starts as ever.
+    done = _end_of_update(tmp_path / "whole", None, timetable=True)
+    assert done.returncode == 0, done.stderr
+    assert "systemctl start --no-block twobells-timetable.service" in (tmp_path / "whole" / "calls").read_text()
 
 
 def test_until_the_card_refuses_the_state_a_failing_step_stops_the_update_as_ever(tmp_path):

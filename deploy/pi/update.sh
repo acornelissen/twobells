@@ -11,7 +11,8 @@
 # they don't stay up on it.
 # It exits 0 once updated, 1 if it stopped or went back, 2 for an unknown
 # option, and KEPT_UNSAVED (below) if it kept the new release but the board
-# couldn't save its state on the SD card.
+# couldn't save its state on the SD card. A command failing under set -e ends
+# it with its own status (often 1).
 set -euo pipefail
 # Whatever umask sudo passed on: the services' user must read the new venv.
 umask 022
@@ -178,9 +179,28 @@ tidy() {
   fi
   build="" saved=""
 }
+# The EXIT trap, so however this ends. Once the card has refused the board's
+# state, a step failing after (or this being stopped) ends it with that
+# status, but not as one that went back: the new release is in use, and that
+# is said. There, nothing in it may fail, as under set -e that would end the
+# trap and replace the status.
 finish() {
-  tidy
-  discard "$release"
+  local status=$?
+  if [[ -z "$card" ]]; then
+    tidy
+    discard "$release"
+    return
+  fi
+  tidy || :
+  discard "$release" || :
+  if (( status != KEPT_UNSAVED )); then
+    {
+      echo "The update stopped part way, after keeping the new release: $version is in use (the one before it"
+      echo "is kept in $PREFIX/previous), but the e-paper board couldn't save its state on it, as the SD card"
+      echo "won't take it. Make room, or if the card has gone read-only back it up (see backup.md) and restart"
+      echo "the Pi, then run this again."
+    } >&2 || :
+  fi
 }
 trap finish EXIT
 read_version
@@ -439,14 +459,20 @@ say_if_unguarded
 # built (an older install turned it on only for those set up then): it checks
 # hourly, and the .path unit as soon as the settings are saved. When they want
 # one, a build starts now; the first takes minutes, so it carries on in the
-# background.
+# background. Not on a card that refused the board's state: its downloads
+# (Metrolink's timetable is about 45 MB) would take the room prune makes
+# below, so that is left to the timer and the .path unit.
 card_step "turn on twobells-timetable.timer" "the next update will" \
   systemctl enable --now twobells-timetable.timer
 card_step "turn on twobells-timetable.path" "the next update will" \
   systemctl enable --now twobells-timetable.path
 if query needs-timetable >/dev/null; then
-  systemctl start --no-block twobells-timetable.service
-  echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
+  if [[ -n "$card" ]]; then
+    echo "The timetables aren't built now, as the SD card won't take the board's state: their timer and path units build them." >&2
+  else
+    systemctl start --no-block twobells-timetable.service
+    echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
+  fi
 fi
 
 # The release before this one is kept, to go back to; any older are removed.
