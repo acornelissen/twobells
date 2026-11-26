@@ -316,3 +316,130 @@ def test_an_unknown_division_is_refused(tmp_path):
         bank_holidays(tmp_path, NOW, FakeFetch(), division="wales")
     with pytest.raises(ValueError):
         read_cache(tmp_path, "wales")
+
+
+def test_a_cache_on_the_card_with_times_not_by_the_board_s_clock_is_refreshed(tmp_path):
+    # An offset can't be compared with the board's local time, nor a year 9999 have a week added.
+    for moment in ("2026-10-09T07:00:00+01:00", "9999-12-31T23:59:00"):
+        (tmp_path / CACHE_NAME).write_text(json.dumps({"fetched": moment, "checked": moment, "dates": []}))
+        fetch = FakeFetch()
+        assert bank_holidays(tmp_path, NOW, fetch) == ENGLAND_AND_WALES
+        assert len(fetch.calls) == 1
+
+
+# A card that won't take the cache: what is handed back (Unsaved).
+
+
+@pytest.fixture
+def card(monkeypatch):
+    """The card takes nothing until `card.works` is set."""
+    import errno
+
+    from twobells.core import files
+
+    real = files.write_atomic
+
+    class Card:
+        works = False
+
+    def write(path, data, mode):
+        if not Card.works:
+            raise OSError(errno.EROFS, "Read-only file system")
+        real(path, data, mode)
+
+    monkeypatch.setattr(files, "write_atomic", write)
+    return Card
+
+
+def test_a_cache_the_card_wont_take_is_handed_back_and_waits_its_week(tmp_path, card):
+    fetch, unsaved = FakeFetch(), holidays.Unsaved()
+    assert bank_holidays(tmp_path, NOW, fetch, unsaved=unsaved) == ENGLAND_AND_WALES
+    assert unsaved.record is not None and unsaved.record["checked"] == NOW.isoformat()
+    assert not (tmp_path / CACHE_NAME).exists()
+    for minutes in range(1, 60 * 24 * 7, 97):  # each run a new process, handed what the last one gave out
+        unsaved = holidays.Unsaved(unsaved.record)
+        assert bank_holidays(tmp_path, NOW + timedelta(minutes=minutes), fetch, unsaved=unsaved) == ENGLAND_AND_WALES
+    assert len(fetch.calls) == 1
+    assert bank_holidays(tmp_path, NOW + timedelta(days=7), fetch, unsaved=unsaved) == ENGLAND_AND_WALES
+    assert len(fetch.calls) == 2
+
+
+def test_a_failure_the_card_wont_take_still_waits_to_retry(tmp_path, card):
+    fetch, unsaved = FakeFetch(), holidays.Unsaved()
+    fetch.error = OSError("network down")
+    for minutes in range(0, 60 * 6, 7):
+        unsaved = holidays.Unsaved(unsaved.record)
+        assert bank_holidays(tmp_path, NOW + timedelta(minutes=minutes), fetch, unsaved=unsaved) == frozenset()
+    assert len(fetch.calls) == 1
+    fetch.error = None
+    assert bank_holidays(tmp_path, NOW + holidays.RETRY, fetch, unsaved=unsaved) == ENGLAND_AND_WALES
+    assert len(fetch.calls) == 2
+
+
+def test_what_was_handed_back_goes_to_the_card_once_it_works_and_is_let_go(tmp_path, card):
+    fetch, unsaved = FakeFetch(), holidays.Unsaved()
+    bank_holidays(tmp_path, NOW, fetch, unsaved=unsaved)
+    card.works = True
+    unsaved = holidays.Unsaved(unsaved.record)
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=1), fetch, unsaved=unsaved) == ENGLAND_AND_WALES
+    assert unsaved.record is None and len(fetch.calls) == 1
+    assert read_cache(tmp_path) == ENGLAND_AND_WALES and holidays.read_events(tmp_path) == holidays.parse_events(BODY)
+    assert bank_holidays(tmp_path, NOW + timedelta(minutes=2), fetch) == ENGLAND_AND_WALES
+    assert len(fetch.calls) == 1
+
+
+def test_a_card_checked_since_what_was_handed_back_keeps_its_own(tmp_path, card):
+    # By a release that knows nothing of it, say.
+    fetch, unsaved = FakeFetch(), holidays.Unsaved()
+    bank_holidays(tmp_path, NOW, fetch, unsaved=unsaved)
+    later = (NOW + timedelta(hours=1)).isoformat()
+    (tmp_path / CACHE_NAME).write_text(json.dumps({"fetched": later, "checked": later, "dates": ["2027-01-01"]}))
+    unsaved = holidays.Unsaved(unsaved.record)
+    assert bank_holidays(tmp_path, NOW + timedelta(hours=2), fetch, unsaved=unsaved) == {date(2027, 1, 1)}
+    assert unsaved.record is None and len(fetch.calls) == 1
+
+
+def test_without_unsaved_a_card_that_wont_take_the_cache_is_asked_again_as_before(tmp_path, card):
+    # The dashboard and the timetable, checking hourly and daily, hand nothing back.
+    fetch = FakeFetch()
+    bank_holidays(tmp_path, NOW, fetch)
+    bank_holidays(tmp_path, NOW + timedelta(hours=1), fetch)
+    assert len(fetch.calls) == 2
+
+
+def held(folder, fetch=None) -> dict:
+    unsaved = holidays.Unsaved()
+    bank_holidays(folder, NOW, fetch or FakeFetch(), unsaved=unsaved)
+    assert unsaved.record is not None
+    return unsaved.record
+
+
+def test_a_record_handed_back_reads_back_as_written(tmp_path, card):
+    record = held(tmp_path)
+    assert set(record) == {"fetched", "checked", "dates", "divisions", "events"}
+    assert holidays.is_held(record) and holidays.Unsaved(json.loads(json.dumps(record))).record == record
+    failing = FakeFetch()
+    failing.error = OSError("network down")
+    record = held(tmp_path, failing)  # a failure with no list at all
+    assert holidays.is_held(record) and record["fetched"] is None and record["dates"] == []
+
+
+@pytest.mark.parametrize("change", [
+    {"checked": None}, {"checked": "2026-10-09T07:00:00+01:00"}, {"checked": "9999-12-31T23:59:00"},
+    {"checked": "2026-10-09 07:00"}, {"checked": 1}, {"fetched": "soon"}, {"dates": ["2026-12-25"]},
+    {"dates": None}, {"divisions": {"wales": []}}, {"divisions": None},
+    {"divisions": {"england-and-wales": ["2026-02-30"]}}, {"events": [{"date": "2026-12-25"}]},
+    {"events": [{"date": "2026-12-25", "title": "x" * 201, "notes": ""}]}, {"events": "none"}, {"other": 1},
+])
+def test_a_record_handed_back_not_exactly_as_written_counts_as_none(tmp_path, card, change):
+    record = {**held(tmp_path), **change}
+    assert not holidays.is_held(record)
+    assert holidays.Unsaved(record).record is None
+    fetch = FakeFetch()
+    bank_holidays(tmp_path, NOW + timedelta(minutes=1), fetch, unsaved=holidays.Unsaved(record))
+    assert len(fetch.calls) == 1  # nothing handed back: asked again
+
+
+@pytest.mark.parametrize("record", [None, [], "x", {}, {"dates": []}])
+def test_anything_else_handed_back_counts_as_none(record):
+    assert not holidays.is_held(record) and holidays.Unsaved(record).record is None

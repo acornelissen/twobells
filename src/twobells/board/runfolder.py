@@ -112,7 +112,7 @@ class RunFile:
         and what was kept goes."""
         text = json.dumps(value, sort_keys=True) if self._valid(value) else None
         if text is None or len(text.encode("utf-8")) > self._most_bytes:
-            self.problem = "it isn't of the shape kept"
+            self.problem = "it isn't of the shape kept" if text is None else "it is too big to keep"
             self.forget()
             return False
         try:

@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..board import runfolder
@@ -29,6 +30,7 @@ from ..core.errors import ConfigError
 from ..settings.config import needs_setup
 from ..settings.schema import views
 from ..settings.store import Store
+from ..sources.holidays import Unsaved
 from .common import as_owner, load_settings, local_now, open_store, setup_url, sleep_to_the_tick
 
 # Exit code asking systemd (Restart=on-failure) to start the board again.
@@ -97,7 +99,11 @@ def _run(args) -> int:
         return _run_first(args)
     if not _board_on(found):
         return _run_off(args)
-    settings = load_settings(args)
+    # A single run on a Pi hands the bank holidays' cache it kept in memory,
+    # while the card wouldn't take it, back to bank_holidays (_single).
+    folder = None if args.loop else runfolder.here()
+    unsaved = Unsaved(KeptSources(folder, ()).holidays()) if folder is not None else None
+    settings = load_settings(args, unsaved=unsaved)
     display = _open_display(args, settings)
     store = StateStore(settings.state_file)
     state = store.load()
@@ -113,11 +119,11 @@ def _run(args) -> int:
     return _single(store, state, lambda started: run_once(
         settings.board, state, display, local_now(settings.timezone), prime=prime and not state.get("sources"),
         save=lambda kept: _save(store, kept), started=started,
-    ), {config.source.name for config in settings.board.sources})
+    ), folder, {config.source.name for config in settings.board.sources}, unsaved)
 
 
-def _single(store: StateStore, state: dict, draw: Callable[[Started | None], RunResult],
-            sources: set[str] | None = None) -> int:
+def _single(store: StateStore, state: dict, draw: Callable[[Started | None], RunResult], folder: Path | None,
+            sources: set[str] | None = None, unsaved: Unsaved | None = None) -> int:
     """A single run, the e-paper timer's: `draw` it, then save the state, even
     if drawing failed, as what was fetched and the bus budget spent on it
     must not be lost. 0, or UNSAVED if the state couldn't be saved.
@@ -143,8 +149,12 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
     They are forgotten before each save, and kept again only after one that
     fails with the board drawn, so what is there is never older than the
     state on the card; a draw that failed may have left the panel half
-    drawn, and keeps nothing, so the next run draws."""
-    folder = runfolder.here()
+    drawn, and keeps nothing, so the next run draws.
+
+    The bank holidays' cache, which the card wouldn't take, is kept with
+    them whatever the draw and the save did (`unsaved`, given to
+    bank_holidays first, by _run), so the next run doesn't ask gov.uk
+    again before it is due; once the card takes it, it goes."""
     kept = KeptRender(folder) if folder is not None else None
     entries = KeptSources(folder, sources or ()) if folder is not None else None
     boot = SinceBoot(folder, sources) if folder is not None and sources else None
@@ -160,18 +170,23 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
         logging.warning("Not counting what is fetched since the Pi started, so trusting what was saved: %s",
                         boot.problem)
         boot = started = None
+    holidays = unsaved.record if unsaved is not None else None
     try:
         result = draw(started)
     except BaseException:
         _forget(kept, entries)
         _save(store, state)
+        if entries is not None and holidays is not None:
+            entries.keep({}, holidays)  # the holidays alone: nothing the draw did
         _count_since_boot(boot, started, state)
         raise
     _forget(kept, entries)
     saved = _save(store, state)
     if not saved and kept is not None and entries is not None:
         kept.keep(state.get("last_render"))
-        entries.keep(state)
+        entries.keep(state, holidays)
+    elif entries is not None and holidays is not None:
+        entries.keep({}, holidays)  # the state saved, but not the holidays' cache
     _count_since_boot(boot, started, state)
     logging.info("rendered=%s", result.rendered)
     return 0 if saved else UNSAVED
@@ -361,7 +376,8 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
     state = store.load()
     zone = ZoneInfo(settings.timezone)
     if not args.loop:
-        return _single(store, state, lambda started: run_once(board, state, display, local_now(settings.timezone)))
+        return _single(store, state, lambda started: run_once(board, state, display, local_now(settings.timezone)),
+                       runfolder.here())
     tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
     try:
         run_loop(

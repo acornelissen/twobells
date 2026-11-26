@@ -9,7 +9,9 @@ The list is fetched at most once a week (the board runs every minute, so the
 cache's age is checked first), and after a failure not again for a few hours.
 Whatever goes wrong, the last good list is kept; with none at all, there are
 no holidays. Caches from before divisions were kept hold England and Wales
-only; another division is fetched the first time it is asked for.
+only; another division is fetched the first time it is asked for. A cache
+the card won't take can be handed to the caller to keep (Unsaved), so a
+full or read-only card doesn't have gov.uk asked at every run.
 
 Each England and Wales holiday's title is kept too, so bus timetables can name
 it the way TransXChange does ("SpringBank", "BoxingDayHoliday"). The bus
@@ -30,6 +32,7 @@ from typing import NamedTuple
 
 from ..core import files
 from ..core.errors import safe_message
+from ..core.model import sane_time
 from ..core.net import get_bytes
 from ..settings.schema import DIVISIONS, ENGLAND_AND_WALES
 
@@ -119,10 +122,14 @@ def parse(body: bytes, division: str = ENGLAND_AND_WALES) -> frozenset[date]:
 
 
 def _moment(value) -> datetime | None:
+    """A time as _save writes one: local, with no offset, and one that could
+    be real (sane_time). Anything else reads as none: an offset can't be
+    compared with the local time the board passes in."""
     try:
-        return datetime.fromisoformat(value) if isinstance(value, str) else None
+        moment = datetime.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
         return None
+    return moment if moment is not None and moment.tzinfo is None and sane_time(moment) else None
 
 
 class _Cache(NamedTuple):
@@ -155,9 +162,17 @@ def _load(path: Path) -> _Cache:
     except (OSError, ValueError) as error:
         log.warning("Ignoring unreadable bank holiday cache %s: %s", path, error)
         return _EMPTY
-    if not isinstance(cache, dict) or not isinstance(cache.get("dates"), list):
+    found = _read(cache)
+    if found is None:
         log.warning("Ignoring malformed bank holiday cache %s", path)
         return _EMPTY
+    return found
+
+
+def _read(cache: object) -> _Cache | None:
+    """What a cache's record holds, skipping bad entries; None if it isn't one."""
+    if not isinstance(cache, dict) or not isinstance(cache.get("dates"), list):
+        return None
     events = cache.get("events")
     return _Cache(
         _moment(cache.get("fetched")),
@@ -171,23 +186,82 @@ def _days(dates: frozenset[date]) -> list[str]:
     return sorted(day.isoformat() for day in dates)
 
 
-def _save(path: Path, fetched: datetime | None, checked: datetime,
-          divisions: dict[str, frozenset[date]], events: dict) -> None:
-    record = {
-        "fetched": fetched.isoformat() if fetched else None,
-        "checked": checked.isoformat(),
+def _record(cache: _Cache) -> dict:
+    """The cache as it is saved."""
+    # England and Wales always has a list, as _divisions reads one, so a record reads back as written (held).
+    divisions = {ENGLAND_AND_WALES: frozenset(), **cache.divisions}
+    return {
+        "fetched": cache.fetched.isoformat() if cache.fetched else None,
+        "checked": cache.checked.isoformat() if cache.checked else None,
         # England and Wales stays under "dates", where older versions look for it.
-        "dates": _days(divisions.get(ENGLAND_AND_WALES, frozenset())),
+        "dates": _days(divisions[ENGLAND_AND_WALES]),
         "divisions": {division: _days(dates) for division, dates in sorted(divisions.items())},
         "events": [
             {"date": day.isoformat(), "title": event.title, "notes": event.notes}
-            for day, event in sorted(events.items())
+            for day, event in sorted(cache.events.items())
         ],
     }
+
+
+def _save(path: Path, record: dict) -> bool:
+    """Saves the cache's record, saying whether it could."""
     try:
         files.write_atomic(path, json.dumps(record, indent=2), 0o640)
     except OSError as error:
         log.warning("Can't save the bank holiday cache %s: %s", path, error)
+        return False
+    return True
+
+
+def _held(record: object) -> _Cache | None:
+    """What a record held in Unsaved holds, if it is exactly one _record
+    writes, with a last check; else None. Read back from elsewhere (the
+    timer's runtime folder), it is not trusted: one an entry of which the
+    cache's own reading (_read) would skip, or with anything more, counts
+    as nothing held."""
+    cache = _read(record)
+    if cache is None or cache.checked is None or _record(cache) != record:
+        return None
+    return cache
+
+
+def is_held(record: object) -> bool:
+    """Whether `record` is one Unsaved can hold (_held)."""
+    return _held(record) is not None
+
+
+class Unsaved:
+    """The cache as bank_holidays last tried to save it, while the card
+    can't take it, for a caller to keep elsewhere between calls (the
+    e-paper timer, a new process each minute, keeps it in memory:
+    board/unsaved.py) and hand back. Without it, a card that can't be
+    written loses every check, and the next call asks gov.uk again, a
+    failure's wait and all. Handed back, the newer of it and the card's is
+    used, by when each was last checked (_carried). `record` is None while
+    the card has the cache, and is only ever one is_held passes."""
+
+    def __init__(self, record: object = None) -> None:
+        self.record: dict | None = record if isinstance(record, dict) and is_held(record) else None
+
+
+def _carried(path: Path, card: _Cache, unsaved: Unsaved) -> _Cache:
+    """The card's cache, or the one `unsaved` holds if it was checked since:
+    that one is saved to the card again, and let go of once the card has it."""
+    held = _held(unsaved.record)
+    if held is None or held.checked is None or (card.checked is not None and card.checked >= held.checked):
+        unsaved.record = None
+        return card
+    if unsaved.record is not None and _save(path, unsaved.record):
+        unsaved.record = None
+    return held
+
+
+def _keep(path: Path, cache: _Cache, unsaved: Unsaved | None) -> None:
+    """Saves `cache` to the card; one the card won't take goes to `unsaved`, if given."""
+    record = _record(cache)
+    saved = _save(path, record)
+    if unsaved is not None:
+        unsaved.record = None if saved else record
 
 
 def _older(moment: datetime | None, now: datetime, age: timedelta) -> bool:
@@ -207,13 +281,14 @@ def read_events(folder: Path | str) -> dict[date, Event]:
 
 
 def bank_holidays(folder: Path | str, now: datetime, fetch: Fetch | None = None,
-                  division: str = ENGLAND_AND_WALES) -> frozenset[date]:
+                  division: str = ENGLAND_AND_WALES, unsaved: Unsaved | None = None) -> frozenset[date]:
     """One division's bank holidays, refreshed from gov.uk if the cache in
     `folder` is a week old or lacks that division. `now` is local time, as
-    everywhere on the board."""
+    everywhere on the board. With `unsaved`, the cache is also handed back
+    and given out there while the card can't be written (Unsaved)."""
     _check(division)
     path = Path(folder) / CACHE_NAME
-    cache = _load(path)
+    cache = _load(path) if unsaved is None else _carried(path, _load(path), unsaved)
     cached = cache.divisions.get(division)
     if cached is not None and not _older(cache.fetched, now, REFRESH):
         return cached
@@ -227,11 +302,11 @@ def bank_holidays(folder: Path | str, now: datetime, fetch: Fetch | None = None,
     except Exception as error:  # noqa: BLE001 - any failure keeps the last good list
         kept = cached or frozenset()
         log.warning("Bank holidays not refreshed, keeping %d cached: %s", len(kept), safe_message(error))
-        _save(path, cache.fetched, now, cache.divisions, cache.events)
+        _keep(path, _Cache(cache.fetched, now, cache.divisions, cache.events), unsaved)
         return kept
     # A division missing from this download keeps its last good list.
     divisions = {**cache.divisions, **{name: frozenset(events) for name, events in found.items()}}
-    _save(path, now, now, divisions, found.get(ENGLAND_AND_WALES, cache.events))
+    _keep(path, _Cache(now, now, divisions, found.get(ENGLAND_AND_WALES, cache.events)), unsaved)
     return divisions[division]
 
 

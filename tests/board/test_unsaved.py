@@ -256,3 +256,106 @@ def test_the_longest_forecast_with_full_sections_keeps_well_within_the_file_s_si
     card = {}
     KeptSources(run, ("train", "bus", "metro")).carry(card)
     assert card == state
+
+
+# --- The bank holidays' cache, kept beside the sources ---
+
+
+def gov_uk_list(years: int) -> bytes:
+    """A gov.uk answer as big as the real one is over `years` years: 8 a year
+    in England and Wales, 9 in Scotland, 10 in Northern Ireland (the real
+    one, in 2026, had 83, 94 and 103), with titles as long as theirs."""
+    titles = {"england-and-wales": 8, "scotland": 9, "northern-ireland": 10}
+    answer = {}
+    for division, count in titles.items():
+        events = [{"title": f"Battle of the Boyne (Orangemen’s Day) {n}", "date": f"{2018 + year}-{1 + n:02}-{1 + n:02}",
+                   "notes": "Substitute day" if n % 3 == 0 else "", "bunting": True}
+                  for year in range(years) for n in range(count)]
+        answer[division] = {"division": division, "events": events}
+    return json.dumps(answer).encode()
+
+
+def held(tmp_path, monkeypatch, years: int = 11) -> dict:
+    """What sources/holidays.py hands back of the cache on a card that won't take it."""
+    import errno
+    from datetime import datetime
+
+    from twobells.core import files
+    from twobells.sources import holidays
+
+    def full(path, data, mode):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    unsaved = holidays.Unsaved()
+    with monkeypatch.context() as patched:
+        patched.setattr(files, "write_atomic", full)
+        holidays.bank_holidays(tmp_path / "card", datetime(2026, 10, 8, 7, 0, 0, 123456),
+                               lambda url, most: gov_uk_list(years), unsaved=unsaved)
+    assert unsaved.record is not None
+    return unsaved.record
+
+
+def test_the_bank_holidays_are_kept_beside_the_sources_and_read_back(run, tmp_path, monkeypatch):
+    record = held(tmp_path, monkeypatch)
+    state = {"sources": {"train": ENTRY}, "weather": FORECAST}
+    assert KeptSources(run, ("train",)).keep(state, record)
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY, "weather": FORECAST, "holidays": record}
+    assert KeptSources(run, ()).holidays() == record
+    card = {"sources": {}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == state  # the holidays go back through sources/holidays.py, not into the state
+    assert KeptSources(run, ("train",)).keep({}, record)  # on their own, when the state saved but they didn't
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"holidays": record}
+
+
+def test_a_file_from_before_the_bank_holidays_were_kept_still_goes_back(run):
+    (run / SOURCES_NAME).write_text(json.dumps({"train": ENTRY, "weather": FORECAST}))  # as 0.6.0 keeps it
+    assert KeptSources(run, ()).holidays() is None
+    card = {"sources": {}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": ENTRY}, "weather": FORECAST}
+
+
+@pytest.mark.parametrize("change", [
+    {"checked": "2026-10-08T07:00:00+01:00"}, {"checked": "3000-01-01T00:00:00"}, {"checked": None},
+    {"fetched": 1}, {"dates": []}, {"divisions": {"england-and-wales": ["2026-02-30"]}},
+    {"events": [{"date": "2026-12-25", "title": "Christmas Day"}]}, {"other": 1},
+])
+def test_bank_holidays_kept_not_exactly_as_handed_back_put_nothing_back(run, tmp_path, monkeypatch, change):
+    record = held(tmp_path, monkeypatch, years=1)
+    (run / SOURCES_NAME).write_text(json.dumps({"train": ENTRY, "holidays": {**record, **change}}))
+    assert KeptSources(run, ()).holidays() is None
+    card = {"sources": {}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {}}  # as for a forecast not of the shape: the card's stands
+    assert KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}}, {**record, **change})
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY}  # nor is it ever kept
+
+
+@pytest.mark.parametrize("body", [b'{"holidays": NaN}', b'{"holidays": [1]}', b'{"holidays": null}'])
+def test_bank_holidays_that_arent_a_record_put_nothing_back(run, body):
+    (run / SOURCES_NAME).write_bytes(body)
+    assert KeptSources(run, ()).holidays() is None
+
+
+def test_the_real_list_of_bank_holidays_keeps_with_full_sections_and_the_longest_forecast(run, tmp_path, monkeypatch):
+    # About 11 kB of 64: three sections of 6 and 72 hours of forecast come to about 12.5 kB more.
+    hours = [{**HOUR, "start": f"2026-10-{8 + h // 24:02}T{h % 24:02}:00:00", "precipitation": 12.345678901234567}
+             for h in range(72)]
+    entry = {**ENTRY, "departures": ENTRY["departures"] * 6}
+    state = {"sources": {"train": entry, "bus": entry, "metro": entry}, "weather": {**FORECAST, "hours": hours}}
+    record = held(tmp_path, monkeypatch)
+    assert len(json.dumps(record)) > 10_000
+    assert KeptSources(run, ("train", "bus", "metro")).keep(state, record)
+    assert (run / SOURCES_NAME).stat().st_size < SOURCES_MAX_BYTES // 2
+    assert KeptSources(run, ()).holidays() == record
+
+
+def test_bank_holidays_too_big_to_keep_with_the_sources_are_left_out_and_the_sources_kept(run, tmp_path, monkeypatch,
+                                                                                         caplog):
+    record = held(tmp_path, monkeypatch, years=80)  # gov.uk's answer may be 1 MB
+    assert len(json.dumps(record)) > SOURCES_MAX_BYTES
+    with caplog.at_level("WARNING"):
+        assert KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}}, record)
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY}
+    assert "without the bank holidays: it is too big to keep" in caplog.text

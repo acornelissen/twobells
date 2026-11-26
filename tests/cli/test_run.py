@@ -608,3 +608,116 @@ def test_the_forecast_kept_in_memory_goes_to_the_card_once_it_saves_with_no_seco
     assert forecast.calls == 1 and rain(timer) == "Rain from 08:00 (70%)"
     timer.run(at("07:30"))
     assert forecast.calls == 2
+
+
+# --- 5. Bank holidays on a card that can't be saved ---
+
+
+class GovUk:
+    """gov.uk's bank holidays for the timer's runs, counted, or failing, by
+    the board's clock (they go by the Pi's own). While the card is full it
+    takes nothing: neither the state nor the holidays' cache."""
+
+    def __init__(self, timer, monkeypatch):
+        import errno
+
+        from tests.paths import FIXTURES
+        from twobells.cli import common
+        from twobells.core import files
+        from twobells.sources import holidays
+
+        self.calls = 0
+        self.error: Exception | None = None
+        self.cache = timer.state.parent / holidays.CACHE_NAME
+        body = (FIXTURES / "govuk_bank_holidays.json").read_bytes()
+
+        def get_bytes(url, most):
+            self.calls += 1
+            if self.error is not None:
+                raise self.error
+            return body
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return timer.now
+
+        real = files.write_atomic
+
+        def write(path, data, mode):
+            if timer.full and timer.folder not in path.parents:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            real(path, data, mode)
+
+        monkeypatch.setattr(holidays, "get_bytes", get_bytes)
+        monkeypatch.setattr(common, "datetime", Clock)
+        monkeypatch.setattr(files, "write_atomic", write)
+
+    def stale(self):
+        """A cache on the card from 8 days ago: due again."""
+        then = (THU_0700 - timedelta(days=8)).isoformat()
+        self.cache.write_text(json.dumps({"fetched": then, "checked": then, "dates": ["2026-08-31"]}))
+
+
+@pytest.fixture
+def gov_uk(timer, monkeypatch):
+    return GovUk(timer, monkeypatch)
+
+
+@pytest.mark.parametrize("cache", ["missing", "stale"])
+@pytest.mark.parametrize("saved_first", [True, False])  # a card that failed after a save; one that never saved
+def test_a_card_that_cant_be_saved_asks_gov_uk_for_the_bank_holidays_once_not_every_run(timer, gov_uk, cache,
+                                                                                        saved_first):
+    if cache == "stale":
+        gov_uk.stale()
+    if saved_first:
+        timer.full, gov_uk.error = True, OSError("network down")  # so the card has no fresh list
+        timer.run(THU_0700 - timedelta(hours=7))
+        timer.full, gov_uk.error, gov_uk.calls = False, None, 0
+        timer.run(THU_0700 - timedelta(hours=7) + timedelta(minutes=1))  # a save that works
+        assert gov_uk.calls == 0
+    timer.full = True
+    for minute in range(30):
+        assert timer.run(THU_0700 + timedelta(minutes=minute)) != 0
+    assert gov_uk.calls == 1  # the first run's, not one a run
+    assert timer.calls - (1 if saved_first else 0) == 15  # the trains every 2 minutes, as ever
+
+
+def test_a_bank_holiday_check_that_fails_on_a_card_that_cant_be_saved_waits_to_try_again(timer, gov_uk):
+    from twobells.sources.holidays import RETRY
+
+    timer.full = True
+    gov_uk.error = OSError("network down")
+    for minute in range(0, 6 * 60, 5):
+        timer.run(THU_0700 + timedelta(minutes=minute))
+    assert gov_uk.calls == 1  # not every run
+    timer.run(THU_0700 + RETRY)
+    assert gov_uk.calls == 2
+
+
+def test_bank_holidays_kept_in_memory_go_to_the_card_once_it_saves_with_no_second_fetch(timer, gov_uk):
+    timer.full = True
+    for minute in range(5):
+        timer.run(THU_0700 + timedelta(minutes=minute))
+    assert gov_uk.calls == 1 and not gov_uk.cache.exists()
+    kept = json.loads((timer.folder / "unsaved-sources.json").read_text())
+    assert kept["holidays"]["checked"] == kept["holidays"]["fetched"] == "2026-10-08T07:00:00"
+    timer.full = False
+    assert timer.run(THU_0700 + timedelta(minutes=5)) == 0
+    assert not (timer.folder / "unsaved-sources.json").exists()  # the card has it now
+    assert json.loads(gov_uk.cache.read_text())["checked"] == "2026-10-08T07:00:00"
+    for minute in range(6, 30):
+        timer.run(THU_0700 + timedelta(minutes=minute))
+    assert gov_uk.calls == 1
+
+
+def test_bank_holidays_kept_in_memory_still_shut_the_board_s_windows(timer, gov_uk):
+    # Fetched on the Friday with the card full; the Monday is the August bank
+    # holiday, when the trains' Mon-Fri window is shut, and gov.uk is down.
+    timer.full = True
+    timer.run(datetime(2026, 8, 28, 7, 0))
+    assert gov_uk.calls == 1 and timer.calls == 1
+    gov_uk.error = OSError("network down")
+    for minute in range(10):
+        timer.run(datetime(2026, 8, 31, 7, minute))
+    assert gov_uk.calls == 1 and timer.calls == 1  # no trains on a bank holiday

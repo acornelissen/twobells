@@ -18,7 +18,7 @@ from ..board.config import load_config
 from ..core.errors import ConfigError
 from ..settings.config import holiday_division
 from ..settings.store import Store, check_owner
-from ..sources.holidays import bank_holidays
+from ..sources.holidays import Unsaved, bank_holidays
 
 # The settings' port on a Pi, as twobells-web.service serves them (--settings-port).
 WEB_PORT = 8091
@@ -61,9 +61,11 @@ def _program() -> str:
     return "twobells"
 
 
-def _holidays(store: Store) -> frozenset:
+def _holidays(store: Store, unsaved: Unsaved | None = None) -> frozenset:
     """Bank holidays, cached in the store and refreshed from gov.uk weekly,
-    unless the settings say to ignore them (then gov.uk is never asked)."""
+    unless the settings say to ignore them (then gov.uk is never asked).
+    With `unsaved`, the cache the card won't take is handed back and out
+    there (sources/holidays.py's Unsaved)."""
     try:
         data = store.data()
         division = holiday_division(data)
@@ -72,13 +74,15 @@ def _holidays(store: Store) -> frozenset:
     if data.get("bank_holidays", True) is not True:
         return frozenset()
     # Only the cache's age depends on the time, so the Pi's own zone will do.
-    return bank_holidays(store.folder, datetime.now(), division=division)
+    return bank_holidays(store.folder, datetime.now(), division=division, unsaved=unsaved)
 
 
-def load_settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None):
+def load_settings(args, bus_stops: dict[str, str] | None = None, only: set[str] | None = None,
+                  unsaved: Unsaved | None = None):
+    """The board's settings, with the bank holidays; `unsaved` as for _holidays."""
     store = open_store(args)
     # A probe makes one call whatever the day, so it needs no holidays.
-    holidays = _holidays(store) if only is None else frozenset()
+    holidays = _holidays(store, unsaved) if only is None else frozenset()
     return load_config(store, store.env(), bus_stops, only, holidays=holidays)
 
 

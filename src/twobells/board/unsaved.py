@@ -6,8 +6,9 @@ the next run would take the panel to show something else and draw it
 again, every minute. While the state can't be saved, the run keeps its last
 redraw (what was drawn, when, and which page) in a small file in the unit's
 runtime folder, /run/twobells (board/runfolder.py), and what each source
-and the forecast last fetched and tried in another (KeptSources). Once a
-save works the files go.
+and the forecast last fetched and tried in another (KeptSources), with the
+bank holidays' cache while the card won't take that either. Once a save
+works the files go.
 
 What is read back counts only if it is exactly the shape written; anything
 else counts as nothing kept, and the board draws.
@@ -15,14 +16,18 @@ else counts as nothing kept, and the board draws.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
 from ..core.bounded import finite
+from ..sources.holidays import is_held
 from .runfolder import MOST_SOURCES, SOURCE, RunFile
 from .state import NOT_UPDATING, departure_from_dict, is_mark, is_time
+
+log = logging.getLogger(__name__)
 
 NAME = "last-render.json"
 MAX_BYTES = 256  # what is written is about 120
@@ -140,13 +145,23 @@ def _weather(entry: object) -> bool:
             and all(_WEATHER_CHECKS[key](value) for key, value in entry.items()))
 
 
+# The bank holidays' cache (sources/holidays.py's Unsaved), kept beside the
+# sources' entries under a name no source has, and checked as that module
+# reads its own cache, with nothing more. The real list as cached is about
+# 11 kB; one too big to keep with the rest is left out (KeptSources.keep).
+HOLIDAYS = "holidays"
+_NOT_SOURCES = frozenset({WEATHER, HOLIDAYS})
+
+
 def _sources(kept: object) -> bool:
     """Whether `kept` is sources' entries as KeptSources keeps them, by
-    name, and the forecast's, if there is one. A file from before the
-    forecast was kept has none."""
+    name, and the forecast's and the bank holidays', if there are those. A
+    file from before they were kept has neither."""
     if not isinstance(kept, dict) or (WEATHER in kept and not _weather(kept[WEATHER])):
         return False
-    sources = {name: entry for name, entry in kept.items() if name != WEATHER}
+    if HOLIDAYS in kept and not is_held(kept[HOLIDAYS]):
+        return False
+    sources = {name: entry for name, entry in kept.items() if name not in _NOT_SOURCES}
     if len(sources) > MOST_SOURCES:
         return False
     return all(isinstance(name, str) and SOURCE.fullmatch(name) and _entry(entry) for name, entry in sources.items())
@@ -168,7 +183,11 @@ class KeptSources:
     card's has been tried since (by a release that knows nothing of this
     file, say), so is newer. A mark is still honoured only while the
     source's last success is the one it was made against (board/app.py's
-    _is_stale)."""
+    _is_stale).
+
+    Beside them it keeps the bank holidays' cache while the card won't take
+    it (sources/holidays.py's Unsaved), for the run to hand back to
+    bank_holidays, which says which of it and the card's is newer."""
 
     def __init__(self, folder: Path, names: Iterable[str]) -> None:
         self._file = RunFile(folder, SOURCES_NAME, SOURCES_MAX_BYTES, _sources, "what each source last fetched")
@@ -188,10 +207,17 @@ class KeptSources:
                 state[WEATHER] = {}
             _put(state[WEATHER], kept[WEATHER], _WEATHER_KEYS)
 
-    def keep(self, state: dict) -> bool:
-        """Keeps the entries the state's sources and forecast have, in place
-        of any kept before, saying whether it could. One that isn't of the shape is left
-        out, and the next run reads the card's for it."""
+    def holidays(self) -> dict | None:
+        """The bank holidays' cache kept (sources/holidays.py's Unsaved), if there is one."""
+        kept = self._file.read()
+        return kept.get(HOLIDAYS) if isinstance(kept, dict) else None
+
+    def keep(self, state: dict, holidays: dict | None = None) -> bool:
+        """Keeps the entries the state's sources and forecast have, and the
+        bank holidays' cache, if given, in place of any kept before, saying
+        whether it could. One that isn't of the shape is left out, and the
+        next run reads the card's for it; so is the holidays' cache if the
+        file would be too big with it, as the sources matter more."""
         kept = {}
         for name, entry in state.get("sources", {}).items():
             if name not in self._names or not isinstance(entry, dict):
@@ -204,6 +230,11 @@ class KeptSources:
             part = {key: weather[key] for key in _WEATHER_KEYS if key in weather}
             if part and _weather(part):
                 kept[WEATHER] = part
+        if holidays is not None and is_held(holidays):
+            if self._file.keep({**kept, HOLIDAYS: holidays}):
+                return True
+            log.warning("Keeping what each source fetched in memory without the bank holidays: %s",
+                        self._file.problem)
         if not kept:
             self._file.forget()
             return True
