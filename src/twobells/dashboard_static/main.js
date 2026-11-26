@@ -22,7 +22,7 @@ import { markBusRows, renderDisruptions } from "./disruptions.js";
 import { renderArea, setUpArea } from "./area.js";
 import { icon } from "./icons.js";
 import { noteConnection, pill, placeName } from "./header.js";
-import { applyDim, drawBanner, drawNightClock, isKiosk, startKiosk } from "./kiosk.js";
+import { applyDim, drawBanner, drawNightClock, fitKioskRows, isKiosk, startKiosk } from "./kiosk.js";
 import { setUpLook } from "./look.js";
 import { pointSettingsLink } from "./settingslink.js";
 import { applyScrolling, drawScrolling, setUpScrolling } from "./scrolling.js";
@@ -102,6 +102,7 @@ function drawBoards() {
   const buses = attempt("buses", () => renderBuses(snapshot, alerts), []);
   const trams = attempt("trams", () => renderTrams(snapshot, alerts), []);
   rowsById = indexRows(trains, buses, trams);
+  if (kiosk) attempt("kiosk rows", fitKioskRows);
 }
 
 // The heading of the board the focus is in, if it is in one: where the focus

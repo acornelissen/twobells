@@ -5809,3 +5809,120 @@ def test_london_s_rows_count_down_live_with_their_line_and_platform():
     # The lines' status joins the disruption line; the station's lifts don't.
     assert found["inForce"] == ["Central line: Minor delays."]
 
+
+
+# A wall tablet's boards in a container `height` px tall, a table a section, each row stacked below the
+# last as the browser would lay it out: a row left out (hidden) takes no room. `sections` are lists of row
+# heights. `rowsOf(i)` are section i's rows; `fit()` is fitKioskRows().
+KIOSK_FIT = """
+import { h } from "./dom.js";
+import { fitKioskRows } from "./kiosk.js";
+const sections = %s;
+let height = %d;
+const tables = sections.map((heights) => h("table", { class: "board" }, h("tbody", {},
+  heights.map((tall) => {
+    const tr = h("tr", { tall }, h("td", {}, h("button", { type: "button" }, "Open")));
+    return tr;
+  }))));
+const boards = h("div", { class: "boards" }, tables);
+document.body.append(boards);
+boards.getBoundingClientRect = () => ({ top: 0, bottom: height });
+tables.forEach((table, i) => {
+  const rows = table.children[0].children;
+  rows.forEach((tr, at) => {
+    tr.getBoundingClientRect = () => {
+      const above = rows.slice(0, at).filter((r) => !r.hasAttribute("hidden")).reduce((sum, r) => sum + sections[i][rows.indexOf(r)], 0);
+      return { top: above, bottom: above + sections[i][at] };
+    };
+  });
+});
+const rowsOf = (i) => tables[i].children[0].children;
+const shownRows = () => sections.map((_, i) => rowsOf(i).map((tr) => !tr.closest("[hidden]")));
+"""
+
+
+def _kiosk_fit(sections, height, check):
+    return run_js(KIOSK_FIT % (json.dumps(sections), height) + check)
+
+
+@needs_node
+def test_a_wall_tablet_shows_only_the_whole_rows_that_fit():
+    # Room for three and a half rows of four: three show, the fourth is left out, not cut.
+    found = _kiosk_fit([[40, 40, 40, 40]], 140, """
+        fitKioskRows();
+        console.log(JSON.stringify(shownRows()));
+    """)
+    assert found == [[True, True, True, False]]
+
+
+@needs_node
+def test_a_wall_tablet_shows_all_four_rows_when_they_fit_and_none_when_none_do():
+    found = _kiosk_fit([[40, 40, 40, 40]], 160, """
+        fitKioskRows();
+        const all = shownRows();
+        height = 30;
+        fitKioskRows();
+        console.log(JSON.stringify([all, shownRows()]));
+    """)
+    assert found == [[[True] * 4], [[False] * 4]]
+
+
+@needs_node
+def test_a_taller_folded_row_costs_more_room_and_the_rows_after_it_go_with_it():
+    # Heights 40, 80 (folded), 30, 30: 40 + 80 = 120 fits 130, and the 30 after would end at 150.
+    found = _kiosk_fit([[40, 80, 30, 30]], 130, """
+        fitKioskRows();
+        console.log(JSON.stringify(shownRows()));
+    """)
+    assert found == [[True, True, False, False]]
+
+
+@needs_node
+def test_each_section_is_fitted_on_its_own_and_a_row_never_comes_back_after_a_gap():
+    found = _kiosk_fit([[40, 40, 40, 40], [50, 50, 50, 50]], 120, """
+        fitKioskRows();
+        console.log(JSON.stringify(shownRows()));
+    """)
+    assert found == [[True, True, True, False], [True, True, False, False]]
+
+
+@needs_node
+def test_rows_are_measured_again_when_the_room_changes_and_come_back_when_it_grows():
+    found = _kiosk_fit([[40, 40, 40, 40]], 100, """
+        fitKioskRows();
+        const small = shownRows();
+        height = 200;
+        fitKioskRows();
+        console.log(JSON.stringify([small, shownRows()]));
+    """)
+    assert found == [[[True, True, False, False]], [[True] * 4]]
+
+
+@needs_node
+def test_a_row_left_out_is_hidden_from_screen_readers_and_holds_nothing_to_focus():
+    found = _kiosk_fit([[40, 40, 40, 40]], 90, """
+        fitKioskRows();
+        const tr = rowsOf(0)[3];
+        console.log(JSON.stringify([tr.hasAttribute("hidden"), tr.getAttribute("style"),
+                                    elements(tr).some((el) => el.nodeName === "BUTTON" && !el.closest("[hidden]"))]));
+    """)
+    assert found == [True, None, False]
+
+
+@needs_node
+def test_rows_are_all_measured_before_any_is_hidden():
+    # No read-write loop: every row is measured first, then the rows left out are hidden.
+    found = _kiosk_fit([[40, 40, 40, 40]], 100, """
+        const log = [];
+        const set = (tr, at) => {
+          const read = tr.getBoundingClientRect;
+          tr.getBoundingClientRect = () => { log.push("read"); return read(); };
+          const was = tr.setAttribute.bind(tr);
+          tr.setAttribute = (n, v) => { if (n === "hidden") log.push("write"); was(n, v); };
+        };
+        rowsOf(0).forEach(set);
+        fitKioskRows();
+        const first = log.indexOf("write");
+        console.log(JSON.stringify([log.slice(0, first).every((x) => x === "read"), log.slice(first).every((x) => x === "write")]));
+    """)
+    assert found == [True, True]

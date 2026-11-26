@@ -34,6 +34,33 @@ export function applyShift(root, step) {
   root.style.setProperty("--shift-y", `${y}px`);
 }
 
+// A row ends this far below the boards' edge, in px, and still fits: layout
+// rounds to fractions of a pixel.
+const FIT_SLACK = 1;
+
+// Leaves out the departure rows that wouldn't show whole. Each section draws
+// its 4 rows (board.js KIOSK_ROWS) and app.css clips what runs past the
+// boards, which would show the last row's top half. The first row of a
+// section that ends below the boards' edge goes, and every row after it, with
+// the `hidden` attribute: that also keeps it from screen readers, and its
+// button from the tab order. Every row is shown first, so the measure doesn't
+// depend on the last fit: all the reads come together, then all the writes.
+// Call it after the boards are drawn and whenever their room changes.
+export function fitKioskRows() {
+  const boards = document.querySelector(".boards");
+  if (!boards) return;
+  const sections = Array.from(boards.querySelectorAll("table.board tbody"), (tbody) => [...tbody.children]);
+  for (const row of sections.flat()) row.removeAttribute("hidden");
+  const limit = boards.getBoundingClientRect().bottom + FIT_SLACK;
+  const fits = sections.map((rows) => {
+    const cut = rows.findIndex((row) => row.getBoundingClientRect().bottom > limit);
+    return cut < 0 ? rows.length : cut;
+  });
+  sections.forEach((rows, i) => rows.forEach((row, at) => {
+    if (at >= fits[i]) row.setAttribute("hidden", "");
+  }));
+}
+
 // Dims the page while the snapshot says a quiet window is on.
 export function applyDim(root, snapshot) {
   if (snapshot?.quiet === true) root.dataset.dim = "on";
@@ -107,5 +134,8 @@ export function startKiosk() {
   let step = 0;
   applyShift(root, step);
   setInterval(() => applyShift(root, ++step), SHIFT_MS);
+  // The boards' room changes with the screen and with the hero and weather above them.
+  const boards = document.querySelector(".boards");
+  if (boards && typeof ResizeObserver === "function") new ResizeObserver(fitKioskRows).observe(boards);
   scheduleReload({ reachable: pageAnswers, reload: () => location.reload() });
 }
