@@ -27,6 +27,7 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 - Trains set up with no rail key now load (they used to stop the board with a missing-key error). The Overview and Keys page show the key as needed.
 - A feed that fails now shows one plain sentence on the dashboard ("The service refused the key; check it in Settings > Keys", "Can't reach the service", "The service is having trouble", or no timetable yet) instead of the error's own text. The settings Overview shows the same sentence for the dashboard's feeds; the exact error is in the log.
 - A release now runs the tests on Python 3.11, 3.12 and 3.13, as CI does, and nothing is built or published unless all three pass. The release's wheel is dated by the tagged commit, so the same tag builds the same wheel.
+- On a screen, Underground, DLR and London tram rows now show the countdown alone, without the clock time beside it, so long destinations such as "Hammersmith & City: Hammersmith" have room and scroll less. E-paper, which shows "Live" in place of a countdown, keeps the time.
 
 ### Fixed
 
@@ -66,6 +67,10 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 - A key test that finished after the key was replaced, from another tab or the setup wizard, no longer shows the new key as tested.
 - Starting a new bus search just as the last one finished finding its roads no longer fails silently.
 - `serve` no longer adds `--no-browser --port` to its command line again each time it restarts.
+- On a wall tablet, a departure row that has no room to show whole is now left out instead of being cut part-way.
+- On an SD card that can't be written, the e-paper board no longer asks for the weather forecast every minute: it waits its 30 minutes, as on a working card.
+- In the setup wizard, pressing Next straight after a Forward the wizard refused no longer puts the same step in the browser's history twice.
+- A very long computer name no longer runs off the smallest panels in the "Set me up" address: the name wraps, and `:8091/settings` stays whole on its own line.
 
 ### Security
 
