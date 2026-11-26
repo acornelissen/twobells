@@ -14,6 +14,8 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 
 ### Changed
 
+- **The settings now have a port of their own, 8091,** beside the dashboard's 8090. Open them at `http://<name>.local:8091/settings` on a Pi, or `http://<NAS>:8091/settings` in Docker. The board's Set me up page, `install.sh`, `update.sh` and the printed addresses all say so, and the dashboard's Settings link goes straight there. **Docker and Unraid: publish port 8091 as well as 8090** (in a compose file add `"0.0.0.0:8091:8091"` under `ports:`; with `docker run` add `-p 0.0.0.0:8091:8091`; on Unraid add the template's Settings port). Until you do, `/settings` on 8090 shows a page saying where the settings went, but that address won't open. A Pi gets the change from `update.sh`. A bookmark to `:8090/settings` shows that page with a link: change it to `:8091/settings`.
+- On a desktop, `twobells serve` takes the next free pair of ports if 8090 or 8091 is busy. The new `--settings-port` picks the settings' port; by default it is the dashboard's plus one.
 - On a Pi each release is installed in a folder of its own, and the one before is kept: `/opt/twobells/venv` is now a link to the release in use, and `/opt/twobells/previous` to the one before. Your first update moves the existing install into `/opt/twobells/releases` by itself. If a service crashes on the new release, `update.sh` goes back to the one before and says so.
 - `update.sh` no longer stops the board's timer while it works: the release in use isn't touched until the switch.
 - `update.sh` now draws the e-paper board once on the new release and goes back to the release before if that fails or takes over five minutes, as it does when a service crashes. It then draws the board on the release from before, and says which service failed; the panel itself may be at fault. A board that drew but couldn't save its state because the SD card is full, read-only or out of files doesn't undo the update: the new release stays, and `update.sh` says to make room. It stops before switching if the SD card has less than 10 MB, or room for fewer than 1000 files, free.
@@ -66,6 +68,7 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 
 ### Security
 
+- The dashboard and the settings are now separate origins. A script that got past the dashboard's CSP can no longer read a settings page or its form token. The settings' port answers nothing of the dashboard's and refuses what another page fetches from it; the dashboard's port shows only a fixed page under `/settings`. The setup wizard's API also refuses requests from another port on the same address.
 - The web server now reads no more of a request than 32 kB of line and headers and 64 kB of body, answers one that goes past with "Request Header Fields Too Large" (431) or "Content Too Large" (413), and closes the connection. Before, one device on the network could send megabytes of headers over its 16 connections until a Pi's web service ran out of memory and restarted.
 - The web server now refuses a `Host` header with anything but ASCII letters, digits and hyphens, or with anything but a port after the name.
 - The web server no longer looks up the computer's own name as it starts, which on a Pi could ask the router's DNS.
