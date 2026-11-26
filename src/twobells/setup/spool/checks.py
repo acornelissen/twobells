@@ -138,6 +138,17 @@ def _stops_args(args) -> dict:
             "limit": check_int(fields["limit"], "limit", 1, setup.MAX_STOPS)}
 
 
+def _stop_args(args) -> dict:
+    fields = check_obj(args, ("code", "home", "within_m"))
+    code = check_str(fields["code"], "code", setup.MAX_STOP_CODE, 1)
+    if not setup.is_stop_code(code):
+        raise Refused("code isn't a stop's")
+    within = check_num(fields["within_m"], "within_m")
+    if not setup.STOP_RADIUS_M[0] <= within <= setup.STOP_RADIUS_M[1]:
+        raise Refused("within_m is out of range")
+    return {"code": code, "home": _point(fields["home"], "home"), "within_m": within}
+
+
 def _walk_args(args) -> dict:
     fields = check_obj(args, ("home", "places"))
     places = {}
@@ -188,6 +199,7 @@ _REQUESTS: dict[str, Callable[[object], dict]] = {
     "postcode": _postcode_args,
     "address": _address_args,
     "stops": _stops_args,
+    "stop": _stop_args,
     "walk": _walk_args,
     "testkey": _testkey_args,
     "search": _search_args,

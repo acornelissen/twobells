@@ -531,6 +531,69 @@ def nearby_stops(lat: float, lon: float, within_m: float = 800, limit: int = 15,
     return _stops_in(lines, lat, lon, within_m, limit)
 
 
+# A bus stop by its code, for one further from home than nearby_stops looks:
+# its ATCO code, or its NaPTAN code, the short one on its sign to text for its
+# times (like manatdaw), in any case. NaPTAN has no search by either, and
+# nothing bundled says which area a NaPTAN code is in, so an ATCO code is
+# looked for in its own area (its first three digits) and a NaPTAN code only
+# in the areas around home, the ones nearby_stops downloads.
+
+NAPTAN_CODE = re.compile(r"[0-9A-Za-z]{5,8}")
+MAX_STOP_CODE = 12  # the longest ATCO code
+FARTHEST_M = 2_000_000  # further than any two places in the UK
+
+
+def is_stop_code(code: str) -> bool:
+    """Whether `code` is shaped as a stop's ATCO code or NaPTAN code."""
+    return len(code) <= MAX_STOP_CODE and bool(_ATCO.fullmatch(code) or NAPTAN_CODE.fullmatch(code))
+
+
+def find_stop(code: str, lat: float, lon: float, within_m: float = 800, http_get: HttpGetBytes = naptan_get,
+              grid: Mapping[tuple[int, int], Sequence[str]] | None = None) -> Stop | None:
+    """The active bus stop whose ATCO code or NaPTAN code is `code`, with its
+    straight-line distance from the point; None if there is none. Searched for
+    in the areas with stops within `within_m` of the point and in an ATCO
+    code's own area. Only area codes are sent, never the code or the position."""
+    _check_point(lat, lon)
+    if not STOP_RADIUS_M[0] <= within_m <= STOP_RADIUS_M[1]:
+        raise SetupError(f"Look within {STOP_RADIUS_M[0]} to {STOP_RADIUS_M[1]} m")
+    if not is_stop_code(code):
+        raise SetupError("A stop code is its ATCO code or its NaPTAN code")
+    grid = bundled_area_grid() if grid is None else grid
+    areas = set(areas_near(lat, lon, within_m, grid))
+    if _ATCO.fullmatch(code) and any(code[:3] in cell for cell in grid.values()):
+        areas.add(code[:3])
+    if not areas:
+        return None
+    query = urlencode({"dataFormat": "csv", "atcoAreaCodes": ",".join(sorted(areas))})
+    body = _fetch(http_get, f"{NAPTAN_URL}?{query}", MAX_NAPTAN_BYTES, "NaPTAN download")
+    lines = io.TextIOWrapper(io.BytesIO(body), encoding="utf-8-sig", newline="")
+    wanted = code.lower()
+    by_naptan = None  # an ATCO code's own stop comes first, should another stop's NaPTAN code be the same
+    try:
+        for row in csv.DictReader(bounded.lines(lines, MAX_NAPTAN_LINE)):
+            atco = row.get("ATCOCode") or ""
+            own = atco.lower() == wanted
+            if not own and (row.get("NaptanCode") or "").lower() != wanted:
+                continue
+            if row.get("Status") != "active" or row.get("StopType") not in BUS_STOP_TYPES or not _ATCO.fullmatch(atco):
+                continue
+            position = naptan_position(row)
+            if position is None:
+                continue
+            bearing = (row.get("Bearing") or "").strip().upper()
+            stop = Stop(atco, clean_text(row.get("CommonName"), 80) or atco, clean_text(row.get("Indicator"), 40),
+                        bearing if bearing in BEARINGS else "", *position, round(distance_m(lat, lon, *position)))
+            if own:
+                return stop
+            by_naptan = by_naptan or stop
+    except csv.Error:
+        raise SetupError("NaPTAN sent a file that isn't readable CSV") from None
+    except UnicodeDecodeError:
+        raise SetupError("NaPTAN sent a file that isn't UTF-8") from None
+    return by_naptan
+
+
 # Walk times, from the OpenStreetMap foot router (OSRM). It is FOSSGIS's
 # server, as for roadshape's bus map roads, under the same policy
 # (https://routing.openstreetmap.de/about.html): at most one request a second,

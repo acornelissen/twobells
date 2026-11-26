@@ -2216,6 +2216,155 @@ def test_each_stops_label_box_is_named_for_its_stop():
                      "Label on the board for Stop code 1800SB99999"]
 
 
+# A stop not listed, added by its code: as the tram search, a form, so Enter in the box sends it.
+
+FAR_STOP = {"atco": "1800NE43431", "name": "Piccadilly Gardens", "indicator": "Stop D", "bearing": "W", "lat": 53.4808,
+            "lon": -2.2374, "distance_m": 18_400, "label": "D"}
+NO_SUCH_STOP = "No bus stop was found with that code. Check it, or use the stop's ATCO code"
+BY_CODE = """
+const said = { live: [], alert: [] };
+for (const id of ["live", "alert"]) {
+  const region = $(id);
+  Object.defineProperty(region, "textContent", { set(text) { if (text) said[id].push(text); }, get() { return ""; } });
+}
+const addCode = async (code) => {
+  $("stops-code").value = code;
+  for (const [type, fn] of $("stops-find").listeners) if (type === "submit") await fn({ preventDefault() {} });
+  await settle();
+};
+const rows = () => [...$("stops-list").querySelectorAll('input[type="checkbox"]')].map((box) => [box.value, box.checked]);
+"""
+
+
+def test_the_stop_code_box_is_labelled_and_described_with_no_placeholder():
+    ids = _ids()
+    tag, attrs = ids["stops-code"]
+    assert tag == "input" and attrs["type"] == "text" and "placeholder" not in attrs
+    assert attrs["aria-describedby"].split() == ["stops-code-hint", "stops-code-error"]
+    assert ids["stops-find"][0] == "form" and "novalidate" in ids["stops-find"][1]
+    page = (STATIC / "index.html").read_text(encoding="utf-8")
+    form = page[page.index('<form id="stops-find"'):]
+    form = form[:form.index("</form>")]
+    assert '<label for="stops-code">Add a stop by its code</label>' in form
+    assert '<button type="submit">Add stop</button>' in form
+    hint = _between(form, 'id="stops-code-hint">', "</p>")
+    assert "sign" in hint and "ATCO code" in hint and "bustimes.org" in hint
+
+
+@needs_node
+def test_a_stop_added_by_its_code_is_listed_ticked_and_focused_and_saved():
+    found = run_wizard(BY_CODE + """
+        const before = rows();
+        await addCode(" manatdaw ");
+        const added = { rows: rows(), focus: document.activeElement.id, asked: asked("stop"),
+                        label: $("stop-3-label").value, labelShown: $("stop-3-label-box").hidden !== true,
+                        about: $("stop-3-about").textContent, box: $("stops-code").value, said: said.live.at(-1) };
+        click("stops-next");
+        await settle();
+        console.log(JSON.stringify({ before, added, chosen: state.chosen, walked: asked("walk").at(-1) }));
+    """, "?step=stops", stop={"stop": FAR_STOP})
+    assert found["before"] == [["1800SB12341", True], ["1800SB12342", False], ["1800SB99999", True]]
+    added = found["added"]
+    assert added["asked"] == [{"code": "manatdaw", "lat": 53.46, "lon": -1.97}]
+    assert added["rows"] == [*found["before"], ["1800NE43431", True]]
+    assert added["focus"] == "stop-3" and added["label"] == "D" and added["labelShown"]
+    assert added["about"] == "18 km away, buses head west." and added["box"] == ""
+    assert added["said"] == "Piccadilly Gardens, Stop D added as number 4, 18 km away, and ticked."
+    assert {"label": "D", "atco": "1800NE43431", "name": "Piccadilly Gardens", "indicator": "Stop D"} in found["chosen"]
+    assert "1800NE43431" in found["walked"]["stop_atcos"]
+
+
+@needs_node
+def test_a_stop_added_by_code_takes_a_label_no_listed_stop_has():
+    found = run_wizard(BY_CODE + """
+        await addCode("1800NE43431");
+        console.log(JSON.stringify($("stop-3-label").value));
+    """, "?step=stops", stop={"stop": {**FAR_STOP, "label": "B"}})
+    assert found == "C"  # A, B and Z are listed
+
+
+@needs_node
+def test_a_stop_already_listed_is_ticked_and_focused_not_listed_twice():
+    found = run_wizard(BY_CODE + """
+        await addCode("1800SB12342");
+        console.log(JSON.stringify({ rows: rows(), focus: document.activeElement.id, said: said.live.at(-1) }))
+    """, "?step=stops", stop={"stop": dict(NEAR_STOPS[1])})
+    assert found["rows"] == [["1800SB12341", True], ["1800SB12342", True], ["1800SB99999", True]]
+    assert found["focus"] == "stop-1"
+    assert found["said"] == "Station Road, Stop B is listed already, as number 2, and ticked."
+
+
+@needs_node
+def test_one_of_todays_stops_found_by_code_gets_its_place():
+    found = run_wizard(BY_CODE + """
+        await addCode("1800SB99999");
+        console.log(JSON.stringify({ rows: rows().length, focus: document.activeElement.id,
+                                     about: $("stop-2-about").textContent, label: $("stop-2-label").value }));
+    """, "?step=stops", stop={"stop": {**FAR_STOP, "atco": "1800SB99999", "label": "D"}})
+    assert found == {"rows": 3, "focus": "stop-2", "about": "18 km away, buses head west.", "label": "Z"}
+
+
+@needs_node
+def test_a_stop_code_refused_is_said_and_marked_by_the_box_and_nothing_is_listed():
+    found = run_wizard(BY_CODE + """
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, init) => {
+          if (url !== "api/stop") return realFetch(url, init);
+          sent.push(["stop", JSON.parse(init.body)]);
+          return { ok: false, status: 400, headers: { get: () => "application/json" },
+                   json: async () => ({ error: "NO_SUCH_STOP", field: "code" }) };
+        };
+        const before = rows();
+        await addCode("1800ZZ99999");
+        const refused = { rows: rows(), focus: document.activeElement.id, error: $("stops-code-error").textContent,
+                          shown: $("stops-code-error").hidden !== true, invalid: $("stops-code").getAttribute("aria-invalid"),
+                          alert: said.alert.at(-1), box: $("stops-code").value };
+        await addCode("  ");
+        const empty = { error: $("stops-code-error").textContent, asked: asked("stop").length, alert: said.alert.at(-1) };
+        console.log(JSON.stringify({ before, refused, empty }));
+    """.replace("NO_SUCH_STOP", NO_SUCH_STOP), "?step=stops")
+    refused = found["refused"]
+    assert refused["rows"] == found["before"] and refused["focus"] == "stops-code"
+    assert refused["error"] == f"Error: {NO_SUCH_STOP}" and refused["shown"] and refused["invalid"] == "true"
+    assert refused["alert"] == NO_SUCH_STOP and refused["box"] == "1800ZZ99999"  # kept, to correct
+    assert found["empty"] == {"error": "Error: Type the stop's code first.", "asked": 1,
+                              "alert": "Type the stop's code first."}
+
+
+@needs_node
+def test_a_stop_added_by_code_with_ten_ticked_is_listed_but_not_ticked():
+    ten = [{"label": chr(65 + i), "atco": f"1800SB1000{i}", "name": f"Stop {i}", "indicator": "", "walk": None}
+           for i in range(10)]
+    found = run_wizard(BY_CODE + """
+        await addCode("manatdaw");
+        console.log(JSON.stringify({ last: rows().at(-1), count: rows().length, focus: document.activeElement.id,
+                                     error: $("stops-error").textContent, alert: said.alert.at(-1),
+                                     label: $("stop-12-label").value }));
+    """, "?step=stops", saved={**SAVED_NOW, "stops": ten}, stop={"stop": FAR_STOP})
+    assert found["count"] == 13 and found["last"] == ["1800NE43431", False] and found["focus"] == "stop-12"
+    assert found["error"] == "Error: Pick at most 10 stops: untick one to tick this one."
+    assert found["alert"].endswith("Pick at most 10 stops: untick one to tick this one.")
+    assert found["label"] == "K"
+
+
+@needs_node
+def test_a_hostile_stop_name_is_shown_as_text():
+    found = run_wizard(BY_CODE + """
+        await addCode("manatdaw");
+        console.log(JSON.stringify({ imgs: $("stops-list").querySelectorAll("img").length,
+                                     text: $("stops-list").textContent.includes("<img src=x onerror=alert(1)>") }));
+    """, "?step=stops", stop={"stop": {**FAR_STOP, "name": "<img src=x onerror=alert(1)>"}})
+    assert found == {"imgs": 0, "text": True}
+
+
+@needs_node
+def test_without_home_there_is_no_stop_code_box():
+    found = run_wizard("""
+        console.log(JSON.stringify({ find: $("stops-find").hidden === true }));
+    """, "?step=stops", saved={**SAVED_NOW, "home": None})
+    assert found == {"find": True}
+
+
 # The rail key may be left until later, by its own button and never by default.
 
 NO_RAIL_KEY = {**BEGIN, "keys": [dict(KEYS_SET[0], set=False), KEYS_SET[1]],

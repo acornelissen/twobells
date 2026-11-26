@@ -246,6 +246,114 @@ def test_stations_and_a_typed_code(board):
     assert ok(board, "station", {"crs": "man"})["station"]["name"] == "Manchester Piccadilly"
 
 
+# A stop added by its code, from anywhere.
+
+FAR_STOP = Stop("1800NE43431", "Piccadilly Gardens", "Stop D", "W", 53.4808, -2.2374, 18_400)
+
+
+@pytest.fixture
+def coded(board):
+    """The board, finding FAR_STOP by its ATCO code or its NaPTAN code, under a limit on a clock of its own."""
+    asked = []
+
+    def find_stop(code, lat, lon, *, within_m):
+        asked.append((code, lat, lon, within_m))
+        return FAR_STOP if code.upper() in ("1800NE43431", "MANATDAW") else None
+
+    board._find_stop = find_stop
+    board._stop_lookups = RateLimit(setupapi.STOP_LOOKUP_EVERY, clock=lambda: board.clock[0])
+    board.asked = asked
+    return board
+
+
+def later(api, seconds=setupapi.STOP_LOOKUP_EVERY):
+    api.clock[0] += seconds
+
+
+def test_a_stop_is_found_by_either_code_with_its_distance_and_label(coded):
+    found = ok(coded, "stop", {"code": " 1800NE43431 ", **HOME})["stop"]
+    assert found == {"atco": "1800NE43431", "name": "Piccadilly Gardens", "indicator": "Stop D", "bearing": "W",
+                     "lat": 53.4808, "lon": -2.2374, "distance_m": 18_400, "label": "D"}
+    assert coded.asked == [("1800NE43431", HOME["lat"], HOME["lon"], setupapi.STOPS_WITHIN_M)]
+    later(coded)
+    assert ok(coded, "stop", {"code": "manatdaw", **HOME})["stop"]["atco"] == "1800NE43431"
+
+
+def test_a_stop_found_by_code_gets_its_walk_and_is_saved_by_name(coded):
+    ok(coded, "stop", {"code": "1800NE43431", **HOME})
+    walk = ok(coded, "walk", {"home": HOME, "stop_atcos": ["1800NE43431"]})["walk"]
+    assert walk == {"1800NE43431": {"minutes": 2, "source": "estimate"}}
+    ok(coded, "start", {"stops": {"D": "1800NE43431"}, "routes": False})
+    FakeJob.made[-1].finish(routes=False)
+    ok(coded, "finish", {"home": HOME, "stops": {"D": "1800NE43431"}, "walk": {"1800NE43431": 25}})
+    bus = tomllib.loads((coded.state / "settings.toml").read_text())["bus"]
+    assert bus["stops"] == {"D": "1800NE43431"} and bus["walk_minutes"] == {"D": 25}
+
+
+@pytest.mark.parametrize("code", ["", " ", "x", "abcd", "../etc", "1800NE4343100", "manat daw", "manat\ndaw",
+                                  "<b>manatdaw</b>", "１８００NE43431", "manatdaw;", 12345, None, ["manatdaw"],
+                                  {"code": "manatdaw"}, True])
+def test_a_malformed_code_is_refused_as_an_unknown_one_is_without_a_lookup(coded, code):
+    status, body = coded.handle("stop", {"code": code, **HOME})
+    assert (status, body) == (400, {"error": setupapi.NO_SUCH_STOP, "field": "code"})
+    assert coded.asked == []
+    # Not counted against the limit: a real code straight after is looked up.
+    assert coded.handle("stop", {"code": "1800NE43431", **HOME})[0] == 200
+
+
+@pytest.mark.parametrize("code", ["1" * 21, " " * 15 + "1800NE43431", "m" * 100_000])
+def test_an_over_long_code_is_refused_before_anything_else(coded, code):
+    assert coded.handle("stop", {"code": code, **HOME}) == (400, {"error": setupapi.NO_SUCH_STOP, "field": "code"})
+    assert coded.asked == []
+
+
+def test_an_unknown_code_is_refused_in_the_same_words_and_never_repeated(coded):
+    status, body = coded.handle("stop", {"code": "1800ZZ99999", **HOME})
+    assert (status, body) == (400, {"error": setupapi.NO_SUCH_STOP, "field": "code"})
+    assert coded.asked == [("1800ZZ99999", HOME["lat"], HOME["lon"], setupapi.STOPS_WITHIN_M)]
+    later(coded)
+    assert coded.handle("stop", {"code": "zzzzzzzz", **HOME})[1] == body
+    assert "ZZ" not in json.dumps(body) and "zz" not in json.dumps(body)
+
+
+def test_a_stop_found_again_by_code_is_kept_once(coded):
+    coded._nearby_stops = lambda lat, lon, **kw: [*STOPS, FAR_STOP]
+    ok(coded, "stops", HOME)
+    first = ok(coded, "stop", {"code": "1800NE43431", **HOME})["stop"]
+    later(coded)
+    again = ok(coded, "stop", {"code": "MANATDAW", **HOME})["stop"]
+    assert first == again
+    assert list(coded._found_stops).count("1800NE43431") == 1 and len(coded._found_stops) == len(STOPS) + 1
+
+
+def test_stops_are_found_by_code_at_most_once_every_few_seconds(coded):
+    ok(coded, "stop", {"code": "1800NE43431", **HOME})
+    status, body = coded.handle("stop", {"code": "1800NE43431", **HOME})
+    assert status == 429 and body["error"] == "Wait 5 s before looking up another stop"
+    later(coded, 1)
+    assert coded.handle("stop", {"code": "1800ZZ99999", **HOME})[0] == 429  # an unknown code waits its turn too
+    later(coded, setupapi.STOP_LOOKUP_EVERY)
+    assert coded.handle("stop", {"code": "1800ZZ99999", **HOME})[0] == 400
+    assert coded.handle("stop", {"code": "1800NE43431", **HOME})[0] == 429
+    assert len(coded.asked) == 2
+
+
+def test_the_stop_lookups_limit_is_shared_by_every_host_in_the_process(board):
+    assert board._stop_lookups is setupapi.STOP_LOOKUPS
+    assert "stop" in setupapi.OWNER_STEPS
+
+
+@pytest.mark.parametrize("payload, field", [
+    ({"code": "1800NE43431", "lat": 48.85, "lon": 2.35}, "home"),
+    ({"code": "1800NE43431", "lat": 53.4}, "lon"),
+    ({"code": "1800NE43431", **HOME, "extra": 1}, "extra"),
+    ({**HOME}, "code"),
+])
+def test_finding_a_stop_by_code_needs_home_and_nothing_more(coded, payload, field):
+    status, body = coded.handle("stop", payload)
+    assert status == 400 and body["field"] == field and coded.asked == []
+
+
 def test_walk_times_for_the_station_and_found_stops(board):
     assert [s["label"] for s in ok(board, "stops", HOME)["stops"]] == ["A", "B", "C"]
     walk = ok(board, "walk", {"home": HOME, "station_crs": "GLO", "stop_atcos": ["1800SB12341", "1800SB99999"]})
@@ -1050,6 +1158,10 @@ class FakeRunner:
         self.calls.append(("stops", lat, lon, within_m, limit))
         return list(STOPS)
 
+    def find_stop(self, code, lat, lon, *, within_m):
+        self.calls.append(("stop", code, lat, lon, within_m))
+        return FAR_STOP if code == "1800NE43431" else None
+
     def walk_minutes(self, home, places):
         self.calls.append(("walk", home, dict(places)))
         return dict.fromkeys(places, (4, "route"))
@@ -1082,6 +1194,15 @@ def test_a_runner_does_the_lookups(ran):
     assert [c[0] for c in ran.runner.calls] == ["postcode", "address", "stops", "walk"]
     assert ran.runner.calls[2][3:] == (setupapi.STOPS_WITHIN_M, setupapi.STOPS_SHOWN)
     assert ran.board.calls == []  # nothing in this process
+
+
+def test_a_runner_finds_a_stop_by_code_under_this_process_s_limit(ran):
+    ran._stop_lookups = RateLimit(setupapi.STOP_LOOKUP_EVERY, clock=lambda: ran.board.clock[0])
+    assert ok(ran, "stop", {"code": "1800NE43431", **HOME})["stop"]["name"] == "Piccadilly Gardens"
+    assert ran.runner.calls == [("stop", "1800NE43431", HOME["lat"], HOME["lon"], setupapi.STOPS_WITHIN_M)]
+    assert ran.handle("stop", {"code": "1800NE43431", **HOME})[0] == 429
+    assert ran.handle("stop", {"code": "../etc", **HOME})[0] == 400
+    assert len(ran.runner.calls) == 1 and ran.board.calls == []
 
 
 def test_a_runner_is_never_given_a_saved_key(ran):

@@ -123,8 +123,8 @@ MAX_BODY = 16 * 1024  # the biggest request, finish with keys, is about 2 kB
 # the page asks for by itself (begin and saved as it opens, job every few
 # seconds while a search runs), so a page left open doesn't. A new step is
 # in neither until it is put here.
-OWNER_STEPS = frozenset({"postcode", "address", "stations", "station", "stops", "trams", "walk", "start", "cancel",
-                         "finish", "testkey"})
+OWNER_STEPS = frozenset({"postcode", "address", "stations", "station", "stops", "stop", "trams", "walk", "start",
+                         "cancel", "finish", "testkey"})
 MAX_DEPTH = 6
 STATIONS_SHOWN = 5
 STATIONS_WITHIN_KM = 40
@@ -138,6 +138,10 @@ TRAM_STOPS_FOUND = 10
 _CACHED_STOPS = 200
 MIN_SCRUBBED = 6
 KEY_TEST_EVERY = 10.0  # seconds between tests of one key
+STOP_LOOKUP_EVERY = 5.0  # seconds between stops found by code: each downloads NaPTAN's area files
+_STOP_CODE_LENGTH = 20  # what the box takes; a code is at most 12
+# One answer for every code not found, whatever was wrong with it.
+NO_SUCH_STOP = "No bus stop was found with that code. Check it, or use the stop's ATCO code"
 
 PAGE_HEADERS = {
     "Content-Security-Policy": (
@@ -214,6 +218,7 @@ class RateLimit:
 
 # Shared by every SetupApi in the process, so two hosts can't double the rate.
 KEY_TESTS = RateLimit(KEY_TEST_EVERY)
+STOP_LOOKUPS = RateLimit(STOP_LOOKUP_EVERY)
 
 
 Reply = tuple[int, dict]
@@ -244,6 +249,8 @@ class Runner(Protocol):
     def search_address(self, query: str) -> list[Place]: ...
 
     def nearby_stops(self, lat: float, lon: float, *, within_m: float, limit: int) -> list[Stop]: ...
+
+    def find_stop(self, code: str, lat: float, lon: float, *, within_m: float) -> Stop | None: ...
 
     def walk_minutes(self, home: Place, places: Mapping[str, Station | Stop]) -> dict[str, tuple[int, str]]: ...
 
@@ -324,11 +331,13 @@ class SetupApi:
         search_address: Callable[[str], list[Place]] = setup.search_address,
         nearby_stations: Callable[..., list[Station]] = setup.nearby_stations,
         nearby_stops: Callable[..., list[Stop]] = setup.nearby_stops,
+        find_stop: Callable[..., Stop | None] = setup.find_stop,
         walk_minutes: Callable[..., dict[str, tuple[int, str]]] = setup.walk_minutes,
         stations: Callable[[], Sequence[tuple[str, str, float, float]]] = bundled_stations,
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         key_tests: RateLimit = KEY_TESTS,
+        stop_lookups: RateLimit = STOP_LOOKUPS,
         install: Install = INSTALLS["pi"],
         view_links: Mapping[str, tuple[str, str]] | None = None,
         saved_message: str | None = None,
@@ -387,12 +396,15 @@ class SetupApi:
         if runner is not None:
             lookup_postcode, search_address = runner.lookup_postcode, runner.search_address
             nearby_stops, walk_minutes = runner.nearby_stops, runner.walk_minutes
+            find_stop = runner.find_stop
         self._runner = runner
         self._lookup_postcode = lookup_postcode
         self._search_address = search_address
         # The stations are a bundled list, so finding them never needs the runner.
         self._nearby_stations = nearby_stations
         self._nearby_stops = nearby_stops
+        self._find_stop = find_stop
+        self._stop_lookups = stop_lookups
         self._walk_minutes = walk_minutes
         self._stations = stations
         self._make_job = make_job
@@ -414,6 +426,7 @@ class SetupApi:
             "stations": self.stations,
             "station": self.station,
             "stops": self.stops,
+            "stop": self.stop,
             "trams": self.trams,
             "walk": self.walk,
             "start": self.start,
@@ -596,18 +609,39 @@ class SetupApi:
     def stops(self, payload) -> dict:
         home = inputs.point(inputs.fields(payload, ("lat", "lon")))
         found = self._nearby_stops(home.lat, home.lon, within_m=STOPS_WITHIN_M, limit=STOPS_SHOWN)
+        self._keep_found(found)
+        labels = inputs.suggested_labels(found)
+        return {"stops": [_stop_out(s, label) for s, label in zip(found, labels, strict=True)]}
+
+    def stop(self, payload) -> dict:
+        """A bus stop by `code`, its ATCO code or the NaPTAN code on its sign,
+        with its distance from home, to add one further than the stops near
+        home: an ATCO code finds a stop anywhere, a NaPTAN code one in the
+        areas around home (setup.find_stop). Every code not found, malformed or
+        not, gets NO_SUCH_STOP, naming no part of it; a lookup comes at most
+        once every STOP_LOOKUP_EVERY seconds across the process (429)."""
+        fields = inputs.fields(payload, ("code", "lat", "lon"))
+        home = inputs.point({"lat": fields["lat"], "lon": fields["lon"]})
+        code = fields["code"]
+        if not isinstance(code, str) or len(code) > _STOP_CODE_LENGTH or not setup.is_stop_code(code.strip()):
+            raise Invalid(NO_SUCH_STOP, "code")
+        wait = self._stop_lookups.take("stop")
+        if wait:
+            raise TooSoon(f"Wait {math.ceil(wait)} s before looking up another stop")
+        found = self._find_stop(code.strip(), home.lat, home.lon, within_m=STOPS_WITHIN_M)
+        if found is None:
+            raise Invalid(NO_SUCH_STOP, "code")
+        self._keep_found([found])
+        return {"stop": _stop_out(found, inputs.suggested_labels([found])[0])}
+
+    def _keep_found(self, found: Sequence[Stop]) -> None:
+        """Keeps the stops found, for their walks and their names when saving."""
         with self._lock:
             for stop in found:
                 self._found_stops.pop(stop.atco, None)
                 self._found_stops[stop.atco] = stop
             while len(self._found_stops) > _CACHED_STOPS:
                 self._found_stops.pop(next(iter(self._found_stops)))
-        labels = inputs.suggested_labels(found)
-        return {"stops": [
-            {"atco": s.atco, "name": s.name, "indicator": s.indicator, "bearing": s.bearing, "lat": s.lat,
-             "lon": s.lon, "distance_m": s.distance_m, "label": label}
-            for s, label in zip(found, labels, strict=True)
-        ]}
 
     def trams(self, payload) -> dict:
         """The Metrolink tram stops nearest home, or London's Underground,
@@ -970,6 +1004,11 @@ class SetupApi:
         except (OSError, ConfigError, AttributeError):
             return {}
         return routes if isinstance(routes, dict) else {}
+
+
+def _stop_out(stop: Stop, label: str) -> dict:
+    return {"atco": stop.atco, "name": stop.name, "indicator": stop.indicator, "bearing": stop.bearing,
+            "lat": stop.lat, "lon": stop.lon, "distance_m": stop.distance_m, "label": label}
 
 
 def _check_something_shows(only: str | None, station: Station | None, stops: Mapping, trams: Mapping,

@@ -127,6 +127,10 @@ class SpoolRunner:
         value = self._ask("stops", {"home": {"lat": lat, "lon": lon}, "within_m": within_m, "limit": limit})
         return self._check(value, lambda v: [check_stop(s, within_m) for s in check_list(v, "stops", limit)])
 
+    def find_stop(self, code: str, lat: float, lon: float, *, within_m: float) -> Stop | None:
+        value = self._ask("stop", {"code": code, "home": {"lat": lat, "lon": lon}, "within_m": within_m})
+        return self._check(value, lambda v: None if v is None else check_stop(v, setup.FARTHEST_M))
+
     def walk_minutes(self, home: Place, places: Mapping[str, Station | Stop]) -> dict[str, tuple[int, str]]:
         if not places:
             return {}

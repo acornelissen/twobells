@@ -20,7 +20,7 @@ TMP_MAX_AGE_S = 60.0
 READ_TRIES = 3  # a file renamed over as it is read is read again, this many times in all
 # How long the page waits for each answer: the service may first need to
 # start (several seconds on a Pi Zero), and NaPTAN's area files are big.
-WAITS = {"postcode": 30.0, "address": 30.0, "stops": 120.0, "walk": 30.0, "testkey": 45.0}
+WAITS = {"postcode": 30.0, "address": 30.0, "stops": 120.0, "stop": 120.0, "walk": 30.0, "testkey": 45.0}
 # An answer nobody collected. A lookup's can hold home's exact position, and
 # past the longest wait no page is waiting for it.
 REPLY_MAX_AGE_S = max(WAITS.values())

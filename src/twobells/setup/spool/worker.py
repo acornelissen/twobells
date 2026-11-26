@@ -16,7 +16,7 @@ from ...core import files
 from ...core.errors import safe_message, scrub_secrets
 from .. import discover, keytest
 from .. import lookups as setup
-from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, Job, MakeJob, RateLimit
+from ..api import KEY_TEST_EVERY, MIN_SCRUBBED, STOP_LOOKUP_EVERY, Job, MakeJob, RateLimit
 from ..lookups import Place, SetupError, Stop
 from .checks import FINISHED, MAX_NOTES, VERSION, Refused, check_request, parse
 from .folder import MAX_REPLY_BYTES, MAX_REQUEST_BYTES, Spool, remove
@@ -85,11 +85,13 @@ class Worker:
         lookup_postcode: Callable[[str], Place] = setup.lookup_postcode,
         search_address: Callable[[str], list[Place]] = setup.search_address,
         nearby_stops: Callable[..., list[Stop]] = setup.nearby_stops,
+        find_stop: Callable[..., Stop | None] = setup.find_stop,
         walk_minutes: Callable[..., dict[str, tuple[int, str]]] = setup.walk_minutes,
         make_job: MakeJob = discover.SetupJob,
         test_key: Callable[..., keytest.KeyResult] = keytest.test_key,
         # Behind the page's own limit, in case something else writes requests; looser so the two never disagree.
         key_tests: RateLimit | None = None,
+        stop_lookups: RateLimit | None = None,
         idle: float = IDLE_S,
         poll: float = POLL_S,
         clock: Callable[[], float] = time.time,
@@ -114,10 +116,12 @@ class Worker:
         self._lookup_postcode = lookup_postcode
         self._search_address = search_address
         self._nearby_stops = nearby_stops
+        self._find_stop = find_stop
         self._walk_minutes = walk_minutes
         self._make_job = make_job
         self._test_key = test_key
         self._key_tests = key_tests or RateLimit(KEY_TEST_EVERY / 2, clock=monotonic)
+        self._stop_lookups = stop_lookups or RateLimit(STOP_LOOKUP_EVERY / 2, clock=monotonic)
         self._idle = idle
         self._poll = poll
         self._clock = clock
@@ -305,6 +309,12 @@ class Worker:
             lat, lon = args["home"]
             return [_stop_out(s) for s in self._nearby_stops(lat, lon, within_m=args["within_m"],
                                                             limit=args["limit"])]
+        if kind == "stop":
+            if wait := self._stop_lookups.take("stop"):
+                raise SetupError(f"Wait {math.ceil(wait)} s before looking up another stop")
+            lat, lon = args["home"]
+            found = self._find_stop(args["code"], lat, lon, within_m=args["within_m"])
+            return None if found is None else _stop_out(found)
         if kind == "walk":
             lat, lon = args["home"]
             home = Place(lat, lon, "")

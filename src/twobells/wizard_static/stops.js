@@ -10,6 +10,8 @@ import { afterStops } from "./trams.js";
 import { enterWalk } from "./walk.js";
 
 const LABEL = /^[A-Za-z0-9]{1,3}$/;
+const ATCO = /^[0-9]{3}[0-9A-Za-z]{1,9}$/;
+const SPARE = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const MAX_STOPS = 10;
 const BEARINGS = {
   N: "north", NE: "north-east", E: "east", SE: "south-east",
@@ -100,17 +102,21 @@ function keepSavedStops() {
   }
 }
 
+// A stop as the server sends it, checked, or null.
+function readStop(s) {
+  if (!s || !ATCO.test(str(s.atco)) || num(s.lat) === null || num(s.lon) === null) return null;
+  return {
+    atco: s.atco, name: str(s.name), indicator: str(s.indicator), bearing: str(s.bearing),
+    lat: s.lat, lon: s.lon, distance_m: num(s.distance_m), label: LABEL.test(str(s.label)) ? s.label : "",
+  };
+}
+
 async function findStops() {
   note("stops-status", "Finding the bus stops near home. This downloads your area's stop list and can take a minute…");
   say("Finding the bus stops near home. This can take a minute.");
   try {
     const data = await call("stops", { lat: state.home.lat, lon: state.home.lon });
-    state.stops = list(data.stops).map(obj)
-      .filter((s) => s && str(s.atco) && num(s.lat) !== null && num(s.lon) !== null)
-      .map((s) => ({
-        atco: s.atco, name: str(s.name), indicator: str(s.indicator), bearing: str(s.bearing),
-        lat: s.lat, lon: s.lon, distance_m: num(s.distance_m), label: LABEL.test(str(s.label)) ? s.label : "",
-      }));
+    state.stops = list(data.stops).map(obj).map(readStop).filter(Boolean);
     state.stopsFor = homeKey();
     note("stops-status", state.stops.length ? "" : `No bus stops within a kilometre. Carry on for a ${state.noun} with trains only.`);
     say(state.stops.length ? `${state.stops.length} bus stops found.` : "No bus stops found nearby.");
@@ -120,9 +126,71 @@ async function findStops() {
   }
 }
 
+// A stop added by its code, from wherever it is: listed and ticked as any
+// other, within the same limit, with a label no stop listed has; one listed
+// already is ticked instead. The server checks the code and says why not:
+// its words go by the box and are said at once, as focus may already be there.
+async function addByCode(event) {
+  event.preventDefault();
+  const input = $("stops-code");
+  const code = input.value.trim();
+  setError("stops-code", "");
+  if (!code) return refuseCode("Type the stop's code first.");
+  await once(event.submitter || $("stops-find").querySelector("button"), async () => {
+    let found = null;
+    try {
+      const data = await call("stop", { code, lat: state.home.lat, lon: state.home.lon });
+      found = readStop(obj(data.stop));
+    } catch (error) {
+      refuseCode(error.message);
+      return;
+    }
+    if (!found) {
+      refuseCode(`The ${state.noun} sent a stop that doesn't fit. Try again.`);
+      return;
+    }
+    input.value = "";
+    listFound(found);
+  });
+  return true;
+}
+
+function refuseCode(why) {
+  shout(why);
+  return refuse("stops-code", why);
+}
+
+function listFound(found) {
+  let i = state.stops.findIndex((stop) => stop.atco === found.atco);
+  const listed = i >= 0;
+  if (!listed) {
+    const taken = new Set(state.stops.map((stop) => (state.labels.get(stop.atco) || stop.label).toUpperCase()));
+    const label = found.label && !taken.has(found.label.toUpperCase()) ? found.label
+      : SPARE.find((letter) => !taken.has(letter)) || "";
+    state.stops.push({ ...found, label });
+    i = state.stops.length - 1;
+  } else if (state.stops[i].lat === null) {
+    // One of today's stops, listed without a place: it has one now.
+    Object.assign(state.stops[i], { ...found, label: state.stops[i].label });
+  }
+  const stop = state.stops[i];
+  const ticked = state.labels.has(stop.atco) || tickedCount() < MAX_STOPS;
+  if (ticked) state.labels.set(stop.atco, state.labels.get(stop.atco) || stop.label);
+  const full = `Pick at most ${MAX_STOPS} stops: untick one to tick this one.`;
+  setError("stops", ticked ? "" : full);
+  drawStops();
+  const where = stop.distance_m === null ? "" : `, ${distance(stop.distance_m)} away`;
+  const said = listed ? `${stopName(stop)} is listed already, as number ${i + 1}` : `${stopName(stop)} added as number ${i + 1}${where}`;
+  if (ticked) say(`${said}, and ticked.`);
+  else shout(`${said}. ${full}`);
+  $(`stop-${i}`).focus();
+}
+
 export async function enterStops() {
   go("stops");
   $("stops-near").hidden = !(state.only && state.home);
+  // Without home, a stop's distance can't be said, nor its areas looked in.
+  $("stops-find").hidden = !state.home;
   if (state.home && state.stopsFor === homeKey()) return;
   state.stops = [];
   fill($("stops-list"));
@@ -170,5 +238,6 @@ function refuseNoStops() {
 
 export function setUpStops() {
   setUpMapToggle("stops", drawStopsMap);
+  $("stops-find").addEventListener("submit", addByCode);
   $("stops-next").addEventListener("click", (event) => leaveStops(event.currentTarget));
 }

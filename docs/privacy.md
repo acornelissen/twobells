@@ -41,7 +41,7 @@ Only the setup wizard asks these, and only while you use it:
 | [postcodes.io](https://postcodes.io) | Finding home from a postcode | The postcode you type. |
 | OpenStreetMap's [Nominatim](https://nominatim.org) | Finding home from an address | The address you type. |
 | The OpenStreetMap foot router ([FOSSGIS](https://routing.openstreetmap.de/about.html)) | Walk times | Home's position, with your station's and stops' positions, in one request. |
-| NaPTAN (the Department for Transport) | Bus stops near home | The codes of the council areas around home (the first three characters of a stop's code), never a position. |
+| NaPTAN (the Department for Transport) | Bus stops near home, and a stop added by its code | The codes of the council areas around home (the first three characters of a stop's code), and for a stop added by its ATCO code, its own area's; never a position, nor the code you type. |
 | The Bus Open Data Service (BODS) | Which bus companies serve your stops | The codes of your stops' council areas, and `BODS_API_KEY`, in the address. It downloads their timetable files and reads them at home. |
 
 The stations, the Metrolink tram stops and London's stops come from lists that come with the app, so finding them sends nothing. The wizard saves home's position to two decimal places, for the weather, and doesn't save the postcode or address.

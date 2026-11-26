@@ -13,7 +13,7 @@ import pytest
 from twobells.core import net
 from twobells.settings.overlay import board_target
 from twobells.setup import discover
-from twobells.setup.api import RateLimit, SetupApi
+from twobells.setup.api import NO_SUCH_STOP, STOP_LOOKUP_EVERY, RateLimit, SetupApi
 from twobells.setup.keytest import KeyResult
 from twobells.setup.lookups import Place, SetupError, Stop
 from twobells.setup.spool import worker as worker_module
@@ -261,6 +261,87 @@ def test_the_service_limits_key_tests_too(board):
     second = board.runner.reply("b" * 32, delete=True)
     assert not second["ok"] and "Wait" in second["error"]
     assert len(board.calls) == 1
+
+
+FAR_STOP = Stop("1800NE43431", "Piccadilly Gardens", "Stop D", "W", 53.4808, -2.2374, 18_400)
+
+
+def finding_by_code(board):
+    """The service finding FAR_STOP by its ATCO code, both sides' limits on a clock of their own."""
+    def find_stop(code, lat, lon, *, within_m):
+        board.calls.append(("stop", code, lat, lon, within_m))
+        return FAR_STOP if code == "1800NE43431" else None
+
+    board.worker._find_stop = find_stop
+    clock = [0.0]
+    board._stop_lookups = RateLimit(STOP_LOOKUP_EVERY, clock=lambda: clock[0])
+    board.worker._stop_lookups = RateLimit(STOP_LOOKUP_EVERY / 2, clock=lambda: clock[0])
+    return clock
+
+
+def test_a_stop_by_code_round_trips_through_the_setup_service(serving, caplog):
+    caplog.set_level(logging.DEBUG)
+    clock = finding_by_code(serving)
+    found = ok(serving, "stop", {"code": "1800NE43431", **HOME})["stop"]
+    assert found["atco"] == "1800NE43431" and found["distance_m"] == 18_400 and found["label"] == "D"
+    assert serving.calls == [("stop", "1800NE43431", HOME["lat"], HOME["lon"], 1000)]
+    clock[0] += 5
+    assert serving.handle("stop", {"code": "manatdaw", **HOME}) == (
+        400, {"error": NO_SUCH_STOP, "field": "code"})  # none: an answer of null
+    assert spool_text(serving.state) == ""
+    assert "Setup request: stop" in caplog.text and "manatdaw" not in caplog.text and "53.46" not in caplog.text
+
+
+def test_the_service_limits_stops_by_code_too(board):
+    finding_by_code(board)
+    args = {"code": "1800NE43431", "home": HOME, "within_m": 1000}
+    board.runner.post("a" * 32, "stop", args)
+    board.runner.post("b" * 32, "stop", args)
+    board.worker.step()
+    assert board.runner.reply("a" * 32, delete=True)["value"]["atco"] == "1800NE43431"
+    second = board.runner.reply("b" * 32, delete=True)
+    assert not second["ok"] and second["error"] == "Wait 3 s before looking up another stop"
+    assert len(board.calls) == 1
+
+
+@pytest.mark.parametrize("args", [
+    {"code": "../etc", "home": HOME, "within_m": 1000},
+    {"code": "1800NE434310000", "home": HOME, "within_m": 1000},
+    {"code": "manat\ndaw", "home": HOME, "within_m": 1000},
+    {"code": 12345, "home": HOME, "within_m": 1000},
+    {"code": "1800NE43431", "home": {"lat": 48.85, "lon": 2.35}, "within_m": 1000},
+    {"code": "1800NE43431", "home": HOME, "within_m": 10**9},
+    {"code": "1800NE43431", "home": HOME},
+    {"code": "1800NE43431", "home": HOME, "within_m": 1000, "limit": 1},
+])
+def test_the_service_deletes_stop_requests_that_dont_fit_unanswered(board, args, caplog):
+    finding_by_code(board)
+    path = put(board, request(board, kind="stop", args=args), name="a" * 32 + ".json")
+    board.worker.step()
+    assert not path.exists() and os.listdir(board.state / "spool" / "replies") == []
+    assert board.calls == [] and "Refused a setup request" in caplog.text
+
+
+@pytest.mark.parametrize("value", [
+    {"atco": "../etc", "name": "x", "indicator": "", "bearing": "", "lat": 53.4, "lon": -1.9, "distance_m": 5},
+    {"atco": "1800NE43431", "name": "x", "indicator": "", "bearing": "", "lat": 48.85, "lon": 2.35, "distance_m": 5},
+    {"atco": "1800NE43431", "name": "", "indicator": "", "bearing": "", "lat": 53.4, "lon": -1.9, "distance_m": 5},
+    {"atco": "1800NE43431", "name": "x", "indicator": "", "bearing": "", "lat": 53.4, "lon": -1.9, "distance_m": -1},
+    [],
+])
+def test_the_page_checks_the_shape_of_a_stop_found_by_code(board, value):
+    def answer():
+        wait_for(lambda: os.listdir(board.state / "spool" / "requests"))
+        [name] = os.listdir(board.state / "spool" / "requests")
+        rid = name.removesuffix(".json")
+        board.runner.spool.write(board.runner.spool.replies, rid, {"v": 1, "id": rid, "ok": True, "value": value},
+                                 MAX_REPLY_BYTES)
+
+    thread = threading.Thread(target=answer)
+    thread.start()
+    with pytest.raises(SetupError, match="doesn't fit"):
+        board.runner.find_stop("1800NE43431", HOME["lat"], HOME["lon"], within_m=1000)
+    thread.join(5)
 
 
 # No answer.

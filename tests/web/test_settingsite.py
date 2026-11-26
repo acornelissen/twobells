@@ -1844,7 +1844,7 @@ class KeyRunner:
     def lookup_postcode(self, postcode):
         raise AssertionError("not a lookup")
 
-    search_address = nearby_stops = walk_minutes = make_job = lookup_postcode
+    search_address = nearby_stops = find_stop = walk_minutes = make_job = lookup_postcode
 
 
 @pytest.fixture

@@ -670,6 +670,73 @@ def test_naptan_failure_is_a_plain_message():
     assert "atcoAreaCodes" not in str(caught.value)
 
 
+# A bus stop by its code.
+
+LONDON = (51.5, -0.12)  # no areas of GRID near it
+
+
+def test_an_atco_code_finds_its_stop_in_its_own_area_however_far_from_home():
+    getter = Getter(NAPTAN)
+    stop = lookups.find_stop("1000dghs0900", *LONDON, http_get=getter, grid=GRID)
+    assert stop == Stop("1000DGHS0900", "Henry Street", "Stop A", "E", 53.44384, -1.948999,
+                        round(distance_m(*LONDON, 53.44384, -1.948999)))
+    assert len(getter.urls) == 1
+    parts = urlsplit(getter.urls[0])
+    assert parse_qs(parts.query) == {"dataFormat": ["csv"], "atcoAreaCodes": ["100"]}
+    # NaPTAN is sent the area only: never the code typed, nor where home is.
+    assert "dghs" not in getter.urls[0].lower() and "51.5" not in getter.urls[0]
+
+
+def test_a_naptan_code_finds_its_stop_in_the_areas_around_home_in_any_case():
+    getter = Getter(NAPTAN)
+    george = lookups.find_stop("DBSGTGWP", TOWN.lat, TOWN.lon, http_get=getter, grid=GRID)
+    assert george is not None and (george.atco, george.name, george.indicator) == ("1000DGHS3403", "George Street", "adj")
+    assert parse_qs(urlsplit(getter.urls[0]).query)["atcoAreaCodes"] == ["100,180"]
+    woolley = lookups.find_stop("mandjdpg", TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID)
+    assert woolley is not None and woolley.atco == "1800EH48511" and woolley.distance_m > 3000
+
+
+def test_a_naptan_code_far_from_home_or_an_unknown_area_asks_nothing():
+    assert lookups.find_stop("dbsgtgwp", *LONDON, http_get=refuse, grid=GRID) is None
+    assert lookups.find_stop("9991234", *LONDON, http_get=refuse, grid=GRID) is None
+
+
+@pytest.mark.parametrize("code", ["dbsgtgwt", "1000DGHS3404", "1000DGHSTRM1", "1000DGNOWHER", "1000DGHS7777",
+                                  "zzzzzzzz"])
+def test_an_inactive_tram_unplaced_or_unknown_stop_is_not_found(code):
+    assert lookups.find_stop(code, TOWN.lat, TOWN.lon, http_get=Getter(NAPTAN), grid=GRID) is None
+
+
+def test_a_stops_own_atco_code_comes_before_another_stops_naptan_code():
+    body = _with_line("1000DGHS7000,1000dghs0900,,,Imposter,,,,,,,,,,adj,,N,E0007081,Glossop,,,,,,,0,UKOS,"
+                      "403292,394063,-1.951905,53.443347,BCT,MKD,TIP,,,,075,2006-06-26T00:00:00.000,"
+                      "2025-11-17T11:49:31.662,4,revise,active").encode()
+    stop = lookups.find_stop("1000DGHS0900", TOWN.lat, TOWN.lon, http_get=Getter(body), grid=GRID)
+    assert stop is not None and stop.name == "Henry Street"
+
+
+@pytest.mark.parametrize("code", ["", "abcd", "../../etc", "1000DGHS09000", "dbs gtgwp", "dbsgtgwp\n",
+                                  "１０００DGHS0900", "dbsgtgwpx"])
+def test_a_code_of_no_stops_shape_is_refused_unasked(code):
+    getter = Getter(NAPTAN)  # refuse() would be caught as a failed download
+    with pytest.raises(SetupError, match="A stop code is"):
+        lookups.find_stop(code, TOWN.lat, TOWN.lon, http_get=getter, grid=GRID)
+    assert getter.urls == []
+
+
+@pytest.mark.parametrize("within_m", [10, 5000])
+def test_a_code_search_refuses_silly_reaches(within_m):
+    getter = Getter(NAPTAN)
+    with pytest.raises(SetupError, match="Look within"):
+        lookups.find_stop("1000DGHS0900", TOWN.lat, TOWN.lon, within_m=within_m, http_get=getter, grid=GRID)
+    assert getter.urls == []
+
+
+def test_stop_codes_are_atco_or_naptan_shaped():
+    assert lookups.is_stop_code("1800SB12341") and lookups.is_stop_code("manatdaw") and lookups.is_stop_code("47847")
+    assert not lookups.is_stop_code("1800SB1234123") and not lookups.is_stop_code("mana") and not lookups.is_stop_code("")
+
+
 # Walk times.
 
 STATION = Station("Hadfield", "HDF", 53.46074, -1.96532, 141)

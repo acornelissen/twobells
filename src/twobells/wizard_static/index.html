@@ -136,6 +136,15 @@
       <p class="error" id="stops-error" hidden></p>
       <ol id="stops-list" class="stop-list"></ol>
     </fieldset>
+    <form id="stops-find" class="row-form" novalidate>
+      <div class="field">
+        <label for="stops-code">Add a stop by its code</label>
+        <p class="hint" id="stops-code-hint">For a stop not listed. The code on its sign or timetable, like manatdaw, finds a stop in and around home's county or city. Its ATCO code, like 1800SB12341, finds one anywhere: on bustimes.org it is the last part of the stop page's address.</p>
+        <p class="error" id="stops-code-error" hidden></p>
+        <input id="stops-code" name="stops-code" type="text" maxlength="20" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="stops-code-hint stops-code-error">
+      </div>
+      <button type="submit">Add stop</button>
+    </form>
 
     <div class="map-part">
       <button type="button" id="stops-map-toggle" aria-expanded="false" aria-controls="stops-map-box">Show the stops on a map</button>
