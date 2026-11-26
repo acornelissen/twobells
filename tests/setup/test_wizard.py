@@ -2019,6 +2019,137 @@ def test_next_pressed_while_an_undo_the_browser_drops_is_on_its_way_still_moves_
     assert found["focus"] == "stops-heading"
 
 
+# An entry of a step no longer shown: Back and Forward carry on past it, the
+# same way, to the nearest step that is. A shortcut shows the keys only while
+# its key isn't set; the key is set by hand here, as once the step is passed.
+
+NO_BUS_KEY = {**BEGIN, "keys": [KEYS_SET[0], dict(KEYS_SET[1], set=False)]}
+TO_SHORTCUT_FINISH = """
+click("stops-next");
+await settle();
+click("walk-next");
+await settle();
+$("key-BODS_API_KEY").value = "abc123";
+click("keys-next");
+await settle();
+const onFinish = { shown: shown(), pages: structuredClone(pages), at };
+state.keys.find((key) => key.name === "BODS_API_KEY").set = true;
+const where = () => ({ shown: shown(), at, step: state.step, focus: document.activeElement.id,
+                       page: document.title.split(":")[0] });
+"""
+
+
+@needs_node
+def test_browser_back_from_finish_carries_on_past_a_keys_step_no_longer_shown():
+    found = run_wizard(TO_SHORTCUT_FINISH + """
+        window.history.back();
+        const walk = where();
+        window.history.back();
+        console.log(JSON.stringify({ onFinish, walk, stops: where(), pages }));
+    """, "?step=stops", begin=NO_BUS_KEY)
+    assert found["onFinish"]["shown"] == ["step-finish"] and found["onFinish"]["at"] == 3
+    assert [p["step"] for p in found["onFinish"]["pages"]] == ["stops", "walk", "keys", "finish"]
+    # One Back goes past the keys to the walk times: its heading focused, its title, its entry.
+    assert found["walk"] == {"shown": ["step-walk"], "at": 1, "step": "walk", "focus": "walk-heading",
+                             "page": "Walk times"}
+    # And the next one step further, as ever.
+    assert found["stops"] == {"shown": ["step-stops"], "at": 0, "step": "stops", "focus": "stops-heading",
+                              "page": "Bus stops"}
+    assert found["pages"] == found["onFinish"]["pages"]
+
+
+@needs_node
+def test_browser_forward_carries_on_past_a_keys_step_no_longer_shown():
+    found = run_wizard(TO_SHORTCUT_FINISH + """
+        window.history.back();
+        window.history.forward();
+        const finish = where();
+        window.history.back();
+        console.log(JSON.stringify({ finish, walk: where() }));
+    """, "?step=stops", begin=NO_BUS_KEY)
+    assert found["finish"] == {"shown": ["step-finish"], "at": 3, "step": "finish", "focus": "finish-heading",
+                               "page": "Check and save"}
+    assert found["walk"]["shown"] == ["step-walk"] and found["walk"]["at"] == 1
+
+
+@needs_node
+def test_browser_forward_onto_a_last_entry_no_longer_shown_stays_put():
+    found = run_wizard("""
+        click("stops-next");
+        await settle();
+        click("walk-next");
+        await settle();
+        window.history.back();
+        state.keys.find((key) => key.name === "BODS_API_KEY").set = true;
+        document.activeElement = document.body;
+        window.history.forward();             // the keys, and nothing shown after them
+        console.log(JSON.stringify({ shown: shown(), at, focus: document.activeElement === document.body }));
+    """, "?step=stops", begin=NO_BUS_KEY)
+    # Nowhere to carry on to: the browser is put back, as for any Forward refused.
+    assert found == {"shown": ["step-walk"], "at": 1, "focus": True}
+
+
+@needs_node
+def test_the_in_page_back_from_finish_also_passes_a_keys_step_no_longer_shown():
+    found = run_wizard(TO_SHORTCUT_FINISH + """
+        for (const [type, fn] of $("step-finish").querySelector("[data-back]").listeners) if (type === "click") fn();
+        console.log(JSON.stringify(where()));
+    """, "?step=stops", begin=NO_BUS_KEY)
+    assert found == {"shown": ["step-walk"], "at": 1, "step": "walk", "focus": "walk-heading", "page": "Walk times"}
+
+
+@needs_node
+def test_next_pressed_before_a_pass_back_lands_waits_for_it_and_adds_no_duplicate():
+    found = run_wizard(TO_SHORTCUT_FINISH + """
+        hold = true;
+        window.history.back();
+        deliver();                              // onto the keys: the walk times shown, the browser sent on
+        const passing = { shown: shown(), at };
+        click("walk-next");                     // Next before the browser gets there
+        await settle();
+        const held = shown();
+        drain();
+        hold = false;
+        console.log(JSON.stringify({ passing, held, after: where(), pages }));
+    """, "?step=stops", begin=NO_BUS_KEY)
+    assert found["passing"] == {"shown": ["step-walk"], "at": 2}
+    assert found["held"] == ["step-walk"]
+    assert found["after"] == {"shown": ["step-finish"], "at": 2, "step": "finish", "focus": "finish-heading",
+                              "page": "Check and save"}
+    assert found["pages"] == [{"step": "stops", "n": 0}, {"step": "walk", "n": 1}, {"step": "finish", "n": 2}]
+
+
+@needs_node
+def test_browser_back_and_forward_carry_on_past_two_steps_in_a_row_no_longer_shown():
+    found = run_wizard(TO_SHOW + """
+        click("show-next");
+        await settle();
+        const before = { shown: shown(), pages: structuredClone(pages) };
+        state.askViews = false;                 // both left out, as if never asked
+        state.askShow = false;
+        window.history.back();
+        const home = { shown: shown(), at, focus: document.activeElement.id };
+        window.history.forward();
+        console.log(JSON.stringify({ before, home, finish: { shown: shown(), at, focus: document.activeElement.id } }));
+    """, begin=BEGIN_SHOW)
+    assert [p["step"] for p in found["before"]["pages"]] == ["home", "views", "show", "finish"]
+    assert found["home"] == {"shown": ["step-home"], "at": 0, "focus": "home-heading"}
+    assert found["finish"] == {"shown": ["step-finish"], "at": 3, "focus": "finish-heading"}
+
+
+@needs_node
+def test_browser_back_with_no_step_shown_before_leaves_the_wizard():
+    found = run_wizard("""
+        click("stops-next");
+        await settle();
+        state.only = "station";                 // stands in for a first step no longer shown
+        window.history.back();
+        console.log(JSON.stringify({ at, shown: shown() }));
+    """, "?step=stops")
+    # On out past the wizard's own entries, as Back from its first step goes.
+    assert found == {"at": -1, "shown": ["step-walk"]}
+
+
 def test_only_the_steps_name_goes_in_the_history_state():
     text = _js("steps.js")
     # Only the step's name and its position: no answers, keys or labels. Only a step moved on to makes an entry.

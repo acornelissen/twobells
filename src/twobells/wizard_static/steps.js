@@ -155,6 +155,11 @@ function letGo() {
 // on the entry of the step shown, n entries from where it landed. It is tried
 // once: if that lands anywhere but home, the move is left alone. An entry that
 // is not this page's own is left alone without moving the history.
+//
+// An entry of a step no longer shown (a shortcut's keys once its key is set,
+// the tram stops once their lists can't be read) is passed instead: the move
+// carries on the same way to the nearest step that is shown, which is shown
+// at once, and the browser is sent on to its entry as an undo is.
 function popped(event) {
   const entry = event.state;
   const step = entry && entry.step;
@@ -181,9 +186,25 @@ function popped(event) {
     if (n < position) window.history.go(-(n + 1));
     return;
   }
-  if (n >= visited.length || visited[n] !== step || step === "done" || !shownSteps().includes(step)) return undo();
+  if (n >= visited.length || visited[n] !== step || step === "done") return undo();
+  if (!shownSteps().includes(step)) return pass(n, undo);
   position = n;
   go(step, { entry: false });
+}
+
+// Carries a move that landed on entry n, of a step no longer shown, on past
+// it. Back with no step shown before it leaves the wizard, as Back from its
+// first step does; Forward with none after it is undone.
+function pass(n, undo) {
+  const way = n < position ? -1 : 1;
+  const shown = shownSteps();
+  let m = n + way;
+  while (m >= 0 && m < visited.length && (visited[m] === "done" || !shown.includes(visited[m]))) m += way;
+  if (m < 0) return window.history.go(-(n + 1));
+  if (m >= visited.length) return undo();
+  position = m;
+  go(visited[m], { entry: false });
+  return undo();
 }
 
 export function setUpHistory() {
