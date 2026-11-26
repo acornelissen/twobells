@@ -4,6 +4,23 @@ Notable changes to this project. The format follows [Keep a Changelog](https://k
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-26
+
+A stop code box in the setup wizard for bus stops further from home, and more of the board's checks kept at their usual pace on an SD card that can't be written.
+
+### Added
+
+- The setup wizard's bus stops step has a box to add a stop by its code, for one further than 1 km from home. A stop's ATCO code finds it anywhere; the NaPTAN code on its sign (such as `manatdaw`) finds it when it is in the same area as home.
+
+### Fixed
+
+- In the setup wizard, the browser's Back and Forward now pass over a step that is no longer shown, instead of being refused each time.
+- On an SD card that can't be written, the e-paper board no longer asks gov.uk for the bank holidays every minute, and still knows a bank holiday when it comes.
+- An e-paper board in a big city now remembers for 6 hours that the one box of live buses was too big, instead of downloading it on every check before asking for the small boxes.
+- A screen that is started again and again on an SD card that can't be written no longer asks every source afresh at each start. On a Pi the screen service now has a folder in memory of its own for this, `/run/twobells-screen`.
+
+Going back to 0.6.0 while the SD card can't be written costs one round of checks: 0.6.0 doesn't read what 0.7.0 kept in memory.
+
 ## [0.6.0] - 2026-11-26
 
 Fixes from a review of the whole app: the board keeps going on a full SD card and after a restart, bus times are right in more awkward cases, a Pi update can be undone, and the settings and the setup wizard no longer lose what you typed.
@@ -350,7 +367,8 @@ The first release.
 - A network guard for the Pi's web server: nftables rules for it alone (`deploy/pi/twobells-web.nft`), loaded at boot by `twobells-guard.service` and matching the server by the cgroup systemd puts in their set (`NFTSet=`, systemd 254 or later, so Raspberry Pi OS Trixie on a Pi Zero or Pi 1), that keep it from connecting out to the internet and keep port 8090 to the home network. They back up the unit's systemd IP firewall, which a Pi Zero's kernel can't apply ("Preparation of BPF allow maps failed"). `install.sh` and `update.sh` install `nftables`. The server checks at start whether it can connect out, warns in its log if it can, and the settings' Overview shows **Network guard**: On, Off (a problem) or Can't tell.
 - A wall-tablet mode for the dashboard at `/?kiosk`: one screen with no controls, the station-board look by default, a shift of a pixel or two every few minutes against burn-in, dimmed in quiet hours, a large banner when the times stop updating, and a reload at 03:30.
 
-[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.6.0...main
+[Unreleased]: https://github.com/acornelissen/twobells/compare/v0.7.0...main
+[0.7.0]: https://github.com/acornelissen/twobells/releases/tag/v0.7.0
 [0.6.0]: https://github.com/acornelissen/twobells/releases/tag/v0.6.0
 [0.5.3]: https://github.com/acornelissen/twobells/releases/tag/v0.5.3
 [0.5.2]: https://github.com/acornelissen/twobells/releases/tag/v0.5.2
