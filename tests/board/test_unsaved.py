@@ -3,7 +3,9 @@ import os
 
 import pytest
 
-from twobells.board.unsaved import MARKS_NAME, MAX_BYTES, NAME, KeptMarks, KeptRender
+from twobells.board.state import departure_to_dict
+from twobells.board.unsaved import MAX_BYTES, NAME, SOURCES_NAME, KeptRender, KeptSources
+from twobells.core.model import Departure, Status
 
 DRAWN = {"signature": "a" * 64, "at": "2026-10-08T07:00:00", "page": "departures"}
 
@@ -73,36 +75,68 @@ def test_a_hard_link_a_folder_or_a_pipe_in_its_place_counts_as_none(run, tmp_pat
 
 
 MARK = {"last_success": "2026-10-08T09:18:00"}
+ENTRY = {
+    "departures": [departure_to_dict(Departure("train", "Northern", "Manchester Piccadilly", "09:45", None,
+                                               Status.ON_TIME))],
+    "last_attempt": "2026-10-08T09:29:00", "last_success": "2026-10-08T09:18:00",
+    "last_error": {"at": "2026-10-08T09:29:00", "message": "network down"},
+    "messages": ["Lifts out of use."], "note": "Timetabled times only", "not_updating": MARK,
+}
 
 
-def test_marks_kept_go_back_in_place_of_the_card_s_for_the_board_s_sources_only(run):
-    state = {"sources": {"train": {"not_updating": MARK, "departures": []}, "bus": {}, "metro": {"not_updating": MARK}}}
-    KeptMarks(run, ("train", "metro")).keep(state)
-    assert json.loads((run / MARKS_NAME).read_text()) == {"train": MARK, "metro": MARK}
-    assert (run / MARKS_NAME).stat().st_mode & 0o777 == 0o600
-    card = {"sources": {"train": {"not_updating": {"last_success": None}}, "bus": {"departures": []}}}
-    KeptMarks(run, ("train", "bus")).carry(card)  # [metro] since taken off the board
-    assert card == {"sources": {"train": {"not_updating": MARK}, "bus": {"departures": []}}}
+def test_what_each_source_fetched_goes_back_in_place_of_the_card_s_for_the_board_s_sources_only(run):
+    state = {"sources": {"train": {**ENTRY, "other": 1}, "bus": {}, "metro": {"last_attempt": "2026-10-08T09:29:00"}}}
+    assert KeptSources(run, ("train", "metro")).keep(state)
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"train": ENTRY,
+                                                            "metro": {"last_attempt": "2026-10-08T09:29:00"}}
+    assert (run / SOURCES_NAME).stat().st_mode & 0o777 == 0o600
+    card = {"sources": {"train": {"last_attempt": "2026-10-08T09:18:00", "last_error": {"at": "x"}, "other": 2},
+                        "bus": {"departures": []}}}
+    KeptSources(run, ("train", "bus")).carry(card)  # [metro] since taken off the board
+    assert card == {"sources": {"train": {**ENTRY, "other": 2}, "bus": {"departures": []}}}
 
 
-def test_no_marks_keeps_no_file(run):
-    KeptMarks(run, ("train",)).keep({"sources": {"train": {"not_updating": MARK}}})
-    KeptMarks(run, ("train",)).keep({"sources": {"train": {}}})
-    assert not (run / MARKS_NAME).exists()
+def test_a_card_tried_since_keeps_its_own(run):
+    # By a release that knows nothing of the file, say.
+    KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}})
+    newer = {"last_attempt": "2026-10-08T09:35:00", "last_success": "2026-10-08T09:35:00"}
+    card = {"sources": {"train": dict(newer)}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": newer}}
+
+
+def test_nothing_to_keep_keeps_no_file(run):
+    KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}})
+    assert KeptSources(run, ("train",)).keep({"sources": {"train": {}}})
+    assert not (run / SOURCES_NAME).exists()
+
+
+@pytest.mark.parametrize("change", [
+    {"not_updating": None}, {"not_updating": {"last_success": "soon"}}, {"not_updating": {"last_success": None, "x": 1}},
+    {"not_updating": {"last_success": "2026-10-08T09:18:00+01:00"}}, {"last_attempt": "09:29"},
+    {"last_success": "2026-10-08T09:18:00.1234567"}, {"last_error": {"at": "2026-10-08T09:29:00"}},
+    {"last_error": {"at": "2026-10-08T09:29:00", "message": 1}}, {"messages": "Lifts out of use."},
+    {"messages": ["x" * 2001]}, {"messages": ["x"] * 17}, {"note": None}, {"departures": [{"service": "x"}]},
+    {"departures": [ENTRY["departures"][0]] * 33}, {"departures": [{**ENTRY["departures"][0], "scheduled": "9:45"}]},
+    {"other": 1},
+])
+def test_entries_kept_with_one_part_not_of_the_shape_are_not_put_back(run, change):
+    (run / SOURCES_NAME).write_text(json.dumps({"bus": ENTRY, "train": {**ENTRY, **change}}))
     card = {"sources": {"train": {"not_updating": MARK}}}
-    KeptMarks(run, ("train",)).carry(card)
-    assert card == {"sources": {"train": {"not_updating": MARK}}}  # the card's own stays
+    KeptSources(run, ("train", "bus")).carry(card)
+    assert card == {"sources": {"train": {"not_updating": MARK}}}  # neither: the card's stands
 
 
-@pytest.mark.parametrize("mark", [None, {"last_success": "soon"}, {"last_success": None, "x": 1},
-                                  {"last_success": "2026-10-08T09:18:00+01:00"}])
-def test_marks_kept_with_one_that_isnt_a_mark_are_not_put_back(run, mark):
-    (run / MARKS_NAME).write_text(json.dumps({"bus": MARK, "train": mark}))
-    card = {"sources": {"train": {"not_updating": MARK}}}
-    KeptMarks(run, ("train", "bus")).carry(card)
-    assert card == {"sources": {"train": {"not_updating": MARK}}}  # neither kept mark: the card's stands
+@pytest.mark.parametrize("kept", [[], {"Train": ENTRY}, {"../state": ENTRY}, {"train": None},
+                                  {f"s{chr(97 + n)}": ENTRY for n in range(9)}])
+def test_a_file_not_of_the_shape_is_not_put_back(run, kept):
+    (run / SOURCES_NAME).write_text(json.dumps(kept))
+    card = {"sources": {}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {}}
 
 
-def test_a_mark_that_isnt_one_is_never_kept(run):
-    KeptMarks(run, ("train",)).keep({"sources": {"train": {"not_updating": {"last_success": "soon"}}}})
-    assert not (run / MARKS_NAME).exists()
+def test_an_entry_not_of_the_shape_is_never_kept(run):
+    KeptSources(run, ("train", "bus")).keep({"sources": {"train": {"not_updating": {"last_success": "soon"}},
+                                                         "bus": {"last_attempt": "2026-10-08T09:29:00"}}})
+    assert json.loads((run / SOURCES_NAME).read_text()) == {"bus": {"last_attempt": "2026-10-08T09:29:00"}}

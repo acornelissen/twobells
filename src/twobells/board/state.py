@@ -125,13 +125,16 @@ def is_mark(value: object) -> bool:
     None if nothing had come; nothing more."""
     if not isinstance(value, dict) or set(value) != {"last_success"}:
         return False
-    when = value["last_success"]
-    if when is None:
-        return True
-    if not isinstance(when, str) or len(when) > _MOST_TIME_CHARS:
+    return value["last_success"] is None or is_time(value["last_success"])
+
+
+def is_time(value: object) -> bool:
+    """Whether `value` is a time as the state saves one: by the board's
+    clock (no offset), as to_iso writes it, and no longer."""
+    if not isinstance(value, str) or len(value) > _MOST_TIME_CHARS:
         return False
     try:
-        return datetime.fromisoformat(when).tzinfo is None
+        return datetime.fromisoformat(value).tzinfo is None
     except ValueError:
         return False
 

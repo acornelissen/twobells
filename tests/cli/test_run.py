@@ -124,11 +124,12 @@ def test_off_the_pi_the_timer_trusts_what_it_saved_as_ever(timer, monkeypatch):
     assert list(timer.folder.iterdir()) == []
 
 
-def test_a_fetch_whose_state_couldnt_be_saved_doesnt_count(timer):
+def test_a_fetch_whose_state_couldnt_be_saved_nor_kept_in_memory_doesnt_count(timer, monkeypatch):
     # The next run reads the card afresh, and it still has what came before the start.
     timer.run()
     timer.boot()
     timer.full = True
+    unwritable(timer, monkeypatch, "unsaved-sources.json", "full")
     assert timer.run(THU_0700 + timedelta(minutes=2)) != 0
     assert timer.calls == 2 and not timer.marked  # this run shows what it fetched
     timer.error = OSError("network down")
@@ -204,7 +205,7 @@ def test_a_record_that_stops_taking_writes_in_a_window_never_flaps(timer, monkey
     assert timer.calls - calls == 15 and timer.drawn - drawn <= 1  # every 2 minutes, as ever
 
 
-@pytest.mark.parametrize("name", ["last-render.json", "not-updating.json"])
+@pytest.mark.parametrize("name", ["last-render.json", "unsaved-sources.json"])
 @pytest.mark.parametrize("how", ["folder", "full"])
 def test_a_file_kept_for_a_card_that_cant_be_saved_that_cant_be_written_does_no_harm(timer, monkeypatch, name, how):
     timer.run(at("09:18"))
@@ -216,9 +217,9 @@ def test_a_file_kept_for_a_card_that_cant_be_saved_that_cant_be_written_does_no_
     timer.full = True
     for minute in range(31, 40):
         assert timer.run(at(f"09:{minute}")) != 0  # drawn and failing, as off the Pi; never a crash
-    # Without the marks the redraw is still kept; without the redraw, each
-    # run draws, as on a full card with no runtime folder at all.
-    assert timer.drawn - drawn <= (1 if name == "not-updating.json" else 9)
+    # Without what was fetched the redraw is still kept; without the redraw,
+    # each run draws, as on a full card with no runtime folder at all.
+    assert timer.drawn - drawn <= (1 if name == "unsaved-sources.json" else 9)
 
 
 def test_the_first_run_after_an_update_marks_until_each_source_is_due_with_two_redraws_at_most(timer):
@@ -266,11 +267,11 @@ def test_a_mark_showing_as_the_window_closes_stays_on_a_card_that_cant_be_saved(
 def test_marks_kept_in_memory_go_to_the_card_once_it_saves_and_go_from_memory(timer):
     failing_into_the_close_on_a_full_card(timer)
     timer.run(at("09:31"))
-    assert json.loads((timer.folder / "not-updating.json").read_text()) == {
-        "train": {"last_success": "2026-10-08T09:18:00"}}
+    kept = json.loads((timer.folder / "unsaved-sources.json").read_text())
+    assert kept["train"]["not_updating"] == {"last_success": "2026-10-08T09:18:00"}
     timer.full = False
     assert timer.run(at("09:40")) == 0 and timer.marked
-    assert not (timer.folder / "not-updating.json").exists()  # the card has it now
+    assert not (timer.folder / "unsaved-sources.json").exists()  # the card has it now
     assert json.loads(timer.state.read_text())["sources"]["train"]["not_updating"] == {
         "last_success": "2026-10-08T09:18:00"}
     assert timer.run(at("09:41")) == 0 and timer.marked
@@ -283,7 +284,7 @@ def test_the_kept_redraw_is_as_a_release_that_knows_nothing_of_the_marks_reads_i
     failing_into_the_close_on_a_full_card(timer)
     timer.run(at("09:31"))
     assert sorted(path.name for path in timer.folder.iterdir()) == [
-        "last-render.json", "not-updating.json", "since-boot.json"]
+        "last-render.json", "since-boot.json", "unsaved-sources.json"]
     assert set(json.loads((timer.folder / "last-render.json").read_text())) == {"signature", "at", "page"}
     assert KeptRender(timer.folder).read() is not None
 
@@ -293,7 +294,7 @@ def test_a_run_whose_draw_fails_keeps_no_marks_in_memory(timer, monkeypatch):
 
     failing_into_the_close_on_a_full_card(timer)
     timer.run(at("09:31"))
-    assert (timer.folder / "not-updating.json").exists()
+    assert (timer.folder / "unsaved-sources.json").exists()
 
     def broken(display, image):
         raise OSError("GPIO busy")
@@ -302,7 +303,7 @@ def test_a_run_whose_draw_fails_keeps_no_marks_in_memory(timer, monkeypatch):
     (timer.folder / "last-render.json").unlink()  # so it draws
     with pytest.raises(OSError, match="GPIO busy"):
         timer.run(at("09:32"))
-    assert not (timer.folder / "not-updating.json").exists()
+    assert not (timer.folder / "unsaved-sources.json").exists()
 
 
 def test_marks_are_never_kept_in_memory_while_the_card_saves(timer):
@@ -310,17 +311,17 @@ def test_marks_are_never_kept_in_memory_while_the_card_saves(timer):
     for hhmm in ("09:18", "09:26", "09:29", "09:31"):
         assert timer.run(at(hhmm)) == 0
     assert timer.marked
-    assert not (timer.folder / "not-updating.json").exists() and not (timer.folder / "last-render.json").exists()
+    assert not (timer.folder / "unsaved-sources.json").exists() and not (timer.folder / "last-render.json").exists()
 
 
-def test_marks_kept_for_a_card_that_has_moved_on_since_are_not_shown(timer):
+def test_what_was_kept_for_a_card_that_has_moved_on_since_is_not_used(timer):
     # Rolled back to a release that knows nothing of the file, then forward
-    # again: the card has a fetch since, which the marks kept were not for.
+    # again: the card has a fetch since, which what was kept was not for.
     from twobells.board.state import departure_to_dict
 
     failing_into_the_close_on_a_full_card(timer)
     timer.run(at("09:31"))
-    assert (timer.folder / "not-updating.json").exists()
+    assert (timer.folder / "unsaved-sources.json").exists()
     saved = json.loads(timer.state.read_text())
     entry = saved["sources"]["train"]
     entry.update(last_success="2026-10-08T09:35:00", last_attempt="2026-10-08T09:35:00",
@@ -329,21 +330,54 @@ def test_marks_kept_for_a_card_that_has_moved_on_since_are_not_shown(timer):
     timer.state.write_text(json.dumps(saved))
     timer.full = False
     timer.run(at("09:40"))
+    assert [r.left for r in timer.results[-1].view.section("train").rows] == ["10:15"]  # the card's
+    assert "not_updating" not in json.loads(timer.state.read_text())["sources"]["train"]
+    # Nor can this release vouch that the older one's fetch came since the
+    # boot: marked, as the network is down, until one of its own works.
+    assert timer.marked
+    timer.error = None
+    timer.run(datetime(2026, 10, 9, 6, 30))
     assert not timer.marked
-    assert [r.left for r in timer.results[-1].view.section("train").rows] == ["10:15"]
+
+
+MARKED = {"not_updating": {"last_success": None}}
 
 
 @pytest.mark.parametrize("kept", [
-    [], {"train": None}, {"train": {"last_success": "09:18"}}, {"train": {"last_success": None, "x": 1}},
-    {"train": {"last_success": "2026-10-08T09:18:00+01:00"}}, {"Train": {"last_success": None}},
-    {"../state": {"last_success": None}}, {f"s{chr(97 + n)}": {"last_success": None} for n in range(9)},
+    [], {"train": None}, {"train": {"not_updating": {"last_success": "09:18"}}},
+    {"train": {"not_updating": {"last_success": None, "x": 1}}},
+    {"train": {"not_updating": {"last_success": "2026-10-08T09:18:00+01:00"}}}, {"Train": MARKED},
+    {"../state": MARKED}, {f"s{chr(97 + n)}": MARKED for n in range(9)}, {"train": {**MARKED, "x": 1}},
 ])
 def test_marks_kept_in_memory_of_any_other_shape_are_ignored(timer, kept):
     timer.run(at("09:18"))
     timer.full = True
-    (timer.folder / "not-updating.json").write_text(json.dumps(kept))
+    (timer.folder / "unsaved-sources.json").write_text(json.dumps(kept))
     timer.run(at("09:31"))
     assert not timer.marked  # the card's own: data fine as the window closed
+
+
+def test_a_card_that_cant_be_saved_keeps_each_source_to_its_interval(timer):
+    timer.run(at("07:00"))
+    timer.full = True
+    drawn = timer.drawn
+    for minute in range(1, 21):
+        assert timer.run(at("07:00") + timedelta(minutes=minute)) != 0
+        assert not timer.marked, minute
+    assert timer.calls == 11  # every 2 minutes, not every minute
+    assert timer.drawn == drawn
+
+
+def test_a_fetch_kept_in_memory_counts_as_fetched_since_the_boot(timer):
+    timer.run()
+    timer.boot()
+    timer.full = True
+    assert timer.run(THU_0700 + timedelta(minutes=2)) != 0
+    timer.error = OSError("network down")
+    for minute in (3, 4, 5):
+        timer.run(THU_0700 + timedelta(minutes=minute))
+        assert not timer.marked, minute  # what it showed at 07:02, kept in memory
+    assert timer.calls == 3  # 07:04 was due: it failed, and what came at 07:02 is still fresh
 
 
 # --- 3. The first run after a boot fetches each free source once, its window open or not ---
@@ -397,7 +431,7 @@ def test_after_a_boot_in_a_closed_window_on_a_full_card_it_tries_once_only(timer
     assert timer.calls == 2 and not timer.marked  # this run shows what it fetched
     for minute in range(1, 30):
         timer.run(THU_2100 + timedelta(minutes=minute))
-    assert timer.calls == 2 and timer.marked  # what the card has is from before the boot
+    assert timer.calls == 2 and not timer.marked  # what it fetched is kept in memory
 
 
 def test_the_first_run_after_an_update_outside_the_windows_fetches_once_and_redraws_once_at_most(timer):
@@ -461,4 +495,4 @@ def test_a_rollback_reads_the_state_as_ever_whatever_the_runtime_folder_holds(ti
     assert set(saved["sources"]["train"]) <= {"departures", "last_attempt", "last_success", "last_error",
                                               "not_updating", "messages"}
     record = json.loads((timer.folder / "since-boot.json").read_text())
-    assert record == {"fetched": ["train"], "tried": []}
+    assert record == {"fetched": {"train": "2026-10-08T09:18:00"}, "tried": []}

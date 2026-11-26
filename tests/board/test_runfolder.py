@@ -65,6 +65,11 @@ def test_what_isnt_of_its_shape_or_is_too_big_reads_as_none(run, body):
     assert RunFile(run, "n.json", 32, numbers, "numbers").read() is None
 
 
+def test_json_nested_too_deep_to_read_reads_as_none(run):
+    (run / "n.json").write_bytes(b"[" * 30000 + b"]" * 30000)
+    assert RunFile(run, "n.json", 65536, numbers, "numbers").read() is None  # not RecursionError
+
+
 def test_a_link_in_its_place_is_never_followed(run, tmp_path):
     elsewhere = tmp_path / "elsewhere.json"
     elsewhere.write_text("[1]")

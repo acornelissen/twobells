@@ -13,9 +13,9 @@ StateDirectoryMode=0750
 # In memory, kept between runs until the Pi restarts (board/runfolder.py):
 # which sources each run has fetched since the Pi started, so departures saved
 # before it aren't taken for new (board/sinceboot.py); and while the state
-# can't be saved (a full or read-only SD card), the last redraw and any "not
-# updating" marks, so the next run neither draws the panel again nor loses a
-# mark (board/unsaved.py).
+# can't be saved (a full or read-only SD card), the last redraw and what each
+# source last fetched, so the next run neither draws the panel again nor asks
+# again before its interval (board/unsaved.py).
 RuntimeDirectory=twobells
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes

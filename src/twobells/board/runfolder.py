@@ -9,7 +9,7 @@ Pi there is no such folder ($RUNTIME_DIRECTORY isn't set), and nothing is
 kept.
 
 Each file has one fixed shape, which its reader checks: the last redraw
-and the "not updating" marks while the state can't be saved
+and what each source last fetched while the state can't be saved
 (board/unsaved.py), and what was fetched since the Pi started
 (board/sinceboot.py). What is read back is untrusted: only a plain file of
 this user's, with one link and never through one, within its size, of
@@ -99,7 +99,7 @@ class RunFile:
         if body is not None and len(body) <= self._most_bytes:
             try:
                 value = json.loads(body.decode("utf-8"))
-            except ValueError:  # bad JSON or bad UTF-8
+            except (ValueError, RecursionError):  # bad JSON or bad UTF-8, or nested too deep to read
                 value = None
         if not self._valid(value):
             self._warn("Ignoring %s kept in memory: it isn't of the shape kept", self._what)

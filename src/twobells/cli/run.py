@@ -23,7 +23,7 @@ from ..board.scroll import SCROLL_FRAME_S
 from ..board.sinceboot import SinceBoot
 from ..board.speaker import Speaker
 from ..board.state import StateStore
-from ..board.unsaved import KeptMarks, KeptRender
+from ..board.unsaved import KeptRender, KeptSources
 from ..board.view import SetupView
 from ..core.errors import ConfigError
 from ..settings.config import needs_setup
@@ -126,71 +126,69 @@ def _single(store: StateStore, state: dict, draw: Callable[[Started | None], Run
     as a Started, which it adds to as it goes: until a source is fetched
     since, its saved departures are marked not updating, as a started
     screen's are, and outside its windows it has one fetch for the start. A
-    source is counted as fetched only once the state is saved with its
-    fetch; one tried is counted either way, so it isn't tried again every
+    source counts as fetched only while what the next run reads has that
+    fetch; one tried counts either way, so it isn't tried again every
     minute. Each run first writes back the record it read: if it can't, it
     goes without one. Without the folder or the record, `draw` is given
     None, and trusts what was saved, as ever.
 
-    While the state can't be saved, the last redraw and the sources' "not
-    updating" marks are kept in memory instead (board/unsaved.py), so the
-    next minute's run, reading the state afresh, doesn't take the panel to
-    show something else and draw it again, nor lose a mark that showed as a
-    window closed. They are forgotten before each save, and kept again only
-    after one that fails with the board drawn, so what is there is never
-    older than the state on the card; a draw that failed may have left the
-    panel half drawn, and keeps nothing, so the next run draws."""
+    While the state can't be saved, the last redraw and what each source
+    last fetched and tried are kept in memory instead (board/unsaved.py),
+    so the next minute's run, reading the state afresh, doesn't take the
+    panel to show something else and draw it again, ask each source again
+    before its interval, nor lose a mark that showed as a window closed.
+    They are forgotten before each save, and kept again only after one that
+    fails with the board drawn, so what is there is never older than the
+    state on the card; a draw that failed may have left the panel half
+    drawn, and keeps nothing, so the next run draws."""
     folder = runfolder.here()
     kept = KeptRender(folder) if folder is not None else None
-    marks = KeptMarks(folder, sources or ()) if folder is not None else None
+    entries = KeptSources(folder, sources or ()) if folder is not None else None
     boot = SinceBoot(folder, sources) if folder is not None and sources else None
     if kept is not None:
         drawn = kept.read()
         if drawn is not None:
             state["last_render"] = drawn
-    if marks is not None:
-        marks.carry(state)
-    before = boot.read() if boot is not None else None
-    if boot is not None and before is not None and not boot.keep(before):
+    if entries is not None:
+        entries.carry(state)
+    started = boot.read(state) if boot is not None else None
+    if boot is not None and started is not None and not boot.keep(started, state):
         # A record that can't be kept would read as nothing fetched every run.
         logging.warning("Not counting what is fetched since the Pi started, so trusting what was saved: %s",
                         boot.problem)
-        boot = before = None
-    started = Started(set(before.fetched), set(before.tried)) if before is not None else None
+        boot = started = None
     try:
         result = draw(started)
     except BaseException:
-        _forget(kept, marks)
-        _count_since_boot(boot, before, started, _save(store, state))
+        _forget(kept, entries)
+        _save(store, state)
+        _count_since_boot(boot, started, state)
         raise
-    _forget(kept, marks)
+    _forget(kept, entries)
     saved = _save(store, state)
-    _count_since_boot(boot, before, started, saved)
-    if not saved and kept is not None and marks is not None:
+    if not saved and kept is not None and entries is not None:
         kept.keep(state.get("last_render"))
-        marks.keep(state)
+        entries.keep(state)
+    _count_since_boot(boot, started, state)
     logging.info("rendered=%s", result.rendered)
     return 0 if saved else UNSAVED
 
 
-def _forget(kept: KeptRender | None, marks: KeptMarks | None) -> None:
+def _forget(kept: KeptRender | None, entries: KeptSources | None) -> None:
     """Forgets what is kept in memory while the state can't be saved, before a save."""
     if kept is not None:
         kept.forget()
-    if marks is not None:
-        marks.forget()
+    if entries is not None:
+        entries.forget()
 
 
-def _count_since_boot(boot: SinceBoot | None, before: Started | None, started: Started | None,
-                      saved: bool) -> None:
-    """Adds what this run did to the record of what was done since the Pi
-    started: the sources it tried, and those it fetched once the state is
-    saved with them. Written only when it changes."""
-    if boot is None or before is None or started is None:
-        return
-    now = Started(started.fetched if saved else before.fetched, started.tried)
-    if now != before:
-        boot.keep(now)
+def _count_since_boot(boot: SinceBoot | None, started: Started | None, state: dict) -> None:
+    """Records what this run did since the Pi started: the sources it tried,
+    and those it fetched, each with its last success now. Last, after the
+    state is saved or kept in memory, so a fetch that reached neither reads
+    next time as not fetched."""
+    if boot is not None and started is not None:
+        boot.keep(started, state)
 
 
 def _save(store: StateStore, state: dict) -> bool:
