@@ -902,11 +902,18 @@ def test_install_and_update_ask_the_app_not_config_toml(name):
     assert '"$(query display)"' in script
 
 
+def _always_runs(name: str, command: str) -> bool:
+    """Whether the script `name` runs `command` whatever happens: on a line of
+    its own, or through update.sh's card_step, which runs it as is until the
+    SD card has refused the board's state."""
+    return bool(re.search(rf'^(card_step "[^"\n]+" "[^"\n]+" \\\n  )?{re.escape(command)}$', _script(name), re.M))
+
+
 @pytest.mark.parametrize("name", SCRIPTS)
 def test_install_and_update_always_turn_the_timetable_timer_on(name):
     # Trams or BODS buses set up after installing need it, and nothing else turns it on (the
     # Pi's fetch service never builds a timetable). It builds nothing until a build is due.
-    assert "\nsystemctl enable --now twobells-timetable.timer\n" in _script(name)
+    assert _always_runs(name, "systemctl enable --now twobells-timetable.timer")
 
 
 def test_saving_the_settings_starts_a_timetable_check():
@@ -925,7 +932,7 @@ def test_saving_the_settings_starts_a_timetable_check():
 
 @pytest.mark.parametrize("name", SCRIPTS)
 def test_install_and_update_watch_the_settings_for_a_timetable_check(name):
-    assert "\nsystemctl enable --now twobells-timetable.path\n" in _script(name)
+    assert _always_runs(name, "systemctl enable --now twobells-timetable.path")
 
 
 def test_update_starts_a_timetable_build_only_when_the_settings_want_one():
@@ -1016,7 +1023,7 @@ def test_update_switches_to_the_new_release_only_once_it_imports_and_restarts_af
              "\nsystemctl restart twobells-fetch.path twobells-fetch.service\n",
              "\nsystemctl try-restart twobells-web.service\n", "\nsystemctl try-restart twobells-screen.service\n",
              'if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', "\nsay_if_unguarded\n",
-             "\nprune\necho\n"]
+             '" \\\n  prune\n', 'if [[ -n "$card" ]]; then\n', '  exit "$KEPT_UNSAVED"\nfi\necho\n']
     places = [update.index(step) for step in steps]
     assert places == sorted(places)
     # The board's timer carries on throughout: the venv it runs isn't touched until
@@ -1588,7 +1595,7 @@ def test_update_goes_back_when_the_e_paper_board_fails_on_the_new_release():
     check = ('if $epaper; then\n  echo "Drawing the e-paper board on the new release"\n'
              "  if ! draws; then\n")
     steps = ['if ! stay_up "${watched[@]}"; then\n  go_back\n  exit 1\nfi\n', check, "      go_back\n      exit 1\n",
-             "\nsay_if_unguarded\n", "\nsystemctl enable --now twobells-timetable.timer\n"]
+             "\nsay_if_unguarded\n", "\n  systemctl enable --now twobells-timetable.timer\n"]
     places = [update.index(step) for step in steps]
     assert places == sorted(places)
     said = update[places[1]:places[2]]
@@ -1763,6 +1770,201 @@ def test_a_probe_that_hangs_and_ignores_being_asked_to_stop_is_killed(tmp_path):
                           env={"PATH": f"{fakes}:/usr/bin:/bin", "SHOWN": FAILED_74})
     assert (done.returncode, done.stdout) == (0, "release\n"), done.stderr
     assert time.monotonic() - started < 15
+
+
+# The end of an update whose board drew on the new release but couldn't save its state: the
+# release stays, the rest goes on as far as the card lets it, and it exits KEPT_UNSAVED.
+KEPT_UNSAVED = 110
+DRAWING = 'if $epaper; then\n  echo "Drawing the e-paper board on the new release"\n'
+NEW, BEFORE, OLDER = "0.6.0-cccccc", "0.5.3-bbbbbb", "0.5.0-aaaaaa"
+
+
+def _end_of_update(tmp_path: Path, card: str | None, room: bool = False, enable: str = "", rm: str = ""):
+    """Runs update.sh from the e-paper board's run on the new release to its
+    end, then its finish trap, on release folders in tmp_path (the new one
+    current, the one before previous, an older one), with what reaches past
+    them stood in for. `card`: None, the board drew and saved; "full" or
+    "read-only": it drew, but the card refused its state. `room`: whether
+    room_to_save finds room by the end. `enable`: what systemctl enable says
+    as it fails ("": it doesn't fail); `rm`: what rm says as it fails, of
+    each file it can't remove. Each systemctl call goes in tmp_path/calls."""
+    import shutil
+    import subprocess
+
+    prefix = tmp_path / "opt"
+    for name in (NEW, BEFORE, OLDER):
+        (prefix / "releases" / name / "venv").mkdir(parents=True)
+    (prefix / "venv").symlink_to(f"releases/{NEW}/venv")
+    (prefix / "previous").symlink_to(f"releases/{BEFORE}/venv")
+    for folder in ("build", "saved"):
+        (tmp_path / folder / "inside").mkdir(parents=True)
+    update = _script("update.sh")
+    [constant] = re.findall(r"^KEPT_UNSAVED=\d+$", update, re.M)
+    functions = "".join(f"{name}() {{\n{_function('update.sh', name)}}}\n"
+                        for name in ("refused_by_card", "card_step", "tidy", "finish"))
+    stubs = ('draws() { [[ -z "$CARD" ]]; }\ncard_refused_save() { [[ -n "$CARD" ]]; }\n'
+             'card_read_only() { [[ "$CARD" == read-only ]]; }\nroom_to_save() { [[ -n "$ROOM" ]]; }\n'
+             'go_back() { echo "went back"; }\njournalctl() { :; }\nquery() { return 1; }\nhostname() { echo pi; }\n'
+             'systemctl() {\n  echo "systemctl $*" >> "$CALLS"\n'
+             '  if [[ "$1" == enable && -n "$ENABLE" ]]; then echo "$ENABLE" >&2; return 1; fi\n'
+             '  [[ "$1" != is-active ]]\n}\n'
+             'rm() {\n  local file\n  if [[ -z "$RM" ]]; then command rm "$@"; return; fi\n'
+             '  for file in "$@"; do [[ "$file" == -* ]] || echo "rm: cannot remove \'$file/x\': $RM" >&2; done\n'
+             '  return 1\n}\n')
+    setting = (f'{constant}\nrelease={NEW} build="$3/build" saved="$3/saved" card="" version=0.6.0 epaper=true\n'
+               "RENDER_WAIT=300\n")
+    script = (f'set -euo pipefail\nPREFIX="$1"\nsource "$2"\n{setting}{functions}{stubs}trap finish EXIT\n'
+              + update[update.index(DRAWING):])
+    return subprocess.run([shutil.which("bash") or "bash", "-c", script, "bash", str(prefix), str(PI / "releases.sh"),
+                           str(tmp_path)], capture_output=True, text=True,
+                          env={"PATH": "/usr/bin:/bin", "CARD": card or "", "ROOM": "yes" if room else "",
+                               "ENABLE": enable, "RM": rm, "CALLS": str(tmp_path / "calls")})
+
+
+TMP = re.compile(r"/tmp\b(?!/)")  # /tmp itself, not a folder in it (as tmp_path may be)
+
+
+def _lines_naming(said: str, name: str) -> list[str]:
+    return [line for line in said.splitlines() if name in line]
+
+
+def test_an_update_that_went_in_whole_ends_as_ever(tmp_path):
+    done = _end_of_update(tmp_path, None)
+    assert done.returncode == 0, done.stderr
+    assert "Updated to 0.6.0;" in done.stdout
+    assert _layout(tmp_path / "opt")["releases"] == [BEFORE, NEW]  # the older one pruned
+    assert not (tmp_path / "build").exists() and not (tmp_path / "saved").exists()
+    calls = (tmp_path / "calls").read_text().splitlines()
+    for unit in ("twobells-timetable.timer", "twobells-timetable.path"):
+        assert f"systemctl enable --now {unit}" in calls
+
+
+def test_a_board_that_couldn_t_save_on_a_full_card_keeps_the_release_and_ends_saying_so(tmp_path):
+    done = _end_of_update(tmp_path, "full")
+    assert done.returncode == KEPT_UNSAVED, done.stderr
+    assert "went back" not in done.stdout
+    # The rest of the update went on: the timetable units on, the older release pruned, /tmp tidied.
+    calls = (tmp_path / "calls").read_text().splitlines()
+    for unit in ("twobells-timetable.timer", "twobells-timetable.path"):
+        assert f"systemctl enable --now {unit}" in calls
+    layout = _layout(tmp_path / "opt")
+    assert (layout["venv"], layout["previous"], layout["releases"]) == (
+        f"releases/{NEW}/venv", f"releases/{BEFORE}/venv", [BEFORE, NEW])
+    assert not (tmp_path / "build").exists() and not (tmp_path / "saved").exists()
+    # Not the end of an update that went in whole, but the release, and how to make room.
+    assert "Updated to" not in done.stdout + done.stderr
+    assert _lines_naming(done.stderr, "0.6.0") and "df -i /var/lib/twobells" in done.stderr
+    assert "journalctl -u twobells -n 30" in done.stderr
+    # The board isn't run again: its timer does, a minute on.
+    assert not [call for call in calls if call.startswith(("systemctl start twobells.service", "systemctl stop"))]
+
+
+def test_a_full_card_that_has_room_by_the_end_leaves_the_next_run_to_the_timer(tmp_path):
+    done = _end_of_update(tmp_path, "full", room=True)
+    assert done.returncode == KEPT_UNSAVED, done.stderr
+    assert "systemctl status twobells" in done.stderr and "df -i" not in done.stderr
+    calls = (tmp_path / "calls").read_text().splitlines()
+    assert not [call for call in calls if call.startswith("systemctl start twobells.service")]
+
+
+# What systemctl says when PID 1 can't make a unit's link, as it says an errno (systemd's install_error).
+ENABLE_REFUSED = ("Failed to enable unit: File /etc/systemd/system/timers.target.wants/twobells-timetable.timer: "
+                  f"{READ_ONLY}")
+
+
+def test_a_read_only_card_leaves_what_it_won_t_take_for_later_and_says_each_once(tmp_path):
+    done = _end_of_update(tmp_path, "read-only", enable=ENABLE_REFUSED, rm=READ_ONLY)
+    assert done.returncode == KEPT_UNSAVED, done.stderr
+    assert "went back" not in done.stdout
+    # No error of rm's or systemctl's: a line for each step the card refused.
+    assert "rm: cannot remove" not in done.stderr and "Failed to enable" not in done.stderr
+    for named in ("twobells-timetable.timer", "twobells-timetable.path", f"{tmp_path}/opt/releases"):
+        assert len(_lines_naming(done.stderr, named)) == 1, (named, done.stderr)
+    lines = done.stderr.splitlines()
+    tidied = [at for at, line in enumerate(lines) if TMP.search(line)]  # this run's work there
+    assert len(tidied) == 1, done.stderr
+    # The links and the releases as they were: nothing half done.
+    layout = _layout(tmp_path / "opt")
+    assert (layout["venv"], layout["previous"], layout["releases"]) == (
+        f"releases/{NEW}/venv", f"releases/{BEFORE}/venv", [OLDER, BEFORE, NEW])
+    # Each said before the end, which names the release and says to back the card up.
+    assert tidied[0] < min(at for at, line in enumerate(lines) if "0.6.0" in line)
+    assert "backup.md" in done.stderr and "journalctl -u twobells -n 30" in done.stderr
+    assert "Updated to" not in done.stdout + done.stderr
+
+
+def test_after_the_card_refused_the_state_any_other_failure_still_stops_the_update(tmp_path):
+    # Fail closed: only the card's own refusal is put off. The exit trap's tidying, which the
+    # card refuses too, doesn't change the status or spray errors either.
+    said = "Failed to enable unit: Unit file twobells-timetable.timer does not exist."
+    done = _end_of_update(tmp_path, "read-only", enable=said, rm=READ_ONLY)
+    assert done.returncode == 1
+    assert said in done.stderr and "rm: cannot remove" not in done.stderr
+    assert [line for line in done.stderr.splitlines() if TMP.search(line)]
+
+
+def test_until_the_card_refuses_the_state_a_failing_step_stops_the_update_as_ever(tmp_path):
+    # set -e as it was: a prune that fails stops it, after trying each folder, with rm's own errors.
+    done = _end_of_update(tmp_path, None, rm="Permission denied")
+    assert done.returncode == 1
+    assert "Updated to" not in done.stdout and "rm: cannot remove" in done.stderr
+
+
+def test_a_failed_removal_fails_prune_after_it_tries_each_folder(tmp_path):
+    # Also where set -e doesn't stop it at the first, as when card_step runs it after the card refused.
+    for name in (OLDER, "0.4.0-dddddd", BEFORE, NEW):
+        (tmp_path / "releases" / name / "venv").mkdir(parents=True)
+    (tmp_path / "venv").symlink_to(f"releases/{NEW}/venv")
+    (tmp_path / "previous").symlink_to(f"releases/{BEFORE}/venv")
+    stub = ('rm() { if [[ "${*: -1}" == */0.4.0-dddddd ]]; then echo refused >&2; return 1; fi; '
+            'command rm "$@"; }\n')
+    done = _bash(f'set -euo pipefail\nPREFIX="$1"\nsource "$2"\n{stub}if prune; then echo pruned; else echo failed; fi',
+                 str(tmp_path), str(PI / "releases.sh"))
+    assert (done.returncode, done.stdout) == (0, "failed\n"), done.stderr
+    assert _layout(tmp_path)["releases"] == ["0.4.0-dddddd", BEFORE, NEW]  # 0.5.0's went, after 0.4.0's failed
+
+
+def test_only_the_card_s_own_refusal_is_put_off_as_the_probe_reads_it():
+    update = _script("update.sh")
+    [probe] = re.findall(r"refused\(\) \{\n      case \"\$1\" in\n        (.*?)\) exit 3 ;;", update)
+    [step] = re.findall(r'^    (.*?)\) return 0 ;;$', _function("update.sh", "refused_by_card"), re.M)
+    assert step == probe
+    assert set(re.findall(r'"([^"]+)"', step)) == {FULL, READ_ONLY, "Disk quota exceeded"}
+    # And read as they are said in the C locale.
+    assert 'said="$(LC_ALL=C "$@" 2>&1)"' in _function("update.sh", "card_step")
+
+
+def test_a_card_gone_read_only_is_told_from_a_full_one(tmp_path):
+    import os
+
+    function = f"card_read_only() {{\n{_function('update.sh', 'card_read_only')}}}\n"
+    state = tmp_path / "state"
+    state.mkdir()
+    check = (function.replace("/var/lib/twobells", str(state))
+             + "if card_read_only; then echo read-only; else echo full; fi")
+    assert _bash(check).stdout == "full\n"
+    if os.geteuid() == 0:
+        pytest.skip("root writes into a folder whatever its mode: only a read-only mount stops it")
+    state.chmod(0o500)
+    try:
+        assert _bash(check).stdout == "read-only\n"
+    finally:
+        state.chmod(0o700)
+
+
+def test_the_status_of_a_kept_release_is_its_own_and_the_same_in_update_and_upgrade():
+    for name in ("update.sh", "upgrade.sh"):
+        assert re.findall(r"^KEPT_UNSAVED=(\d+)$", _script(name), re.M) == [str(KEPT_UNSAVED)], name
+    from twobells.cli.run import RESTART, UNSAVED
+
+    # Not failed (1), usage (2), the probe's (3) or run.py's; nor what a command failing under set -e may
+    # end either with (curl's run to 101, apt-get's is 100, Python's 120), timeout's or bash's (124 and up).
+    assert KEPT_UNSAVED not in {RESTART, UNSAVED, REFUSED_BY_THE_CARD, 120} and 101 < KEPT_UNSAVED < 124
+    # The guide says what each status means.
+    assert f"`{KEPT_UNSAVED}`" in PI_GUIDE[PI_GUIDE.index("What `update.sh` does:"):PI_GUIDE.index("### Where the app is")]
+    troubleshooting = (ROOT / "docs" / "troubleshooting.md").read_text()
+    [row] = [line for line in troubleshooting.splitlines() if "couldn't save its state`" in line]
+    assert f"`{KEPT_UNSAVED}`" in row
 
 
 def _go_back(epaper: bool, fails: bool, tmp_path: Path):
@@ -2561,7 +2763,7 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
     for wanted in ('fetch "$base/$name" "$work/$name"', 'fetch "$base/SHA256SUMS" "$work/SHA256SUMS"'):
         assert wanted in script
     assert "| sh" not in script and "| bash" not in script and "eval " not in script
-    assert "trap 'rm -rf \"$work\"' EXIT" in script
+    assert 'work="$(mktemp -d)"\n  trap remove_work EXIT\n' in script
     # The tarball is checked before it is unpacked, and update.sh comes from the release it holds.
     assert script.index('check_tarball "$work" "$version"') < script.index("tar -xzf")
     assert 'bash "$unpacked/deploy/pi/update.sh" "${options[@]}"' in script
@@ -2571,6 +2773,77 @@ def test_upgrade_downloads_the_releases_files_over_https_only_and_cleans_up():
     identity = re.search(r"^IDENTITY=(\S+)$", script, re.M).group(1)
     assert f"{identity}@refs/tags/v$version" == _identity("v$version")
     assert '--certificate-identity "$IDENTITY@refs/tags/v$version"' in script
+
+
+def _after_the_update(status: int, installed: str, version: str):
+    """Runs upgrade.sh's main from its run of the unpacked release's update.sh,
+    stood in for by a bash exiting `status`, to its end, going from release
+    `installed` to `version`."""
+    import shutil
+    import subprocess
+
+    script = _script("upgrade.sh")
+    main = script[script.index("main() {"):script.index("\n}\n", script.index("main() {"))]
+    tail = main[main.index("  # Run with bash, as /tmp"):]
+    call = ('bash() { echo "ran ${1#/work/*/} ${*:2}"; return "$STATUS"; }\n'
+            f"after() {{\n  local unpacked=/work/twobells-{version} version={version} installed={installed}\n"
+            f"  local -a options=(--config x)\n{tail}\n}}\nafter\necho carried on")
+    return subprocess.run([shutil.which("bash") or "bash", "-c", f'source "$1"\n{call}', "bash", str(PI / "upgrade.sh")],
+                          capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "STATUS": str(status)})
+
+
+@pytest.mark.parametrize("installed, version, back", [("0.5.3", "0.6.0", False), ("0.6.0", "0.5.3", True)])
+def test_upgrade_ends_as_update_does_once_the_release_went_in(installed, version, back):
+    done = _after_the_update(0, installed, version)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.startswith("ran deploy/pi/update.sh --config x\n") and done.stdout.endswith("carried on\n")
+    assert ("sudo -u twobells cp" in done.stdout) == back
+
+
+@pytest.mark.parametrize("installed, version, back", [("0.5.3", "0.6.0", False), ("0.6.0", "0.5.3", True)])
+def test_upgrade_passes_on_a_release_kept_on_a_card_that_won_t_take_the_board_s_state(installed, version, back):
+    # The release went in, so going back still says how to put the history back, and the end
+    # names the release in use rather than saying it failed.
+    done = _after_the_update(KEPT_UNSAVED, installed, version)
+    assert done.returncode == KEPT_UNSAVED
+    assert ("sudo -u twobells cp" in done.stdout) == back
+    assert "carried on" not in done.stdout
+    assert f"Release {version} is in use" in done.stderr and "Nothing was installed" not in done.stderr
+
+
+@pytest.mark.parametrize("status", [1, 2, 100, 124])
+def test_upgrade_stops_with_update_s_status_when_it_failed_or_went_back(status):
+    # update.sh has said why; going back's hint isn't given, as nothing changed.
+    done = _after_the_update(status, "0.6.0", "0.5.3")
+    assert (done.returncode, done.stderr) == (status, "")
+    assert done.stdout == "ran deploy/pi/update.sh --config x\n"
+
+
+def _remove_work(tmp_path: Path, status: int, refused: bool = False):
+    """upgrade.sh's EXIT trap, as a run ending `status` sets it off, with the
+    download in tmp_path/work and rm failing as on a read-only card if `refused`."""
+    work = tmp_path / "work"
+    (work / "twobells-0.6.0" / "deploy").mkdir(parents=True)
+    stub = (f'rm() {{ local file; for file in "$@"; do echo "rm: cannot remove \'$file\': {READ_ONLY}" >&2; done; '
+            "return 1; }\n") if refused else ""
+    return work, _bash(f'source "$1"\nwork="$2"\n{stub}trap remove_work EXIT\nexit {status}',
+                       str(PI / "upgrade.sh"), str(work))
+
+
+@pytest.mark.parametrize("status", [0, 1, KEPT_UNSAVED])
+def test_upgrade_removes_its_download_however_it_ends(tmp_path, status):
+    work, done = _remove_work(tmp_path, status)
+    assert (done.returncode, done.stderr) == (status, "")
+    assert not work.exists()
+
+
+def test_upgrade_says_in_a_line_when_a_card_that_won_t_take_the_state_keeps_its_download(tmp_path):
+    work, done = _remove_work(tmp_path, KEPT_UNSAVED, refused=True)
+    assert done.returncode == KEPT_UNSAVED  # left as it was
+    assert len(done.stderr.splitlines()) == 1 and str(work) in done.stderr and "rm: cannot remove" not in done.stderr
+    # Otherwise as ever: its errors, and a failure.
+    work, done = _remove_work(tmp_path / "other", 0, refused=True)
+    assert done.returncode == 1 and "rm: cannot remove" in done.stderr
 
 
 def test_the_guide_installs_a_pi_from_a_checked_release():

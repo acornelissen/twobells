@@ -10,6 +10,7 @@
 # The temporary folder is removed when it ends, whatever happens. Going back
 # to an older release, it says how to put back the punctuality history as it
 # was before a newer release moved it on, which the older one may not read.
+# It exits as update.sh does, 2 for a bad version and 1 if it stops first.
 set -euo pipefail
 
 PREFIX=/opt/twobells
@@ -18,6 +19,10 @@ RELEASES=https://github.com/acornelissen/twobells/releases/download
 IDENTITY=https://github.com/acornelissen/twobells/.github/workflows/release.yml
 ISSUER=https://token.actions.githubusercontent.com
 DOCS=https://github.com/acornelissen/twobells/blob/main/docs
+# What update.sh exits with when it kept the new release, but the board
+# couldn't save its state on the SD card: the upgrade went in, and the card
+# wants seeing to. update.sh's own, the same in every release; passed on.
+KEPT_UNSAVED=110
 
 usage() {
   echo "Usage: sudo $0 VERSION [--no-signature-check] [--config FILE] [--secrets FILE]" >&2
@@ -122,6 +127,20 @@ check_tarball() {
   echo "$name: OK"
 }
 
+# Removes the download, the EXIT trap, so whatever happens. After an update
+# that kept its release on an SD card that won't take changes (KEPT_UNSAVED),
+# that may fail too, where /tmp is on the card (Bookworm's, which empties at
+# each start): said in a line rather than each file's error, and the status
+# is left as it was.
+remove_work() {
+  local status=$?
+  if (( status != KEPT_UNSAVED )); then
+    rm -rf "$work"
+  elif ! rm -rf -- "$work" 2>/dev/null; then
+    echo "Couldn't remove $work, the download, as the SD card won't take it: restarting the Pi clears it." >&2
+  fi
+}
+
 # Downloads $1 to the file $2, over https only, redirects included.
 fetch() {
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
@@ -158,7 +177,7 @@ main() {
   fi
 
   work="$(mktemp -d)"
-  trap 'rm -rf "$work"' EXIT
+  trap remove_work EXIT
   local base="$RELEASES/v$version"
   local name="twobells-$version.tar.gz"
   echo "Downloading release $version"
@@ -185,10 +204,21 @@ main() {
   fi
   local installed
   installed="$(installed_version "$PREFIX")"
-  # Run with bash, as /tmp may not allow running files from it.
-  bash "$unpacked/deploy/pi/update.sh" "${options[@]}"
+  # Run with bash, as /tmp may not allow running files from it. Its status is
+  # passed on. KEPT_UNSAVED is a release that went in, so going back to an
+  # older one still says how to put the history back.
+  local status=0
+  bash "$unpacked/deploy/pi/update.sh" "${options[@]}" || status=$?
+  if (( status != 0 && status != KEPT_UNSAVED )); then
+    exit "$status"
+  fi
   if [[ -n "$installed" ]] && older "$version" "$installed"; then
     going_back "$installed" "$version"
+  fi
+  if (( status == KEPT_UNSAVED )); then
+    echo "Release $version is in use, but the board can't save its state on the SD card yet: update.sh said" >&2
+    echo "why, and what to do, above." >&2
+    exit "$KEPT_UNSAVED"
   fi
 }
 

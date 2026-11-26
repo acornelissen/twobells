@@ -205,9 +205,10 @@ switch_back() {
 
 # Removes every release folder but the current one and the previous one.
 # Nothing, unless venv is a link into releases/: without one, which to keep
-# isn't known.
+# isn't known. Each is tried, and it fails if any isn't removed, also where
+# set -e doesn't stop it at the first (update.sh's card_step).
 prune() {
-  local current previous folder
+  local current previous folder failed=0
   current="$(linked venv)"
   previous="$(linked previous)"
   if [[ -z "$current" ]]; then
@@ -215,7 +216,8 @@ prune() {
   fi
   for folder in "$PREFIX"/releases/*; do
     if [[ -e "$folder" && "${folder##*/}" != "$current" && "${folder##*/}" != "$previous" ]]; then
-      rm -rf -- "$folder"
+      rm -rf -- "$folder" || failed=1
     fi
   done
+  return "$failed"
 }

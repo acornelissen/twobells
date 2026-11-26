@@ -9,6 +9,9 @@
 # The release gets a venv of its own (releases.sh), built while the old one
 # runs. The services move to it once it imports, and back to the old one if
 # they don't stay up on it.
+# It exits 0 once updated, 1 if it stopped or went back, 2 for an unknown
+# option, and KEPT_UNSAVED (below) if it kept the new release but the board
+# couldn't save its state on the SD card.
 set -euo pipefail
 # Whatever umask sudo passed on: the services' user must read the new venv.
 umask 022
@@ -41,6 +44,15 @@ MIN_FREE_INODES=1000
 # How long the check of whether the card takes a file may take, in seconds:
 # writing 1 MB takes well under one.
 PROBE_WAIT=30
+# What this exits with when it kept the new release, but the board drew on it
+# and couldn't save its state, as the SD card wouldn't take it (full, out of
+# files or read-only): the update went in, and the card wants seeing to. Not
+# 1 (stopped, gone back, or nothing changed) or 2 (an unknown option), nor
+# what a command failing under set -e here or in upgrade.sh may end it with
+# (curl's run to 101, apt-get's is 100, Python's 120), nor timeout's (124 to
+# 127, 137) or bash's own (126, 127, 128 and up). upgrade.sh passes it on,
+# and may be another release's, so it never changes.
+KEPT_UNSAVED=110
 config="" secrets=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -120,10 +132,54 @@ fi
 # here changes: the board's timer and the services carry on meanwhile. If
 # this stops before switching to it (a check fails, say), it is removed, and
 # the old code runs on as it was.
-release="" build="" saved=""
+# card is empty unless the board drew on the new release but the SD card
+# refused its state (below): then read-only, or full (out of room, out of
+# files or over a quota).
+release="" build="" saved="" card=""
+# Whether what a command said is the card refusing it, as the probe below
+# reads it (in the C locale): full, out of files or over a quota, or read-only.
+refused_by_card() {
+  case "$1" in
+    *"No space left on device"* | *"Read-only file system"* | *"Disk quota exceeded"*) return 0 ;;
+  esac
+  return 1
+}
+# Runs a step that writes to the card: $1 says what it does, $2 when it is
+# done instead if the card refuses it, then the command. Until the card has
+# refused the board's state, it runs as it always has, and stops this if it
+# fails. After, a step the card refuses too is left for later, said in a line
+# rather than its errors; any other failure still stops this.
+card_step() {
+  local what="$1" later="$2" said code=0
+  shift 2
+  if [[ -z "$card" ]]; then
+    "$@"
+    return
+  fi
+  said="$(LC_ALL=C "$@" 2>&1)" || code=$?
+  if (( code == 0 )); then
+    if [[ -n "$said" ]]; then printf '%s\n' "$said"; fi
+    return 0
+  fi
+  if refused_by_card "$said"; then
+    echo "Couldn't $what, as the SD card won't take it: $later." >&2
+    return 0
+  fi
+  printf '%s\n' "$said" >&2
+  return "$code"
+}
+# This run's work in /tmp: the copy the release was built from, and what
+# going back would put back. On a card gone read-only, /tmp may be on it
+# (Bookworm's is, and empties at each start; Trixie's is in memory).
+tidy() {
+  if [[ -n "$build" || -n "$saved" ]]; then
+    card_step "remove this update's work in /tmp" "restarting the Pi clears it" \
+      rm -rf -- ${build:+"$build"} ${saved:+"$saved"}
+  fi
+  build="" saved=""
+}
 finish() {
-  if [[ -n "$build" ]]; then rm -rf "$build"; fi
-  if [[ -n "$saved" ]]; then rm -rf "$saved"; fi
+  tidy
   discard "$release"
 }
 trap finish EXIT
@@ -290,6 +346,11 @@ card_refused_save() {
   ' 9<&- || code=$?
   (( code == 3 ))
 }
+# Whether the card holding the board's state has gone read-only: root may not
+# write to it either, which access(2), as [[ -w ]] asks, says of root too.
+card_read_only() {
+  [[ ! -w /var/lib/twobells ]]
+}
 # Back to the release from before, with the units and guard's rules from
 # before, and the services restarted onto them as they were.
 go_back() {
@@ -329,15 +390,16 @@ fi
 # Then the e-paper board, once (a oneshot), which goes back as a crash does if
 # it fails. That may be the panel rather than the new release (its cable, say):
 # the journal says which. A board that drew but couldn't save its state on a
-# card that won't take it isn't the release's doing: that stays, and says so.
+# card that won't take it isn't the release's doing: that stays, the rest of
+# the update goes on as far as the card lets it (card_step), and the end says
+# what to do and exits KEPT_UNSAVED.
 if $epaper; then
   echo "Drawing the e-paper board on the new release"
   if ! draws; then
     if card_refused_save; then
-      echo "The e-paper board drew on the new release, but couldn't save its state: the SD card is full," >&2
-      echo "read-only or out of files. The new release stays. Make room (df -h and df -i /var/lib/twobells;" >&2
-      echo "sudo apt-get clean, say); if the card has gone read-only, it may be failing: back it up" >&2
-      echo "(see backup.md) and restart the Pi. Why: journalctl -u twobells -n 30" >&2
+      if card_read_only; then card=read-only; else card=full; fi
+      echo "The e-paper board drew on the new release, but couldn't save its state, as the SD card won't" >&2
+      echo "take it. The new release stays, and the rest of the update goes on; the end says what to do." >&2
     else
       echo "twobells.service, the e-paper board, failed on the new release or took over $RENDER_WAIT seconds." >&2
       echo "It may be the panel rather than the release (its cable, say); why: journalctl -u twobells -n 30" >&2
@@ -378,15 +440,44 @@ say_if_unguarded
 # hourly, and the .path unit as soon as the settings are saved. When they want
 # one, a build starts now; the first takes minutes, so it carries on in the
 # background.
-systemctl enable --now twobells-timetable.timer
-systemctl enable --now twobells-timetable.path
+card_step "turn on twobells-timetable.timer" "the next update will" \
+  systemctl enable --now twobells-timetable.timer
+card_step "turn on twobells-timetable.path" "the next update will" \
+  systemctl enable --now twobells-timetable.path
 if query needs-timetable >/dev/null; then
   systemctl start --no-block twobells-timetable.service
   echo "Building the timetables; follow it with: journalctl -u twobells-timetable -f"
 fi
 
 # The release before this one is kept, to go back to; any older are removed.
-prune
+# On a full card that may make room for the board's state; its next run, a
+# minute on, tries again, rather than this.
+card_step "remove the releases older than the one before from $PREFIX/releases" "the next update will" \
+  prune
+
+# A board that drew but couldn't save its state: the release it is on, what
+# the card is doing and what to do about it, then KEPT_UNSAVED, not the end
+# of an update that went in whole. This run's work in /tmp goes first, so
+# what the card won't let go of is said before the end.
+if [[ -n "$card" ]]; then
+  tidy
+  echo >&2
+  echo "Release $version is in use (the one before it is kept in $PREFIX/previous). The e-paper board" >&2
+  echo "drew on it, but couldn't save its state:" >&2
+  if [[ "$card" == read-only ]]; then
+    echo "the SD card has gone read-only, so it may be failing. Back it up (see backup.md) and restart the Pi." >&2
+    echo "Until then, each run of the board fails after drawing; why: journalctl -u twobells -n 30" >&2
+  elif room_to_save; then
+    echo "the SD card was full or out of files. There's room now, so the board's next run, a minute on," >&2
+    echo "should save it: systemctl status twobells says whether it did, journalctl -u twobells -n 30 why not." >&2
+  else
+    echo "the SD card is full or out of files. Make room (df -h and df -i /var/lib/twobells say how much" >&2
+    echo "there is; sudo apt-get clean, say). Until then, each run of the board fails after drawing; why:" >&2
+    echo "journalctl -u twobells -n 30" >&2
+  fi
+  echo "The settings site: http://$(hostname).local:8090/settings" >&2
+  exit "$KEPT_UNSAVED"
+fi
 echo
 echo "Updated to $version; the release before it is kept in $PREFIX/previous (see install-pi.md)."
 echo "The settings site: http://$(hostname).local:8090/settings"
