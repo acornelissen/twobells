@@ -277,6 +277,7 @@ class _Handler(BaseHTTPRequestHandler):
     unread = 0  # the bytes this request may still send: of its line and headers, then of its body
     too_big = False  # whether it tried to send more
     headers_in = False  # whether its line and headers were all read
+    raw_requestline: bytes  # http.server's, which its stubs leave out
     _security: dict[str, str] | None = None  # this request's security headers, once its path is known
     _reads: _Reads  # the connection's reads, behind rfile's buffer
 
@@ -306,7 +307,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._too_big(413 if self.headers_in else 431)
 
     def parse_request(self) -> bool:
-        parsed = super().parse_request()  # raises _TooBig, as any read, past the budget
+        if len(str(self.raw_requestline, "iso-8859-1").split()) == 2:
+            # HTTP/0.9, as http.server splits it: no headers, and an answer
+            # with no status line or headers. Refused, as a broken line is.
+            self.send_error(HTTPStatus.BAD_REQUEST)
+            parsed = False
+        else:
+            parsed = super().parse_request()  # raises _TooBig, as any read, past the budget
         self.headers_in = True
         if parsed:
             # The body's budget: MAX_BODY_BYTES, less what the buffer read

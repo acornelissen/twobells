@@ -1203,6 +1203,27 @@ def test_a_client_done_sending_after_its_refusal_is_closed_on_at_once(static_dir
         running.close()
 
 
+def test_an_http_0_9_request_is_refused_with_a_status_line_and_our_headers(static_dir):
+    """No version, so no headers: http.server would answer it with a bare
+    body, or nothing; it is refused as a broken request is."""
+    running = start(static_dir)
+    try:
+        sock, _ = counted_from(running)
+        with sock:
+            sock.sendall(b"GET /healthz?MARK\r\n")  # and nothing more
+            reply = b""
+            while chunk := sock.recv(65536):
+                reply += chunk
+        line, headers, body = refusal(reply)
+        assert line == "HTTP/1.0 400 Bad Request" and body == b"Bad Request"
+        assert headers["content-type"] == "text/plain; charset=utf-8"
+        for name, value in SECURITY.items():
+            assert headers[name.lower()] == value, name
+        assert b"MARK" not in reply
+    finally:
+        running.close()
+
+
 def test_waiting_for_a_client_to_read_its_refusal_ends_at_the_requests_deadline(static_dir, monkeypatch):
     monkeypatch.setattr(server_module, "LINGER_S", 60.0)
     running = start(static_dir, limits={"request_seconds": 0.5})
