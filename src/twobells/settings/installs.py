@@ -43,6 +43,9 @@ class Install:
     # The commands that set the settings password, or print a reset code, there.
     password_command: str = ""
     reset_command: str = ""
+    # What the page left at the dashboard's /settings, now the settings have a
+    # port of their own, says to do if that port doesn't open, as trusted HTML.
+    settings_moved: str = ""
     # The most of one bus timetable file (TransXChange) read, to look for your
     # stops in, and parsed if it mentions them (held, with up to as much again
     # for what is read from it); a bigger one is skipped. Beside it, the most
@@ -72,7 +75,9 @@ INSTALLS = {
                 # 15,000 under the units' 256M (tests/test_deploy.py).
                 timetable_journeys=8_500,
                 log_help="On the Pi: <code>journalctl -u twobells-web</code>.",
-                password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code"),
+                password_command=f"{_PI_COMMAND} --set-password", reset_command=f"{_PI_COMMAND} --reset-code",
+                settings_moved=("If that doesn't open, update the Pi again with <code>update.sh</code>, "
+                                "which opens the new port.")),
         Install("docker", ("dashboard",), ("dashboard",), Path("/data"), host="0.0.0.0",  # noqa: S104 - inside the container
                 # Its dashboard keeps its own copy of the timetable through a rebuild, so the
                 # buses don't blank: 8,000 leaves room for both (tests/test_deploy.py).
@@ -80,7 +85,11 @@ INSTALLS = {
                 log_help=("In Docker: <code>docker logs twobells</code>, or in Container Manager, "
                           "Container, twobells, Log."),
                 password_command=_DOCKER_COMMAND.format("--set-password"),
-                reset_command=_DOCKER_COMMAND.format("--reset-code")),
+                reset_command=_DOCKER_COMMAND.format("--reset-code"),
+                settings_moved=("If that doesn't open, publish port 8091 as well as 8090: add "
+                                "<code>\"0.0.0.0:8091:8091\"</code> under <code>ports:</code> in the compose "
+                                "file, <code>-p 0.0.0.0:8091:8091</code> to <code>docker run</code>, or a port "
+                                "8091 to the container on Unraid, then start it again.")),
         Install("desktop", ("dashboard",), ("dashboard",), None, browser=True,
                 log_help=("In the Terminal window running twobells; started at login, in "
                           "<code>~/Library/Logs/twobells.log</code> on a Mac, or "

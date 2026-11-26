@@ -57,7 +57,7 @@ from ..dashboard.snapshot import SnapshotSource
 from ..setup import api as setupapi
 from ..version import about
 from . import settingsite
-from .auth import outsider, private_address
+from .auth import origin_for, outsider, private_address
 from .formpages import MAX_FORM_BODY
 
 if TYPE_CHECKING:
@@ -66,7 +66,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-DEFAULT_PORT = 8090
+DEFAULT_PORT = 8090  # the dashboard's
+SETTINGS_PORT = 8091  # the settings', by default the dashboard's plus one
+# What a listener serves: the dashboard or the settings, or (one socket alone) both.
+ROLES = ("dashboard", "settings", "both")
 MAX_CONNECTIONS = 48
 # Open connections from one address. Above two browsers' six each (an event stream
 # among them), as Docker Desktop and rootless Podman show a household as one address.
@@ -141,6 +144,27 @@ NOT_BUILT = (
 )
 
 
+def moved_page(address: str | None, port: int, hint: str = "") -> bytes:
+    """The page at /settings on the dashboard's port: the settings are on
+    `port` now, at `address` (made from the name the browser used, or None
+    if it can't be), with the install's `hint` (trusted HTML, or nothing)
+    on what to do if that doesn't open. No script, no form."""
+    e = html.escape
+    if address:
+        where = f'<p>Open them at <a href="{e(address)}">{e(address)}</a>, and change any bookmark to it.</p>'
+    else:
+        where = (f"<p>Open this device's address with <code>:{port}/settings</code> on the end, "
+                 "and change any bookmark.</p>")
+    title = f"The settings are on port {port}"
+    return (
+        '<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{e(title)}</title></head><body><main><h1>{e(title)}</h1>"
+        f"<p>They have moved from this port, which has the dashboard alone.</p>{where}"
+        f"{f'<p>{hint}</p>' if hint else ''}</main></body></html>"
+    ).encode()
+
+
 @dataclass(frozen=True)
 class StaticFile:
     body: bytes
@@ -210,6 +234,8 @@ class DashboardApp:
     recent: Recent | None = None  # History.recent, or None without a history
     performance: Performance | None = None  # the Performance page's figures, or None without a history
     allowed_hosts: frozenset[str] = frozenset()
+    # What the dashboard's /settings page says to do if the settings' port doesn't open (Install.settings_moved).
+    moved_hint: str = ""
     client_allowed: Callable[[str], bool] = private_address
     heartbeat: float = HEARTBEAT_S
     stream_seconds: float = STREAM_SECONDS
@@ -418,11 +444,19 @@ class _Handler(BaseHTTPRequestHandler):
             return False
 
     def _security_for(self, path: str | None) -> dict[str, str]:
-        """The security headers for `path` (None: not known): the settings
-        site's for its own paths and while the dashboard is off, so scripts
-        run only on the wizard's pages then; else the dashboard's."""
-        if path is not None and settingsite.owns(path):
+        """The security headers for `path` (None: not known). On the
+        settings' listener, the settings site's, so scripts run only on its
+        pages that have them. On the dashboard's, the dashboard's while it
+        is on; else, and on the page saying where the settings are, the
+        settings site's with no script."""
+        owned = path is not None and settingsite.owns(path)
+        role = self.server.role
+        if role == "dashboard":
+            return SECURITY_HEADERS if not owned and self._on() else settingsite.SETTINGS_HEADERS
+        if path is not None and owned:
             return settingsite.headers_for(path)
+        if role == "settings":
+            return settingsite.SETTINGS_HEADERS
         return SECURITY_HEADERS if self._on() else settingsite.SETTINGS_HEADERS
 
     def _head(self, status: int, content_type: str | None, length: int | None, cache: str = "no-store",
@@ -489,14 +523,43 @@ class _Handler(BaseHTTPRequestHandler):
         return outsider(self.client_address[0], self.headers.get_all("Host") or [], self.app.allowed_hosts,
                         self.app.client_allowed)
 
+    def _fetch_header(self, name: str) -> str | None:
+        """A Fetch Metadata header's value, lower-cased: "" if it wasn't sent, None if sent more than once."""
+        values = self.headers.get_all(name) or []
+        if len(values) > 1:
+            return None
+        return values[0].strip().lower() if values else ""
+
+    def _from_elsewhere(self) -> bool:
+        """Whether a request to the settings' listener came from another
+        site's page or the dashboard's (Sec-Fetch-Site other than
+        same-origin or none, or sent twice), unless it is a GET opening a
+        page in the browser's window, as following a link does. One without
+        Fetch Metadata, from an older browser or curl, is let in: the
+        settings site's own checks still apply to it."""
+        site = self._fetch_header("Sec-Fetch-Site")
+        if site in ("", "same-origin", "none"):
+            return False
+        opening = (site in ("same-site", "cross-site") and self.command == "GET"
+                   and self._fetch_header("Sec-Fetch-Mode") == "navigate"
+                   and self._fetch_header("Sec-Fetch-Dest") == "document")
+        return not opening
+
     def _handle(self) -> None:
         path = self.path.split("?", 1)[0].split("#", 1)[0]
+        role = self.server.role
         self._security = self._security_for(path)
         if self._outsider():
             self._error(403)
             return
+        if role == "settings" and self._from_elsewhere():
+            self._error(403)
+            return
         if settingsite.owns(path):
-            self._settings(path)
+            if role == "dashboard":
+                self._moved()
+            else:
+                self._settings(path)
             return
         if self.command not in ("GET", "HEAD"):
             self._error(405, {"Allow": "GET, HEAD"})
@@ -504,6 +567,9 @@ class _Handler(BaseHTTPRequestHandler):
         raw = self.path
         if len(raw) > MAX_PATH or not raw.startswith("/") or any(bad in raw.lower() for bad in _BAD_PATH):
             self._error(404)
+            return
+        if role == "settings":
+            self._settings_home(path)
             return
         if not self._on():
             self._off(path)
@@ -636,6 +702,31 @@ class _Handler(BaseHTTPRequestHandler):
 
     # The settings site
 
+    def _settings_home(self, path: str) -> None:
+        """A GET or HEAD outside /settings on the settings' listener, which
+        has none of the dashboard's pages, files, API or health check: its
+        / goes to the dashboard while that is on, at the name the browser
+        used on the dashboard's port, else to the settings; nothing else is found."""
+        if path != "/":
+            self._error(404)
+            return
+        dashboard = origin_for(self.headers.get("Host"), self.server.dashboard_port) if self._on() else None
+        self._send(303, b"", extra={"Location": f"{dashboard}/" if dashboard else settingsite.PREFIX})
+
+    def _moved(self) -> None:
+        """Every path under /settings on the dashboard's listener: for a GET
+        or HEAD, a fixed page saying where the settings are now; any other
+        method is refused with its body unread. The settings site is never
+        asked, so nothing here reads a cookie, sets one or shows a form token."""
+        if self.command not in ("GET", "HEAD"):
+            self._error(405, {"Allow": "GET, HEAD", "Connection": "close"})
+            self._linger()
+            return
+        port = self.server.settings_port
+        address = origin_for(self.headers.get("Host"), port)
+        page = moved_page(f"{address}{settingsite.PREFIX}" if address else None, port, self.app.moved_hint)
+        self._send(200, page, CONTENT_TYPES[".html"])
+
     def _settings(self, path: str) -> None:
         raw = self.path
         if len(raw) > MAX_PATH or any(bad in raw.lower() for bad in _BAD_PATH):
@@ -656,7 +747,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _events(self) -> None:
         client = self.client_address[0]
-        if not self.server.take_stream(client):
+        if not self.server.limits.take_stream(client):
             self._error(503, {"Retry-After": "30"})
             return
         try:
@@ -668,7 +759,7 @@ class _Handler(BaseHTTPRequestHandler):
         except _GONE:
             pass  # the browser went away, or stalled past the socket timeout
         finally:
-            self.server.let_go_stream(client)
+            self.server.limits.let_go_stream(client)
 
     def _stream(self) -> None:
         hub, app = self.hub, self.app
@@ -692,38 +783,24 @@ class _Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b": ping\n\n")
 
 
-class DashboardServer(ThreadingHTTPServer):
-    """A thread per connection, at most `max_connections` at once and
-    `max_per_client` from one address (more are closed at once, unread and
-    unanswered), and `max_streams` event streams, `max_streams_per_client`
-    from one address. Each request must be in within `request_seconds`."""
+class Limits:
+    """The caps on connections and event streams, for every listener of one
+    process together, so two sockets hold no more than one did: at most
+    `max_connections` connections at once and `max_per_client` from one
+    address, and `max_streams` event streams, `max_streams_per_client` from
+    one address."""
 
-    daemon_threads = True
-
-    def __init__(self, address: tuple[str, int], app: DashboardApp, max_connections: int = MAX_CONNECTIONS,
-                 max_per_client: int = MAX_PER_CLIENT, max_streams: int = MAX_STREAMS,
-                 max_streams_per_client: int = MAX_STREAMS_PER_CLIENT,
-                 request_seconds: float = REQUEST_DEADLINE_S) -> None:
-        self.app = app
+    def __init__(self, max_connections: int = MAX_CONNECTIONS, max_per_client: int = MAX_PER_CLIENT,
+                 max_streams: int = MAX_STREAMS, max_streams_per_client: int = MAX_STREAMS_PER_CLIENT) -> None:
         self.max_connections = max_connections
         self.max_per_client = max_per_client
         self.max_streams = max_streams
         self.max_streams_per_client = max_streams_per_client
-        self.request_seconds = request_seconds
         self._lock = threading.Lock()
         self._open = 0
         self._open_from: dict[str, int] = {}  # each address's open connections; none for one with none
         self._streams = 0
         self._streams_from: dict[str, int] = {}  # each address's event streams; none for one with none
-        super().__init__(address, _Handler)
-
-    def server_bind(self) -> None:
-        """Binds as http.server's does, but without looking up this
-        computer's name for server_name (socket.getfqdn), which nothing here
-        uses: on a Pi that lookup could go to the router's DNS."""
-        socketserver.TCPServer.server_bind(self)
-        host, port = self.server_address[:2]
-        self.server_name, self.server_port = str(host), port
 
     def take_stream(self, client: str) -> bool:
         """An event stream's slot for `client`, if it and the server are under their caps."""
@@ -742,7 +819,7 @@ class DashboardServer(ThreadingHTTPServer):
             if held:
                 self._streams_from[client] = held
 
-    def _take(self, client: str) -> bool:
+    def take(self, client: str) -> bool:
         """A connection slot for `client`, if it and the server are under their caps."""
         with self._lock:
             held = self._open_from.get(client, 0)
@@ -752,29 +829,60 @@ class DashboardServer(ThreadingHTTPServer):
             self._open_from[client] = held + 1
             return True
 
-    def _let_go(self, client: str) -> None:
+    def let_go(self, client: str) -> None:
         with self._lock:
             self._open -= 1
             held = self._open_from.pop(client) - 1
             if held:
                 self._open_from[client] = held
 
+
+class DashboardServer(ThreadingHTTPServer):
+    """One listener: a thread per connection, under `limits` (more are
+    closed at once, unread and unanswered), each request in within
+    `request_seconds`. Its `role` is what it serves, fixed by the socket
+    that accepts a connection and never by what a request says:
+    "dashboard", "settings", or "both" (one socket for everything).
+    `dashboard_port` and `settings_port` are where each is, for the links
+    between them."""
+
+    daemon_threads = True
+
+    def __init__(self, address: tuple[str, int], app: DashboardApp, role: str = "both", limits: Limits | None = None,
+                 request_seconds: float = REQUEST_DEADLINE_S) -> None:
+        if role not in ROLES:
+            raise ValueError(f"Unknown role {role!r}")
+        self.app = app
+        self.role = role
+        self.limits = Limits() if limits is None else limits
+        self.request_seconds = request_seconds
+        super().__init__(address, _Handler)
+        self.dashboard_port = self.settings_port = self.server_address[1]
+
+    def server_bind(self) -> None:
+        """Binds as http.server's does, but without looking up this
+        computer's name for server_name (socket.getfqdn), which nothing here
+        uses: on a Pi that lookup could go to the router's DNS."""
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = str(host), port
+
     def process_request(self, request, client_address) -> None:
         client = client_address[0]
-        if not self._take(client):
+        if not self.limits.take(client):
             self.shutdown_request(request)
             return
         try:
             super().process_request(request, client_address)
         except Exception:
-            self._let_go(client)
+            self.limits.let_go(client)
             raise
 
     def process_request_thread(self, request, client_address) -> None:
         try:
             super().process_request_thread(request, client_address)
         finally:
-            self._let_go(client_address[0])
+            self.limits.let_go(client_address[0])
 
     def handle_error(self, request, client_address) -> None:
         error = sys.exc_info()[1]
@@ -784,13 +892,93 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 def make_server(app: DashboardApp, host: str = "127.0.0.1", port: int = DEFAULT_PORT, attempts: int = 1,
-                **limits) -> DashboardServer:
-    """Bind to `port`, or the next free one within `attempts` ports."""
+                *, role: str = "both", limits: Limits | None = None,
+                request_seconds: float = REQUEST_DEADLINE_S) -> DashboardServer:
+    """One listener with `role`, bound to `port`, or the next free one within `attempts` ports."""
     for candidate in range(port, port + attempts):
         try:
-            return DashboardServer((host, candidate), app, **limits)
+            return DashboardServer((host, candidate), app, role, limits, request_seconds)
         except OSError as error:
             if error.errno != errno.EADDRINUSE:
                 raise
     span = str(port) if attempts == 1 else f"{port}-{port + attempts - 1}"
     raise OSError(errno.EADDRINUSE, f"Port {span} already in use")
+
+
+class Servers:
+    """The dashboard's listener and the settings', in one process, sharing
+    one app and one set of limits."""
+
+    def __init__(self, dashboard: DashboardServer, settings: DashboardServer) -> None:
+        self.dashboard = dashboard
+        self.settings = settings
+
+    @property
+    def ports(self) -> tuple[int, int]:
+        """The dashboard's port and the settings'."""
+        return self.dashboard.server_address[1], self.settings.server_address[1]
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        """Serve both until shutdown(), or until the caller's thread is
+        interrupted: the settings on a thread of their own, the dashboard
+        on the caller's. Either way the settings have stopped when this returns."""
+        thread = threading.Thread(target=self.settings.serve_forever, args=(poll_interval,),
+                                  name="settings-server", daemon=True)
+        thread.start()
+        try:
+            self.dashboard.serve_forever(poll_interval)
+        finally:
+            self.settings.shutdown()
+            thread.join()
+
+    def shutdown(self) -> None:
+        """Stop serve_forever from another thread, as one server's shutdown does."""
+        self.dashboard.shutdown()
+        self.settings.shutdown()
+
+    def server_close(self) -> None:
+        self.dashboard.server_close()
+        self.settings.server_close()
+
+
+def _listener(app: DashboardApp, host: str, port: int, role: str, limits: Limits,
+              request_seconds: float) -> DashboardServer | None:
+    """A listener on `port`, or None if the port is taken; OSError naming
+    the port if it can't be had for another reason."""
+    try:
+        return DashboardServer((host, port), app, role, limits, request_seconds)
+    except OSError as error:
+        if error.errno == errno.EADDRINUSE:
+            return None
+        raise OSError(error.errno, f"Port {port}: {error.strerror or error}") from error
+
+
+def make_servers(app: DashboardApp, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
+                 settings_port: int = SETTINGS_PORT, attempts: int = 1, *, limits: Limits | None = None,
+                 request_seconds: float = REQUEST_DEADLINE_S) -> Servers:
+    """The dashboard's listener on `port` and the settings' on
+    `settings_port`, both bound before either serves, sharing `limits`; or,
+    within `attempts`, the next pair both free, each port two on. OSError
+    naming the port if one can't be had."""
+    limits = Limits() if limits is None else limits
+    busy = []
+    for step in range(attempts):
+        wanted = port + 2 * step, settings_port + 2 * step
+        dashboard = _listener(app, host, wanted[0], "dashboard", limits, request_seconds)
+        if dashboard is None:
+            busy.append(wanted[0])
+            continue
+        try:
+            settings = _listener(app, host, wanted[1], "settings", limits, request_seconds)
+        except OSError:
+            dashboard.server_close()
+            raise
+        if settings is None:
+            dashboard.server_close()
+            busy.append(wanted[1])
+            continue
+        servers = Servers(dashboard, settings)
+        for server in (dashboard, settings):
+            server.dashboard_port, server.settings_port = servers.ports
+        return servers
+    raise OSError(errno.EADDRINUSE, f"Port {', '.join(map(str, busy))} already in use")

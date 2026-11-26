@@ -28,9 +28,12 @@ from twobells.web.server import (
     MAX_REQUEST_BYTES,
     MAX_STREAMS,
     MAX_STREAMS_PER_CLIENT,
+    REQUEST_DEADLINE_S,
     DashboardApp,
+    Limits,
     StaticFiles,
     make_server,
+    make_servers,
 )
 from twobells.web.settingsite import SettingsSite
 
@@ -134,9 +137,10 @@ def static_dir(tmp_path):
 
 
 class Running:
-    def __init__(self, app, **limits):
+    def __init__(self, app, role="both", **limits):
         self.app = app
-        self.server = make_server(app, "127.0.0.1", 0, **limits)
+        seconds = limits.pop("request_seconds", REQUEST_DEADLINE_S)
+        self.server = make_server(app, "127.0.0.1", 0, role=role, limits=Limits(**limits), request_seconds=seconds)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True)
         self.thread.start()
@@ -1591,3 +1595,323 @@ def test_the_area_map_does_not_change_the_snapshot(static_dir):
         assert running.app.hub.current()[0] == before[0]
     finally:
         running.close()
+
+
+# Two listeners: the dashboard's and the settings', each serving by the socket a request came in on
+
+
+class Spy:
+    """The settings site, counting what it was asked."""
+
+    def __init__(self, site):
+        self.site = site
+        self.asked = []
+
+    def __getattr__(self, name):
+        return getattr(self.site, name)
+
+    def handle(self, method, path, *rest):
+        self.asked.append((method, path))
+        return self.site.handle(method, path, *rest)
+
+
+class Pair:
+    """Both listeners of one app, on free ports, sharing one set of limits."""
+
+    def __init__(self, app, **limits):
+        self.app = app
+        seconds = limits.pop("request_seconds", REQUEST_DEADLINE_S)
+        self.servers = make_servers(app, "127.0.0.1", 0, 0, limits=Limits(**limits), request_seconds=seconds)
+        self.dashboard_port, self.settings_port = self.servers.ports
+        self.thread = threading.Thread(target=self.servers.serve_forever, args=(0.05,), daemon=True)
+        self.thread.start()
+
+    def request(self, path, method="GET", to="dashboard", host=None, headers=None, body=None):
+        port = self.dashboard_port if to == "dashboard" else self.settings_port
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+        conn.putheader("Host", host or f"localhost:{port}")
+        for name, value in (headers or {}).items():
+            conn.putheader(name, value)
+        if body is not None:
+            conn.putheader("Content-Length", str(len(body)))
+        conn.endheaders(body)
+        response = conn.getresponse()
+        got = response.read()
+        conn.close()
+        return response, got
+
+    def close(self):
+        if self.app.hub is not None:
+            self.app.hub.close()
+        self.servers.shutdown()
+        self.servers.server_close()
+        self.thread.join(5)
+
+
+@pytest.fixture
+def pair(static_dir):
+    app = make_app(static_dir, moved_hint="Publish <code>8091</code> too.")
+    app.settings = Spy(app.settings)
+    running = Pair(app)
+    yield running
+    running.close()
+
+
+SETTINGS_PATHS = ["/settings", "/settings/", "/settings/login", "/settings/keys", "/settings/general",
+                  "/settings/reset", "/settings/forgot", "/settings/logout", "/settings/style.css",
+                  "/settings/settings.js", "/settings/setup", "/settings/setup/", "/settings/setup/wizard.js",
+                  "/settings/setup/api/session", "/settings/setup/api/begin", "/settings/nowhere",
+                  "/settings?next=keys", "/settings/../api/snapshot", "/settings/%2e%2e/api", "/settings/" + "x" * 600]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+def test_the_dashboards_listener_never_serves_the_settings_even_to_a_signed_in_browser(pair, method):
+    token, session = pair.app.settings.sessions.create()
+    sent = {"Cookie": f"settings_session={token}", "X-CSRF-Token": session.csrf,
+            "Origin": f"http://localhost:{pair.dashboard_port}", "Content-Type": "application/x-www-form-urlencoded",
+            "Sec-Fetch-Site": "same-origin"}
+    for path in SETTINGS_PATHS:
+        response, body = pair.request(path, method, headers=sent, body=b"")
+        assert response.status == (200 if method in ("GET", "HEAD") else 405), path
+        assert response.getheader("Set-Cookie") is None, path
+        assert session.csrf.encode() not in body and token.encode() not in body, path
+        assert b"<form" not in body and b"<script" not in body, path
+        if method not in ("GET", "HEAD"):
+            assert response.getheader("Allow") == "GET, HEAD" and response.getheader("Connection") == "close"
+    assert pair.app.settings.asked == []
+
+
+def test_a_password_posted_to_the_dashboards_listener_is_never_read(pair):
+    pair.app.settings.password.set("correct horse battery")
+    response, _ = pair.request("/settings/login", "POST", body=b"password=correct+horse+battery", headers={
+        "Origin": f"http://localhost:{pair.dashboard_port}", "Content-Type": "application/x-www-form-urlencoded"})
+    assert response.status == 405 and response.getheader("Set-Cookie") is None
+    assert pair.app.settings.asked == []
+
+
+@pytest.mark.parametrize("host, link", [
+    ("glossop.local:8090", "http://glossop.local:{port}/settings"),
+    ("Glossop.Local", "http://glossop.local:{port}/settings"),
+    ("192.168.1.20:8090", "http://192.168.1.20:{port}/settings"),
+    ("[fd00::1]:8090", "http://[fd00::1]:{port}/settings"),
+    ("departures.example.com:8090", "http://departures.example.com:{port}/settings"),  # in allowed_hosts
+])
+def test_the_dashboards_settings_say_where_they_are_now(pair, host, link):
+    response, body = pair.request("/settings/keys", host=host)
+    assert response.status == 200 and response.getheader("Content-Type") == "text/html; charset=utf-8"
+    address = link.format(port=pair.settings_port)
+    page = body.decode()
+    assert f'<a href="{address}">{address}</a>' in page
+    assert f"<h1>The settings are on port {pair.settings_port}</h1>" in page and 'lang="en-GB"' in page
+    assert "<p>Publish <code>8091</code> too.</p>" in page  # the install's hint
+    assert "script-src" not in response.getheader("Content-Security-Policy")
+    assert response.getheader("X-Frame-Options") == "DENY" and response.getheader("Cache-Control") == "no-store"
+
+
+def test_the_moved_page_never_echoes_what_the_browser_sent(pair):
+    response, body = pair.request("/settings/<script>?x=<b>", headers={"Cookie": "settings_session=<i>"})
+    assert response.status == 200
+    assert b"<script" not in body and b"<b>" not in body and b"<i>" not in body
+
+
+def test_the_moved_page_without_an_address_says_the_port():
+    page = server_module.moved_page(None, 8091).decode()
+    assert "<code>:8091/settings</code>" in page and "<a " not in page
+
+
+@pytest.mark.parametrize("path", ["/api/snapshot", "/api/events", "/api/area", f"/api/bus/{BUS_ID}",
+                                  f"/api/history/{TRAIN_ID}", "/api/performance", "/static/app.css",
+                                  "/static/main.js", "/performance", "/manifest.webmanifest", "/healthz", "/nowhere",
+                                  "/index.html"])
+def test_the_settings_listener_has_nothing_of_the_dashboards(pair, path):
+    for method in ("GET", "HEAD"):
+        response, body = pair.request(path, method, to="settings")
+        assert response.status == 404, (path, method)
+        assert body in (b"", b"Not Found"), path
+        assert "script-src" not in response.getheader("Content-Security-Policy"), path
+
+
+def test_the_settings_listeners_own_address_goes_to_the_dashboard_while_it_is_on(static_dir):
+    on = {"now": True}
+    running = Pair(make_app(static_dir, dashboard_on=lambda: on["now"]))
+    try:
+        response, _ = running.request("/", to="settings", host=f"glossop.local:{running.settings_port}")
+        assert response.status == 303
+        assert response.getheader("Location") == f"http://glossop.local:{running.dashboard_port}/"
+        response, _ = running.request("/?kiosk", "HEAD", to="settings", host="[fd00::1]")
+        assert response.getheader("Location") == f"http://[fd00::1]:{running.dashboard_port}/"
+        on["now"] = False
+        response, _ = running.request("/", to="settings")
+        assert response.status == 303 and response.getheader("Location") == "/settings"
+        assert running.request("/healthz", to="settings")[0].status == 404
+        assert running.request("/healthz")[0].status == 200  # the dashboard's still answers, for Docker
+    finally:
+        running.close()
+
+
+def test_the_listener_a_request_came_in_on_serves_it_whatever_its_host_says(pair):
+    other = f"localhost:{pair.settings_port}"
+    response, body = pair.request("/api/snapshot", host=other)  # to the dashboard's, naming the settings' port
+    assert response.status == 200 and b"Glossop" in body
+    response, body = pair.request("/settings/login", host=other)
+    assert b"The settings are on port" in body and pair.app.settings.asked == []
+    other = f"localhost:{pair.dashboard_port}"
+    assert pair.request("/api/snapshot", to="settings", host=other)[0].status == 404
+    response, body = pair.request("/settings/login", to="settings", host=other)
+    assert response.status == 200 and b"The settings are on port" not in body
+    assert pair.app.settings.asked == [("GET", "/settings/login")]
+
+
+def test_a_post_from_the_dashboards_origin_is_not_same_origin_to_the_settings(pair):
+    pair.app.settings.password.set("correct horse battery")
+    body = b"password=correct+horse+battery"
+    for origin, status in ((f"http://localhost:{pair.dashboard_port}", 403),
+                           (f"http://localhost:{pair.settings_port}", 303)):
+        response, _ = pair.request("/settings/login", "POST", to="settings", body=body, headers={
+            "Origin": origin, "Content-Type": "application/x-www-form-urlencoded"})
+        assert response.status == status, origin
+        signed_in = (response.getheader("Set-Cookie") or "").startswith("settings_session=")
+        assert signed_in is (status == 303), origin
+
+
+ACROSS = ["/", "/settings", "/settings/login", "/settings/setup/api/session", "/api/snapshot", "/healthz",
+          "/static/app.css", "/nowhere"]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "POST"])
+def test_no_response_from_either_listener_allows_another_origin(pair, method):
+    asking = {"Origin": "http://evil.example.com", "Access-Control-Request-Method": "POST",
+              "Access-Control-Request-Headers": "x-csrf-token"}
+    for to in ("dashboard", "settings"):
+        for path in ACROSS:
+            for host in (None, "evil.example.com"):
+                response, _ = pair.request(path, method, to=to, host=host, headers=asking, body=b"")
+                found = [name for name, _ in response.getheaders() if name.lower().startswith("access-control-")]
+                assert found == [], (to, path, method, host)
+
+
+# Fetch Metadata on the settings' listener: only its own pages, and a browser opening one
+
+
+def fetched(pair, path, method="GET", **sent):
+    names = {"site": "Sec-Fetch-Site", "mode": "Sec-Fetch-Mode", "dest": "Sec-Fetch-Dest"}
+    headers = {names[key]: value for key, value in sent.items()}
+    return pair.request(path, method, to="settings", headers=headers, body=b"" if method == "POST" else None)[0]
+
+
+@pytest.mark.parametrize("site, mode, dest", [
+    ("same-site", "cors", "empty"),  # the dashboard's script fetching the settings
+    ("same-site", "no-cors", "image"),  # an <img> on the dashboard's page
+    ("same-site", "navigate", "iframe"),  # a frame
+    ("cross-site", "cors", "empty"),
+    ("cross-site", "no-cors", "script"),
+    ("cross-site", "navigate", "iframe"),
+    ("same-site", "navigate", "documents"),
+    ("anywhere", "navigate", "document"),  # not a value a browser sends
+])
+def test_the_settings_refuse_what_another_sites_page_fetches(pair, site, mode, dest):
+    for path in ("/settings", "/settings/login", "/settings/setup/api/session", "/settings/style.css", "/"):
+        assert fetched(pair, path, site=site, mode=mode, dest=dest).status == 403, path
+    assert pair.app.settings.asked == []
+
+
+@pytest.mark.parametrize("site", ["same-site", "cross-site"])
+def test_a_browser_may_open_the_settings_from_another_page(pair, site):
+    assert fetched(pair, "/settings/login", site=site, mode="navigate", dest="document").status == 200
+    for method in ("POST", "HEAD", "PUT"):  # but only open them
+        assert fetched(pair, "/settings/login", method, site=site, mode="navigate", dest="document").status == 403
+
+
+def test_the_settings_take_their_own_requests_and_those_without_fetch_metadata(pair):
+    assert fetched(pair, "/settings/login").status == 200  # an older browser, or curl
+    assert fetched(pair, "/settings/login", site="same-origin", mode="cors", dest="empty").status == 200
+    assert fetched(pair, "/settings/login", site="none", mode="navigate", dest="document").status == 200
+    assert fetched(pair, "/settings/login", site="Same-Origin").status == 200
+
+
+@pytest.mark.parametrize("twice", [("Sec-Fetch-Site", "same-origin"), ("Sec-Fetch-Mode", "navigate"),
+                                   ("Sec-Fetch-Dest", "document")])
+def test_fetch_metadata_sent_twice_is_refused(pair, twice):
+    conn = http.client.HTTPConnection("127.0.0.1", pair.settings_port, timeout=5)
+    conn.putrequest("GET", "/settings/login", skip_host=True)
+    conn.putheader("Host", f"localhost:{pair.settings_port}")
+    for name, value in [("Sec-Fetch-Site", "same-site"), ("Sec-Fetch-Mode", "navigate"),
+                        ("Sec-Fetch-Dest", "document"), twice]:
+        conn.putheader(name, value)
+    conn.endheaders()
+    assert conn.getresponse().status == 403
+    conn.close()
+
+
+def test_the_dashboard_keeps_its_own_fetch_metadata_rules(pair):
+    sent = {"Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"}
+    assert pair.request("/api/snapshot", headers=sent)[0].status == 200
+    assert pair.request("/api/snapshot", headers={"Sec-Fetch-Site": "cross-site"})[0].status == 403
+
+
+# The caps hold for both listeners together
+
+
+def connect_to(server, address):
+    """A connection to one listener, as if from `address` (see connect_from)."""
+    ours, theirs = socket.socketpair()
+    ours.settimeout(5)
+    server.process_request(theirs, (address, 50000))
+    return ours
+
+
+def test_the_connection_caps_are_shared_by_both_listeners(static_dir):
+    running = Pair(make_app(static_dir), max_connections=4, max_per_client=2)
+    dashboard, settings = running.servers.dashboard, running.servers.settings
+    try:
+        assert dashboard.limits is settings.limits  # the event streams' caps among them
+        hogs = [connect_to(dashboard, "192.168.1.66"), connect_to(settings, "192.168.1.66")]
+        for server in (dashboard, settings):
+            with connect_to(server, "192.168.1.66") as extra:  # past its address's cap on either: closed unanswered
+                assert extra.recv(100) == b""
+        hogs += [connect_to(settings, "192.168.1.20"), connect_to(dashboard, "192.168.1.21")]
+        for server in (dashboard, settings):
+            with connect_to(server, "192.168.1.22") as extra:  # past the total on either
+                assert extra.recv(100) == b""
+        for hog in hogs:
+            hog.close()
+    finally:
+        running.close()
+
+
+def test_both_listeners_bind_before_either_serves_and_a_busy_one_names_its_port(static_dir):
+    app = make_app(static_dir)
+    blocker = make_server(app, "127.0.0.1", 0)
+    busy = blocker.server_address[1]
+    try:
+        with pytest.raises(OSError, match=f"Port {busy} already in use"):
+            make_servers(app, "127.0.0.1", 0, busy)
+        with pytest.raises(OSError, match=f"Port {busy} already in use"):
+            make_servers(app, "127.0.0.1", busy, 0)
+    finally:
+        blocker.server_close()
+
+
+def test_a_desktop_takes_the_next_pair_both_free(static_dir):
+    app = make_app(static_dir)
+    with socket.socket() as probe:  # a free port, with those after it for the pairs
+        probe.bind(("127.0.0.1", 0))
+        base = probe.getsockname()[1]
+    blocker = make_server(app, "127.0.0.1", base + 1)  # the first pair's settings port is taken
+    try:
+        servers = make_servers(app, "127.0.0.1", base, base + 1, attempts=3)
+        assert servers.ports == (base + 2, base + 3)
+        assert (servers.dashboard.role, servers.settings.role) == ("dashboard", "settings")
+        assert servers.dashboard.settings_port == servers.settings.settings_port == base + 3
+        assert servers.dashboard.dashboard_port == servers.settings.dashboard_port == base + 2
+        servers.server_close()
+        with pytest.raises(OSError, match=f"Port {base + 1} already in use"):
+            make_servers(app, "127.0.0.1", base, base + 1)  # one attempt: that port or nothing
+    finally:
+        blocker.server_close()
+
+
+def test_a_listener_has_one_of_the_roles():
+    with pytest.raises(ValueError, match="role"):
+        server_module.DashboardServer(("127.0.0.1", 0), None, "everything")  # type: ignore[arg-type]
