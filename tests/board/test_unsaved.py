@@ -115,6 +115,7 @@ def test_nothing_to_keep_keeps_no_file(run):
     {"not_updating": None}, {"not_updating": {"last_success": "soon"}}, {"not_updating": {"last_success": None, "x": 1}},
     {"not_updating": {"last_success": "2026-10-08T09:18:00+01:00"}}, {"last_attempt": "09:29"},
     {"last_success": "2026-10-08T09:18:00.1234567"}, {"last_error": {"at": "2026-10-08T09:29:00"}},
+    {"last_success": "9999-12-31T23:59:00"}, {"last_attempt": "0001-01-01T00:00:00"},
     {"last_error": {"at": "2026-10-08T09:29:00", "message": 1}}, {"messages": "Lifts out of use."},
     {"messages": ["x" * 2001]}, {"messages": ["x"] * 17}, {"note": None}, {"departures": [{"service": "x"}]},
     {"departures": [ENTRY["departures"][0]] * 33}, {"departures": [{**ENTRY["departures"][0], "scheduled": "9:45"}]},

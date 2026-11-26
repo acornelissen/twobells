@@ -20,6 +20,17 @@ _CLOCK = re.compile(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]")
 # this long after the last one, so it can't sit on the board for ever.
 HOLD_UNTIMED = timedelta(hours=1)
 
+# The times a saved one can be: from the Unix epoch, where a Pi with no clock
+# at all starts, to long past any real one. Read back from a file, one
+# outside them (year 9999, say) would overflow as a day is added to it.
+EARLIEST = datetime(1970, 1, 1)
+LATEST = datetime(3000, 1, 1)
+
+
+def sane_time(moment: datetime) -> bool:
+    """Whether `moment` is within EARLIEST and LATEST, whatever its offset."""
+    return EARLIEST <= moment.replace(tzinfo=None) < LATEST
+
 
 def line_order(line: str) -> tuple:
     """A bus line's place in a list: by its number, the rest breaking ties, so
@@ -232,7 +243,10 @@ class Departure:
 
     def has_left(self, now: datetime, fetched: datetime) -> bool:
         """Like is_gone, but on the calendar: the time is read as the one nearest
-        to when it was fetched, so this morning's 08:40 never comes back tonight."""
+        to when it was fetched, so this morning's 08:40 never comes back tonight.
+        Fetched at a time that can't be real (sane_time), it can't be told: gone."""
+        if not sane_time(fetched):
+            return True
         fetched = fetched.replace(second=0, microsecond=0)
         if self._untimed:
             return now.replace(second=0, microsecond=0) > fetched + HOLD_UNTIMED

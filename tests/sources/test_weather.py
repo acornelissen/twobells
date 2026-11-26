@@ -84,6 +84,9 @@ def test_saved_hours_read_back_and_bad_ones_are_skipped():
     assert hours_from_dicts(saved) == hours
     assert hours_from_dicts([saved[0], {"start": "x"}, {"start": "2026-10-09T01:00", "probability": 500, "precipitation": 0}]) == hours[:1]
     assert hours_from_dicts("not a list") == []
+    # An hour outside the sane range would overflow as an hour is added to it.
+    far = [{**saved[0], "start": start} for start in ("9999-12-31T23:00:00", "0001-01-01T00:00:00")]
+    assert hours_from_dicts(far) == []
     # A saved state is read each time the board is drawn: a number too big for a float is skipped too.
     too_big = [{"start": "2026-10-09T01:00", "probability": 10**400, "precipitation": 0},
                {"start": "2026-10-09T01:00", "probability": 5, "precipitation": 10**400}]

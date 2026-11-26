@@ -17,7 +17,7 @@ from PIL.Image import Image
 
 from ..core.budget import DailyBudget
 from ..core.errors import safe_message
-from ..core.model import Departure, mark_platform_changes, minutes_between
+from ..core.model import Departure, mark_platform_changes, minutes_between, sane_time
 from ..core.polling import PollPolicy, Window
 from ..core.walk import WalkTimes, leave_time
 from ..settings import show as show_items
@@ -286,15 +286,17 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
 def _saved_time(entry: dict, key: str) -> datetime | None:
     """A time saved in the state, or None if there is none. One that isn't a
     time by the board's clock (local, with no offset), from a hand-edited or
-    corrupt state.json, would stop the board when compared with it: it reads
-    as missing, and is dropped with a warning, so it is warned of only once."""
+    corrupt state.json, would stop the board when compared with it, as would
+    one that can't be real (year 9999: sane_time) when a day is added: it
+    reads as missing, and is dropped with a warning, so it is warned of only
+    once."""
     value = entry.get(key)
     try:
         moment = from_iso(value)
     except (TypeError, ValueError):
         moment = None
     else:
-        if moment is None or moment.tzinfo is None:
+        if moment is None or (moment.tzinfo is None and sane_time(moment)):
             return moment
     log.warning("Ignoring a saved %s that isn't a time by the board's clock: %r", key, value)
     del entry[key]

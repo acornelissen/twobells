@@ -11,7 +11,7 @@ from pathlib import Path
 from ..core import files
 from ..core.bounded import finite
 from ..core.budget import DailyBudget
-from ..core.model import Departure, Status
+from ..core.model import Departure, Status, sane_time
 from ..sources.bods import Vehicle
 
 log = logging.getLogger(__name__)
@@ -130,13 +130,15 @@ def is_mark(value: object) -> bool:
 
 def is_time(value: object) -> bool:
     """Whether `value` is a time as the state saves one: by the board's
-    clock (no offset), as to_iso writes it, and no longer."""
+    clock (no offset), as to_iso writes it, no longer, and one that could be
+    real (core/model.py's sane_time)."""
     if not isinstance(value, str) or len(value) > _MOST_TIME_CHARS:
         return False
     try:
-        return datetime.fromisoformat(value).tzinfo is None
+        moment = datetime.fromisoformat(value)
     except ValueError:
         return False
+    return moment.tzinfo is None and sane_time(moment)
 
 
 def _readable(items: list, read) -> tuple[list, int]:

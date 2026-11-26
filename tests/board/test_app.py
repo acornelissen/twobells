@@ -2075,6 +2075,23 @@ def test_a_bad_saved_budget_gives_a_fresh_one_rather_than_stopping_the_board(tmp
     assert buses.calls == 1
 
 
+@pytest.mark.parametrize("when", ["9999-12-31T23:59:00", "0001-01-01T00:00:00", "2999-12-31T23:59:00"])
+def test_a_saved_time_far_off_never_stops_the_board(tmp_path, when):
+    # Read back from state.json, or from what was kept in memory for a card that couldn't be saved.
+    import json
+
+    from twobells.board.state import departure_to_dict
+
+    path = tmp_path / "state.json"
+    entry = {"last_success": when, "last_attempt": when, "departures": [departure_to_dict(train("07:30"))]}
+    path.write_text(json.dumps({"sources": {"train": entry}, "last_render": {"at": when},
+                                "weather": {"last_success": when, "last_attempt": when}}))
+    trains, buses, board, display, _ = setup()
+    trains.error = OSError("network down")
+    for minute in range(3):
+        run_once(board, StateStore(path).load(), display, THU_0700 + timedelta(minutes=minute))
+
+
 def test_a_saved_forecast_hour_with_a_utc_offset_doesnt_stop_the_board():
     weather, board, display, state = weather_setup()
     weather.error = OSError("network down")

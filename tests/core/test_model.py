@@ -89,6 +89,21 @@ def test_has_left_reads_the_time_on_the_day_it_was_fetched():
     assert dep.has_left(datetime(2026, 10, 8, 20, 41), fetched)
 
 
+@pytest.mark.parametrize("fetched, sane", [
+    ("0001-01-01T00:00:00", False), ("9999-12-31T23:59:00", False), ("1969-12-31T23:59:00", False),
+    ("3000-01-01T00:00:00", False), ("1970-01-01T00:00:00", True), ("2999-12-31T23:59:59", True),
+])
+def test_a_time_outside_the_sane_range_is_not_one_and_has_left_never_raises(fetched, sane):
+    from twobells.core.model import sane_time
+
+    moment = datetime.fromisoformat(fetched)
+    assert sane_time(moment) is sane
+    for departs in ("00:00", "08:40", "23:59"):
+        assert make(departs).has_left(datetime(2026, 10, 8, 8, 30), moment) in (True, False)
+    if not sane:
+        assert make("08:40").has_left(datetime(2026, 10, 8, 8, 30), moment)  # no telling when: gone
+
+
 def test_has_left_carries_over_midnight():
     from datetime import datetime
 

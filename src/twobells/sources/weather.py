@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
 
 from ..core.bounded import finite
+from ..core.model import sane_time
 from ..core.net import get_bytes
 
 DEFAULT_BASE_URL = "https://api.open-meteo.com/v1/forecast"
@@ -117,12 +118,13 @@ def hours_to_dicts(hours: list[Hour]) -> list[dict]:
 def hours_from_dicts(items) -> list[Hour]:
     """Saved hours, skipping any that don't read back. One with a UTC offset
     is skipped too, as parse_forecast refuses one: compared with the board's
-    clock, which has none, it would stop the board."""
+    clock, which has none, it would stop the board. So is one that can't be
+    real (sane_time), which would overflow as an hour is added to it."""
     hours = []
     for item in items if isinstance(items, list) else []:
         try:
             start = datetime.fromisoformat(item["start"])
-            if start.tzinfo is not None:
+            if start.tzinfo is not None or not sane_time(start):
                 continue
             probability = _number(item["probability"], 0, 100, "chance of rain")
             hours.append(Hour(

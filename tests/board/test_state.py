@@ -382,6 +382,14 @@ def test_a_saved_not_updating_mark_of_the_wrong_shape_means_no_mark(tmp_path, ma
     assert "not_updating" not in StateStore(path).load()["sources"]["train"]
 
 
+@pytest.mark.parametrize("when, sane", [("0001-01-01T00:00:00", False), ("9999-12-31T23:59:00", False),
+                                        ("2999-12-31T23:59:00", True), ("1970-01-01T00:00:00", True)])
+def test_a_saved_time_is_one_only_within_the_sane_range(when, sane):
+    from twobells.board.state import is_mark, is_time
+
+    assert is_time(when) is sane and is_mark({"last_success": when}) is sane
+
+
 @pytest.mark.parametrize("mark", [{"last_success": None}, {"last_success": "2026-10-08T07:00:00"}])
 def test_a_saved_not_updating_mark_reads_back(tmp_path, mark):
     path = tmp_path / "state.json"
