@@ -20,9 +20,11 @@ services:
     container_name: twobells
     restart: unless-stopped
     # IPv4 only: Docker hands IPv6 visitors on from its own network's gateway,
-    # which the app would take for the home network.
+    # which the app would take for the home network. The dashboard, then the
+    # settings; each the same number outside as in, as the links between them use it.
     ports:
       - "0.0.0.0:8090:8090"
+      - "0.0.0.0:8091:8091"
     # env_file:
     #   - secrets.env
     volumes:

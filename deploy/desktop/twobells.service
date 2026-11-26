@@ -1,6 +1,7 @@
 # Starts the departures dashboard when you log in on Linux (a systemd user
 # service): twobells serve, on this computer only, at
-# http://localhost:8090/. It starts again if it fails, not when you stop it.
+# http://localhost:8090/, with its settings at http://localhost:8091/settings
+# (the port after it). It starts again if it fails, not when you stop it.
 # Installed by `uv tool install` or `pipx install` in ~/.local/bin; see
 # docs/desktop.md for the commands that install and start it.
 [Unit]

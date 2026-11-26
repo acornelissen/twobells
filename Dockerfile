@@ -34,9 +34,9 @@ assert v() != 'unknown', 'no version in /app/pyproject.toml'"
 
 USER 10001:10001
 WORKDIR /data
-EXPOSE 8090
+EXPOSE 8090 8091
 HEALTHCHECK --interval=60s --timeout=5s --start-period=120s --retries=3 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=4)"]
 ENTRYPOINT ["python", "-m", "twobells", "serve", "--install", "docker", \
             "--config", "/config/config.toml", "--secrets", "/nonexistent", \
-            "--state-dir", "/data", "--host", "0.0.0.0", "--port", "8090"]
+            "--state-dir", "/data", "--host", "0.0.0.0", "--port", "8090", "--settings-port", "8091"]

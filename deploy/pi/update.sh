@@ -241,6 +241,12 @@ done
 if [[ -f "$PREFIX/twobells-web.nft" ]]; then
   cp -p "$PREFIX/twobells-web.nft" "$saved/"
 fi
+# Whether this update moves the settings to a port of their own: the web
+# server's unit in use serves them beside the dashboard, with no --settings-port.
+moved=false
+if [[ -f "$saved/twobells-web.service" ]] && ! grep -q -e "--settings-port" "$saved/twobells-web.service"; then
+  moved=true
+fi
 before="$(linked previous)"
 # The fetch service is started below whatever it was; the others only if running.
 watched=(twobells-fetch.service)
@@ -481,6 +487,15 @@ fi
 card_step "remove the releases older than the one before from $PREFIX/releases" "the next update will" \
   prune
 
+# The settings' address, as either ending says it; and, on the update that
+# gave them a port of their own, that they moved there.
+settings_address() {
+  echo "The settings site: http://$(hostname).local:8091/settings"
+  if [[ "${moved:-false}" == true ]]; then
+    echo "The settings have moved to port 8091; 8090 has the dashboard alone. Change any bookmark to them."
+  fi
+}
+
 # A board that drew but couldn't save its state: the release it is on, what
 # the card is doing and what to do about it, then KEPT_UNSAVED, not the end
 # of an update that went in whole. This run's work in /tmp goes first, so
@@ -501,9 +516,9 @@ if [[ -n "$card" ]]; then
     echo "there is; sudo apt-get clean, say). Until then, each run of the board fails after drawing; why:" >&2
     echo "journalctl -u twobells -n 30" >&2
   fi
-  echo "The settings site: http://$(hostname).local:8090/settings" >&2
+  settings_address >&2
   exit "$KEPT_UNSAVED"
 fi
 echo
 echo "Updated to $version; the release before it is kept in $PREFIX/previous (see install-pi.md)."
-echo "The settings site: http://$(hostname).local:8090/settings"
+settings_address

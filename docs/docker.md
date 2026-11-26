@@ -1,6 +1,6 @@
 # Docker
 
-The dashboard and its settings in one container, `twobells`, on a NAS or any always-on computer. The container runs as an unprivileged user (uid 10001) with a read-only system, keeps its data in the `twobells-data` volume, and restarts by itself.
+The dashboard and its settings in one container, `twobells`, each on a port of its own, on a NAS or any always-on computer. The container runs as an unprivileged user (uid 10001) with a read-only system, keeps its data in the `twobells-data` volume, and restarts by itself.
 
 There are two ways to run it:
 
@@ -41,7 +41,7 @@ cosign verify "ghcr.io/acornelissen/twobells@$DIGEST" \
 
 ### What the container needs
 
-- **Port 8090**, for the dashboard at `/` and the settings at `/settings`, published on IPv4 only (`0.0.0.0:8090:8090`; see [Keep it on the home network](#keep-it-on-the-home-network)).
+- **Ports 8090 and 8091:** 8090 for the dashboard at `/`, and 8091 for the settings at `/settings`, on a port of their own. Both published on IPv4 only (`0.0.0.0:8090:8090` and `0.0.0.0:8091:8091`; see [Keep it on the home network](#keep-it-on-the-home-network)), each with the same number outside the container as inside: the links between the dashboard and the settings use those numbers.
 - **A data folder at `/data`** that its user, uid 10001, can write to. A new named volume takes that owner from the image by itself. A folder on the NAS doesn't: give it to 10001 first (each platform below says how).
 - **Nothing else.** It runs as uid 10001 with a read-only system, no Linux capabilities, no new privileges, 512 MB of memory and 128 processes at most, and a 64 MB `/tmp` in memory. Keep those settings wherever the platform allows them. The bus timetable's build fits in that memory beside the dashboard: a timetable file over 100 MB is skipped with a warning in the log, and a build with more than 8,000 journeys calling at your stops fails, saying so in the log. Metrolink's tram timetable, about 45 MB, is read a line at a time, so it fits too.
 - **Keys:** paste them in the settings, which keep them in `/data`, readable by the app only. No environment variables are needed.
@@ -58,20 +58,22 @@ No `config.toml` is needed. To keep one by hand (for `allowed_hosts`, say), moun
 
 ### Keep it on the home network
 
-- Never forward port 8090 on your router, or put it behind the NAS's reverse proxy or remote-access service (see [How the web server is kept safe](security.md#on-every-install)).
-- If the NAS or computer has a firewall, allow port 8090 only from your home network's addresses.
+- Never forward port 8090 or 8091 on your router, or put either behind the NAS's reverse proxy or remote-access service (see [How the web server is kept safe](security.md#on-every-install)).
+- If the NAS or computer has a firewall, allow ports 8090 and 8091 only from your home network's addresses.
 - The app turns away addresses outside the home network itself, but in Docker it may see every request as coming from Docker's own private network. The firewall is what keeps the rest out.
 - Docker Desktop (on a Mac or Windows) and rootless Podman pass every device's requests on from one gateway address, so the app takes the household for one device: a sign-in lockout locks every device out, and every device shares one device's limit on connections and event streams (see [How the web server is kept safe](security.md#on-every-install)).
-- The files and commands here publish the port on IPv4 only: `0.0.0.0:8090:8090`, not `8090:8090`. Docker passes on a visitor's IPv6 connection from its own network's gateway, a private address, so the app would take anyone reaching it over IPv6 for the home network. Keep the `0.0.0.0:` if you change the port.
-- On Linux, ports Docker publishes skip `ufw`'s rules ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/) explains why). To limit it to one network, publish the port on the computer's home-network IPv4 address only: `-p 192.168.1.20:8090:8090`, or `"192.168.1.20:8090:8090"` under `ports:`.
+- The files and commands here publish the ports on IPv4 only: `0.0.0.0:8090:8090`, not `8090:8090`, and the same for 8091. Docker passes on a visitor's IPv6 connection from its own network's gateway, a private address, so the app would take anyone reaching it over IPv6 for the home network. Keep the `0.0.0.0:` if you change a port. Published under other numbers, each site still opens at its own address, but the links between them go to 8090 and 8091.
+- On Linux, ports Docker publishes skip `ufw`'s rules ([Docker's documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/) explains why). To limit it to one network, publish the ports on the computer's home-network IPv4 address only: `-p 192.168.1.20:8090:8090 -p 192.168.1.20:8091:8091`, or `"192.168.1.20:8090:8090"` and `"192.168.1.20:8091:8091"` under `ports:`.
 
 ### First start
 
-Open `http://<NAS IP address>:8090/` and [set it up](setup-wizard.md). The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](password.md); they name the container `twobells`, as the files and commands here call it. If your platform names it otherwise, use that name.
+Open the settings, `http://<NAS IP address>:8091/settings`, and [set it up](setup-wizard.md); the dashboard is at `http://<NAS IP address>:8090/`. The code to claim the settings is in the container's log. The commands that set the password or print a new code are in [Password and reset codes](password.md); they name the container `twobells`, as the files and commands here call it. If your platform names it otherwise, use that name.
 
 ### Updating
 
 Check the new version as above, then replace the version and digest in the image line and start the container again from the new image. Your settings, keys, password, history and timetable stay in `/data`; the bus timetable may be built again once (see [After an update](buses.md#after-an-update)). Building from source, see [Built from source](#built-from-source).
+
+**From a version that served the settings on 8090:** the settings now have port 8091 of their own. Publish it as well as 8090: add `"0.0.0.0:8091:8091"` under `ports:` in your compose file (the project's files have it), `-p 0.0.0.0:8091:8091` to `docker run`, or, on Unraid, a port 8091 to the container (the template has it as **Settings port**). Until you do, `/settings` on port 8090 shows a page saying where the settings are now, but that address won't open. Change any bookmark to `http://<NAS IP address>:8091/settings`.
 
 Going back to 0.1.0, which can't read the punctuality history a newer version keeps, put back the copy kept from before, `history.sqlite3.v1` in `/data` (see [Going back to an older release](configuration.md#going-back-to-an-older-release)), with the older image in place of `IMAGE` and your data volume or folder in place of `twobells-data`:
 
@@ -95,7 +97,7 @@ Either run the published image, or let Container Manager build the image from th
 2. Copy `deploy/docker/docker-compose.ghcr.yml` into it as `docker-compose.yml`, with the version and digest filled in, as in [Pick a release and check it](#pick-a-release-and-check-it).
 3. For keys in a file rather than the settings, copy `deploy/secrets.env.example` there as `secrets.env` and uncomment the `env_file:` lines in the compose file. Keep it private: in File Station, give only your own account access.
 4. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It pulls the image and starts it.
-5. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
+5. Open `http://<NAS name>:8091/settings` or `http://<NAS IP address>:8091/settings` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
 
 To update, put the new version and digest in the compose file, then run `docker compose up -d` in the folder over SSH (Container Manager's **Action**, then **Build**, does the same from the project).
 
@@ -106,13 +108,13 @@ Elsewhere, `docker compose up -d --build` in the folder does the same as these s
 1. Copy the project folder to the NAS, for example to `docker/twobells` (File Station, or `scp`).
 2. In that folder, copy `deploy/secrets.env.example` to `secrets.env`. Fill in your keys, or leave them empty and paste them in the settings later. Keep it private: in File Station, give only your own account access.
 3. In **Container Manager**, go to **Project**, then **Create**. Pick the folder; it uses the `docker-compose.yml` there. Create the project. It builds the image on the NAS and starts it.
-4. Open `http://<NAS name>:8090/` or `http://<NAS IP address>:8090/` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
+4. Open `http://<NAS name>:8091/settings` or `http://<NAS IP address>:8091/settings` from the home network, and [set it up](setup-wizard.md). Codes go to the container's log, under **Container**, `twobells`, **Log**.
 
 **Updating:** copy the new project files over the old ones, then in Container Manager choose the project, then **Action**, then **Build** (or `docker compose up -d --build`). Your history, timetable, saved settings, keys and password stay in the volume. After editing `secrets.env`, build again too: just restarting the container doesn't read it again.
 
 ### On any Synology
 
-Don't publish port 8090 through QuickConnect or DSM's reverse proxy (see [Keep it on the home network](#keep-it-on-the-home-network)). For extra safety, add a DSM firewall rule that allows 8090 only from your home network's addresses.
+Don't publish port 8090 or 8091 through QuickConnect or DSM's reverse proxy (see [Keep it on the home network](#keep-it-on-the-home-network)). For extra safety, add a DSM firewall rule that allows 8090 and 8091 only from your home network's addresses.
 
 ---
 
@@ -123,7 +125,7 @@ Container Station 3 runs a compose file as an application.
 1. In **Container Station**, choose **Create**, then **Create Application**.
 2. Name it `twobells`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in.
 3. Choose **Validate YAML**, then finish the wizard.
-4. Open `http://<NAS IP address>:8090/` from the home network.
+4. Open `http://<NAS IP address>:8091/settings` from the home network.
 
 Container Station can't change an application's settings in place: to update, use **Recreate** with the new image line. The data stays in the `twobells-data` volume.
 
@@ -169,7 +171,7 @@ Then:
 1. Check the image's tag with `cosign verify`, as in [Pick a release and check it](#pick-a-release-and-check-it).
 2. In the **Docker** tab, choose **Add Container**, and pick `twobells` from the **Template** list.
 3. Check the settings and choose **Apply**.
-4. Open `http://tower:8090/` (your server's name) or its IP address, from the home network.
+4. Open `http://tower:8091/settings` (your server's name) or its IP address, from the home network, or the container's **WebUI**, which opens the settings.
 
 The template sets the hardening in **Extra Parameters** (shown in the advanced view): read-only system, a 64 MB `/tmp`, no capabilities, no new privileges, and the memory, process and log limits. What it can't do as the compose file does:
 
@@ -187,7 +189,7 @@ On TrueNAS SCALE 24.10 or later, apps run in Docker, and a compose file can be i
 
 1. In **Apps**, choose **Discover Apps**, then **Install via YAML** from the ⋮ menu.
 2. Name it `twobells`. Paste `deploy/docker/docker-compose.ghcr.yml`, with the version and digest filled in, and save.
-3. Open `http://<NAS IP address>:8090/` from the home network. Apps installed from YAML have no Web UI button.
+3. Open `http://<NAS IP address>:8091/settings` from the home network. Apps installed from YAML have no Web UI button.
 
 Use YAML rather than the guided **Custom App** form: the form, as TrueNAS documents it, has no setting for a read-only system.
 
@@ -201,7 +203,7 @@ With the version and digest checked as above:
 
 ```bash
 docker run -d --name twobells --restart unless-stopped \
-  -p 0.0.0.0:8090:8090 -v twobells-data:/data \
+  -p 0.0.0.0:8090:8090 -p 0.0.0.0:8091:8091 -v twobells-data:/data \
   --read-only --tmpfs /tmp:size=64m --cap-drop ALL \
   --security-opt no-new-privileges:true --memory 512m --pids-limit 128 \
   --log-opt max-size=1m --log-opt max-file=3 \

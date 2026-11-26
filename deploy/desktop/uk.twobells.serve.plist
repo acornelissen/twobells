@@ -3,7 +3,8 @@
 <!--
   Starts the departures dashboard when you log in to your Mac (a launchd
   agent): twobells serve, on this computer only, at
-  http://localhost:8090/. It starts again if it fails, not when you stop it.
+  http://localhost:8090/, with its settings at http://localhost:8091/settings
+  (the port after it). It starts again if it fails, not when you stop it.
   /Users/YOU is a placeholder for your home folder; the commands in
   docs/desktop.md put yours in and load it.
 -->

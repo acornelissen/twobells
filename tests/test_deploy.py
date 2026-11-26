@@ -4,6 +4,7 @@
 import json
 import re
 import shlex
+import shutil
 from pathlib import Path
 
 import pytest
@@ -71,7 +72,7 @@ def test_compose_locks_the_container_down():
 def test_compose_runs_twobells_on_its_named_volume():
     lines = [line.split("#")[0].strip() for line in COMPOSE.splitlines()]
     for line in ("twobells:", "image: twobells:local", "container_name: twobells",
-                 "- secrets.env", "- data:/data", "- \"0.0.0.0:8090:8090\""):
+                 "- secrets.env", "- data:/data", "- \"0.0.0.0:8090:8090\"", "- \"0.0.0.0:8091:8091\""):
         assert line in lines, line
     assert lines[lines.index("env_file:") + 1] == "- secrets.env"
     # Named outright, so another folder or project name never starts it on a new, empty volume.
@@ -110,8 +111,10 @@ def test_the_container_serves_as_a_docker_install_in_its_one_writable_folder():
     args = _parser().parse_args(entrypoint[3:])
     assert (args.command, args.install, args.state_dir, args.host, args.port) == ("serve", "docker", "/data",
                                                                                   "0.0.0.0", 8090)
+    assert args.settings_port == 8091  # the settings on their own port, published beside the dashboard's
     assert (args.config, args.secrets) == ("/config/config.toml", "/nonexistent")
-    assert "EXPOSE 8090" in DOCKERFILE and "127.0.0.1:8090/healthz" in DOCKERFILE
+    # The health check asks the dashboard's port, which answers it whether or not the dashboard is on.
+    assert "EXPOSE 8090 8091" in DOCKERFILE and "127.0.0.1:8090/healthz" in DOCKERFILE
 
 
 def test_python_in_the_container_never_imports_from_the_data_volume():
@@ -359,15 +362,16 @@ def test_the_guard_holds_the_same_addresses_as_the_unit():
         assert f"type {kind}" in body and "flags interval" in body, name
 
 
-def test_the_guard_keeps_the_units_port_to_the_home_network():
+def test_the_guard_keeps_the_units_ports_to_the_home_network():
     from twobells.cli.main import _parser
 
-    port = _parser().parse_args(shlex.split(_unit("twobells-web.service")["ExecStart"][0])[1:]).port
+    args = _parser().parse_args(shlex.split(_unit("twobells-web.service")["ExecStart"][0])[1:])
+    ports = f"{{ {args.port}, {args.settings_port} }}"  # the dashboard's and the settings'
     incoming = [line.strip() for line in _block(_rules(), "chain input {").strip().splitlines()
                 if line.strip() and not line.strip().startswith("#")]
     assert incoming[:3] == ["type filter hook input priority filter; policy accept;",
-                            f"tcp dport {port} ip saddr != @home4 drop",
-                            f"tcp dport {port} ip6 saddr != @home6 drop"]
+                            f"tcp dport {ports} ip saddr != @home4 drop",
+                            f"tcp dport {ports} ip6 saddr != @home6 drop"]
 
 
 def test_the_guard_refuses_new_connections_to_the_fetch_service():
@@ -637,16 +641,18 @@ def test_the_screen_s_service_may_use_the_sound_devices_and_nothing_more():
     assert "audio" not in " ".join(_unit("twobells.service").get("SupplementaryGroups", []))
 
 
-def test_the_pi_serves_its_settings_at_8090_and_nothing_at_8080():
+def test_the_pi_serves_its_dashboard_at_8090_its_settings_at_8091_and_nothing_at_8080():
+    from twobells.cli.common import WEB_PORT
     from twobells.cli.main import _parser
     from twobells.settings.installs import install_named
 
     web = _unit("twobells-web.service")
     assert web["ExecStart"] == ["/opt/twobells/venv/bin/twobells serve --install pi "
-                                "--config /etc/twobells/config.toml --port 8090"]
+                                "--config /etc/twobells/config.toml --port 8090 --settings-port 8091"]
     args = _parser().parse_args(shlex.split(web["ExecStart"][0])[1:])
-    assert (args.command, args.install, args.config, args.port, args.host, args.lan) == (
-        "serve", "pi", "/etc/twobells/config.toml", 8090, None, False)
+    assert (args.command, args.install, args.config, args.port, args.settings_port, args.host, args.lan) == (
+        "serve", "pi", "/etc/twobells/config.toml", 8090, 8091, None, False)
+    assert args.settings_port == WEB_PORT  # the address the board's Set me up page shows
     assert install_named("pi").host == "0.0.0.0"  # every address, kept to the home network above
     # No second listener on the old port: bookmarks to it break, on purpose.
     assert "8080" not in (PI / "twobells-web.service").read_text()
@@ -2177,12 +2183,40 @@ def test_install_and_update_give_the_settings_new_address():
 
     install = (PI / "install.sh").read_text()
     update = (PI / "update.sh").read_text()
-    assert "http://$(hostname).local:8090/settings" in install
-    assert ":8090/settings" in update
+    assert "http://$(hostname).local:8091/settings" in install
+    assert ":8091/settings" in update
     for text in (install, update):
         assert ":8080" not in text and "twobells web " not in text
+        assert ":8090/settings" not in text  # the settings have a port of their own
     # The command the settings site gives for the password, as install.sh gives it.
     assert install_named("pi").password_command.replace("/opt/twobells", "$PREFIX") in install
+    # update.sh says the address once at either ending (the release kept on a card that won't take the
+    # board's state, status 110, or an update gone in whole), through the one function.
+    assert update.count("settings_address >&2\n  exit \"$KEPT_UNSAVED\"") == 1
+    assert update.rstrip().endswith("\nsettings_address")
+    assert update.count("http://$(hostname).local:8091/settings") == 1
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="no bash here")
+@pytest.mark.parametrize("unit, moved", [
+    ("ExecStart=/opt/twobells/venv/bin/twobells serve --install pi --port 8090\n", True),  # the release before
+    ("ExecStart=/opt/twobells/venv/bin/twobells serve --install pi --port 8090 --settings-port 8091\n", False),
+    (None, False),  # a first install has no unit to move from
+])
+def test_update_says_once_that_the_settings_moved_on_the_update_that_moves_them(tmp_path, unit, moved):
+    import subprocess
+
+    update = _script("update.sh")
+    check = re.search(r"^moved=false\n.*?^fi\n", update, re.M | re.S).group(0)
+    said = re.search(r"^settings_address\(\) \{\n.*?^\}\n", update, re.M | re.S).group(0)
+    if unit is not None:
+        (tmp_path / "twobells-web.service").write_text(unit)
+    script = f'hostname() {{ echo board; }}\nsaved="{tmp_path}"\n{check}{said}settings_address\n'
+    out = subprocess.run(["bash", "-euc", script], capture_output=True, text=True, timeout=30, check=True).stdout
+    lines = out.splitlines()
+    assert lines[0] == "The settings site: http://board.local:8091/settings"
+    assert lines[1:] == (["The settings have moved to port 8091; 8090 has the dashboard alone. "
+                          "Change any bookmark to them."] if moved else [])
 
 
 # Installing from a release: the Pi's tarball, upgrade.sh, the published image and the desktop files.
@@ -2961,7 +2995,7 @@ def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built
     for line in hardening:
         assert line in published, line
     for line in ("    container_name: twobells", "    restart: unless-stopped", '      - "0.0.0.0:8090:8090"',
-                 "      - data:/data", "volumes:", "  data:", "    name: twobells-data"):
+                 '      - "0.0.0.0:8091:8091"', "      - data:/data", "volumes:", "  data:", "    name: twobells-data"):
         assert line in published, line
     # Pinned by version and digest: the placeholder fails until both are filled in.
     assert f"    image: {IMAGE}:X.Y.Z@sha256:DIGEST" in published
@@ -2972,11 +3006,14 @@ def test_the_published_image_compose_file_is_pinned_and_locked_down_as_the_built
 
 
 def _docker_run_flags(words: list[str]) -> dict[str, str]:
-    """docker run's flags as {flag: value}, the last value of each."""
+    """docker run's flags as {flag: value}, the last value of each, but -p's
+    (each port published), which are joined with spaces."""
     flags, i = {}, 0
     while i < len(words):
         if words[i] == "--read-only":
             flags[words[i]], i = "", i + 1
+        elif words[i] == "-p" and "-p" in flags:
+            flags["-p"], i = f"{flags['-p']} {words[i + 1]}", i + 2
         else:
             flags[words[i]], i = words[i + 1], i + 2
     return flags
@@ -3001,8 +3038,10 @@ def test_unraids_template_runs_the_published_image_locked_down():
     # Compose's numbers, as docker run flags.
     assert "mem_limit: 512m" in COMPOSE and "pids_limit: 128" in COMPOSE and "- /tmp:size=64m" in COMPOSE
     configs = {config.get("Target"): config for config in root.findall("Config")}
-    assert set(configs) == {"8090", "/data"}
-    assert (configs["8090"].get("Type"), configs["8090"].get("Mode")) == ("Port", "tcp")
+    assert set(configs) == {"8090", "8091", "/data"}
+    for port in ("8090", "8091"):  # the dashboard's, and the settings'
+        assert (configs[port].get("Type"), configs[port].get("Mode")) == ("Port", "tcp")
+    assert root.findtext("WebUI") == "http://[IP]:[PORT:8091]/settings"
     data = configs["/data"]
     assert (data.get("Type"), data.get("Mode"), data.text) == ("Path", "rw", "/mnt/user/appdata/twobells")
     # A folder, not a volume: the guide gives it to the image's user first.
@@ -3017,7 +3056,8 @@ def test_the_documented_docker_run_is_locked_down_as_compose():
     assert words[-1] == f"{IMAGE}:$VERSION@$DIGEST"
     rest = _docker_run_flags(words[5:-1])
     assert {key: rest.pop(key) for key in ("--restart", "-p", "-v")} == {
-        "--restart": "unless-stopped", "-p": "0.0.0.0:8090:8090", "-v": "twobells-data:/data"}  # the compose file's volume
+        "--restart": "unless-stopped", "-p": "0.0.0.0:8090:8090 0.0.0.0:8091:8091",
+        "-v": "twobells-data:/data"}  # the compose file's volume
     assert rest == HARDENING_FLAGS
     assert f'--certificate-identity "{_identity("v$VERSION")}"' in DOCKER_DOCS
     assert f'cosign verify "{IMAGE}@$DIGEST"' in DOCKER_DOCS
@@ -3057,8 +3097,10 @@ def test_docker_publishes_its_port_on_ipv4_only():
             assert port.count(":") == 2, (where, port)  # an address, then the ports
             host, outside, inside = port.split(":")
             assert isinstance(ipaddress.ip_address(host), ipaddress.IPv4Address), (where, port)
-            assert (outside, inside) == ("8090", "8090"), (where, port)
-    assert "-p 0.0.0.0:8090:8090" in DOCKER_DOCS  # the docker run command
+            # The same number outside and in: the links between the dashboard and the settings use it.
+            assert outside == inside and inside in ("8090", "8091"), (where, port)
+        assert {port.rsplit(":", 1)[1] for port in ports} == {"8090", "8091"}, where  # both published
+    assert "-p 0.0.0.0:8090:8090 -p 0.0.0.0:8091:8091" in DOCKER_DOCS  # the docker run command
     for text in (COMPOSE, GHCR_COMPOSE, DOCKER_DOCS):
         assert "IPv6" in text  # and why
 
@@ -3073,6 +3115,7 @@ def _desktop_serve(argv: list[str]) -> None:
     args = _parser().parse_args(argv)
     assert (args.command, args.install, args.lan, args.host, args.port, args.no_browser) == (
         "serve", "desktop", False, None, 8090, True)
+    assert args.settings_port is None  # the dashboard's plus one: 8091
     assert install_named("desktop").host == "127.0.0.1"  # no --host or --lan: this computer only
 
 

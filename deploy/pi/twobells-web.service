@@ -26,7 +26,7 @@ RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes
 # Keys, so the page can say which are set and check settings before saving.
 EnvironmentFile=/etc/twobells/secrets.env
-ExecStart=/opt/twobells/venv/bin/twobells serve --install pi --config /etc/twobells/config.toml --port 8090
+ExecStart=/opt/twobells/venv/bin/twobells serve --install pi --config /etc/twobells/config.toml --port 8090 --settings-port 8091
 Restart=on-failure
 RestartSec=5
 UMask=0027

@@ -69,11 +69,12 @@ table inet twobells_web {
 		reject with icmpx admin-prohibited
 	}
 
-	# Its port, from the home network only; and nothing to the fetch service.
+	# Its ports, the dashboard's and the settings', from the home network only;
+	# and nothing to the fetch service.
 	chain input {
 		type filter hook input priority filter; policy accept;
-		tcp dport 8090 ip saddr != @home4 drop
-		tcp dport 8090 ip6 saddr != @home6 drop
+		tcp dport { 8090, 8091 } ip saddr != @home4 drop
+		tcp dport { 8090, 8091 } ip6 saddr != @home6 drop
 		ct state new socket cgroupv2 level 2 @fetch drop
 	}
 }

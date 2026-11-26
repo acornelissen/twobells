@@ -176,7 +176,7 @@ else
 EOF
 fi
 cat <<EOF
-  2. Open the settings site: http://$(hostname).local:8090/settings on a phone or
+  2. Open the settings site: http://$(hostname).local:8091/settings on a phone or
      computer on your home network. Claim it with the code the board shows (or
      set the password here first:
        sudo -u twobells $PREFIX/venv/bin/twobells serve --install pi --set-password )
