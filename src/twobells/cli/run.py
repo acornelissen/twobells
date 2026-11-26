@@ -9,15 +9,18 @@ import logging
 import signal
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from ..board.app import run_loop, run_once
+from ..board import runfolder
+from ..board.app import RunResult, run_loop, run_once
 from ..board.config import first_run_settings
 from ..board.displays.display import PngDisplay, open_display
 from ..board.names import DISPLAY_PANELS
 from ..board.scroll import SCROLL_FRAME_S
+from ..board.sinceboot import SinceBoot
 from ..board.speaker import Speaker
 from ..board.state import StateStore
 from ..board.unsaved import KeptRender
@@ -105,41 +108,67 @@ def _run(args) -> int:
     # next poll window opens.
     prime = "sources" not in state
     # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
-    return _single(store, state, lambda: run_once(settings.board, state, display, local_now(settings.timezone),
-                                                  prime=prime, save=lambda kept: _save(store, kept)))
+    return _single(store, state, lambda since_boot: run_once(
+        settings.board, state, display, local_now(settings.timezone), prime=prime,
+        save=lambda kept: _save(store, kept), since_start=since_boot,
+    ), {config.source.name for config in settings.board.sources})
 
 
-def _single(store: StateStore, state: dict, draw) -> int:
+def _single(store: StateStore, state: dict, draw: Callable[[set[str] | None], RunResult],
+            sources: set[str] | None = None) -> int:
     """A single run, the e-paper timer's: `draw` it, then save the state, even
     if drawing failed, as what was fetched and the bus budget spent on it
     must not be lost. 0, or UNSAVED if the state couldn't be saved.
 
-    While it can't be, the last redraw is kept in memory instead
+    On a Pi, it keeps what it must between runs in memory, in the unit's
+    runtime folder (board/runfolder.py). Which of the board's `sources` have
+    been fetched since the Pi started (board/sinceboot.py) is given to
+    `draw`, which adds to it as it fetches more; until then each one's
+    saved departures are marked not updating, as a started screen's are. A
+    source is added to the record only once the state is saved with its
+    fetch. Without the folder `draw` is given None, and trusts what was
+    saved, as ever.
+
+    While the state can't be saved, the last redraw is kept in memory instead
     (board/unsaved.py), so the next minute's run, reading the state afresh,
     doesn't take the panel to show something else and draw it again. It is
     forgotten before each save, and kept again only after one that fails
     with the board drawn, so one that is there is never older than the state
     on the card; a draw that failed may have left the panel half drawn, and
     keeps nothing, so the next run draws."""
-    kept = KeptRender.here()
+    folder = runfolder.here()
+    kept = KeptRender(folder) if folder is not None else None
+    boot = SinceBoot(folder, sources) if folder is not None and sources else None
     if kept is not None:
         drawn = kept.read()
         if drawn is not None:
             state["last_render"] = drawn
+    before = boot.fetched() if boot is not None else None
+    since_boot = set(before) if before is not None else None
     try:
-        result = draw()
+        result = draw(since_boot)
     except BaseException:
         if kept is not None:
             kept.forget()
-        _save(store, state)
+        _count_since_boot(boot, before, since_boot, _save(store, state))
         raise
     if kept is not None:
         kept.forget()
     saved = _save(store, state)
+    _count_since_boot(boot, before, since_boot, saved)
     if not saved and kept is not None:
         kept.keep(state.get("last_render"))
     logging.info("rendered=%s", result.rendered)
     return 0 if saved else UNSAVED
+
+
+def _count_since_boot(boot: SinceBoot | None, before: set[str] | None, since_boot: set[str] | None,
+                      saved: bool) -> None:
+    """Adds the sources this run fetched to the record of those fetched since
+    the Pi started, once the state is saved with them; written only when it changes."""
+    if boot is None or before is None or since_boot is None or not saved or since_boot == before:
+        return
+    boot.keep(since_boot)
 
 
 def _save(store: StateStore, state: dict) -> bool:
@@ -307,7 +336,8 @@ def _show_instead(args, found: Store, page: SetupView, reload, restarting: str) 
     state = store.load()
     zone = ZoneInfo(settings.timezone)
     if not args.loop:
-        return _single(store, state, lambda: run_once(board, state, display, local_now(settings.timezone)))
+        return _single(store, state, lambda since_boot: run_once(board, state, display,
+                                                                local_now(settings.timezone)))
     tick = args.tick if args.tick is not None else (60 if display.panel.epaper else 1)
     try:
         run_loop(

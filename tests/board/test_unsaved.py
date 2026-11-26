@@ -15,22 +15,6 @@ def run(tmp_path):
     return folder
 
 
-def test_it_is_kept_in_systemd_s_runtime_directory_only(run, tmp_path):
-    assert KeptRender.here({}) is None  # Docker, a desktop: nothing kept
-    assert KeptRender.here({"RUNTIME_DIRECTORY": str(run)}) is not None
-    for given in ("run", f"{run}:{tmp_path}", str(tmp_path / "missing")):
-        assert KeptRender.here({"RUNTIME_DIRECTORY": given}) is None, given
-
-
-def test_a_folder_others_can_open_or_a_link_to_one_is_not_used(run, tmp_path):
-    os.chmod(run, 0o750)
-    assert KeptRender.here({"RUNTIME_DIRECTORY": str(run)}) is None
-    os.chmod(run, 0o700)
-    link = tmp_path / "link"
-    link.symlink_to(run)
-    assert KeptRender.here({"RUNTIME_DIRECTORY": str(link)}) is None
-
-
 def test_a_redraw_kept_reads_back_until_forgotten(run):
     kept = KeptRender(run)
     assert kept.read() is None

@@ -811,7 +811,7 @@ def test_the_spool_is_in_memory_and_shared_by_both_units():
 
 def test_the_e_paper_run_keeps_its_last_redraw_in_memory_of_its_own_only():
     # A folder in /run for the timer's runs alone, kept between them, which
-    # only the service user can open (board/unsaved.py refuses any other).
+    # only the service user can open (board/runfolder.py refuses any other).
     kept = {"RuntimeDirectory": ["twobells"], "RuntimeDirectoryMode": ["0700"], "RuntimeDirectoryPreserve": ["yes"]}
     unit = _unit("twobells.service")
     assert {key: unit.get(key) for key in kept} == kept and unit["User"] == ["twobells"]

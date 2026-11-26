@@ -34,7 +34,7 @@ def own_home(tmp_path_factory, monkeypatch):
     alone, for the tools tests run (node, through mise)."""
     home = tmp_path_factory.mktemp("home")
     monkeypatch.setattr(store, "_home", lambda: home)
-    for name in ("XDG_STATE_HOME", "STATE_DIRECTORY"):
+    for name in ("XDG_STATE_HOME", "STATE_DIRECTORY", "RUNTIME_DIRECTORY"):
         monkeypatch.delenv(name, raising=False)
 
 
