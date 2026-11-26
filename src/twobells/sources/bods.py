@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 
 from ..core import safexml
 from ..core.errors import redact_keys
-from ..core.net import get_bytes
+from ..core.net import TooLarge, get_bytes
 from ..core.places import BODS_BASE_URL
 
 # A busy town's worth of vehicles is well under this; anything bigger is refused.
@@ -44,6 +44,11 @@ _CURRENT_REG = re.compile(r"([A-Z]{2}[0-9]{2})[ _]?([A-Z]{3})")  # since 2001: "
 _OTHER_REG = re.compile(r"[A-Z0-9]{1,4}[ _][A-Z0-9]{1,4}")  # older ones, spaced: "R123 ABC", "ABC 123D"
 
 HttpGetBytes = Callable[[str, int], bytes]
+
+
+class AnswerTooBig(RuntimeError):
+    """BODS's answer for a box was bigger than the fetch allowed: there are
+    too many buses in it, its trackers' last positions included."""
 
 
 @dataclass(frozen=True)
@@ -196,9 +201,15 @@ class BodsVehicleSource:
         }
         return f"{self._base_url}/datafeed/?{urlencode(params)}"
 
-    def fetch(self) -> list[Vehicle]:
+    def fetch(self, max_bytes: int = MAX_RESPONSE_BYTES) -> list[Vehicle]:
+        """The box's buses, from an answer of at most `max_bytes` (never more
+        than MAX_RESPONSE_BYTES). AnswerTooBig if it is bigger; RuntimeError,
+        without the key, for anything else that stops the asking."""
+        max_bytes = min(max_bytes, MAX_RESPONSE_BYTES)
         try:
-            body = self._http_get(self._url(), MAX_RESPONSE_BYTES)
+            body = self._http_get(self._url(), max_bytes)
+        except TooLarge:
+            raise AnswerTooBig(f"BODS's answer for the box was over {max_bytes:,} bytes") from None
         except Exception as error:  # noqa: BLE001 - re-raised without the key
             raise RuntimeError(redact_keys(str(error))) from None
         now = self._now()

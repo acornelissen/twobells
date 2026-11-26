@@ -9,6 +9,7 @@ from twobells.core.safexml import TooManyElements
 from twobells.sources.bods import (
     MAX_RESPONSE_BYTES,
     MAX_RESPONSE_ELEMENTS,
+    AnswerTooBig,
     BodsVehicleSource,
     fleet_and_registration,
     parse_siri_vm,
@@ -180,6 +181,32 @@ def test_errors_never_carry_the_api_key():
     assert "secret" not in str(error.value)
     assert "api_key=REDACTED" in str(error.value)
     assert error.value.__cause__ is None
+
+
+def test_an_answer_over_the_cap_says_so_without_the_key():
+    from twobells.core.net import TooLarge
+
+    def oversized_get(url, max_bytes):
+        raise TooLarge(f"Response larger than {max_bytes} bytes")
+
+    source = BodsVehicleSource("secret", BOX, {"341"}, http_get=oversized_get)
+    with pytest.raises(AnswerTooBig) as error:
+        source.fetch()
+    assert "secret" not in str(error.value) and "2,000,000" in str(error.value)
+    assert error.value.__cause__ is None
+
+
+def test_a_fetch_may_ask_for_a_smaller_answer_but_never_a_bigger_one():
+    asked = []
+
+    def fake_get(url, max_bytes):
+        asked.append(max_bytes)
+        return FIXTURE
+
+    source = BodsVehicleSource("k", BOX, {"341"}, http_get=fake_get)
+    source.fetch(1_000)
+    source.fetch(MAX_RESPONSE_BYTES * 10)
+    assert asked == [1_000, MAX_RESPONSE_BYTES]
 
 
 def test_get_bytes_refuses_an_oversized_body(monkeypatch):
