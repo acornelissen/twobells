@@ -3383,6 +3383,7 @@ def test_a_bus_sheet_names_its_stop_and_its_late_threshold():
     ]
 
 
+@needs_node
 def test_a_new_snapshot_updates_the_open_sheet_in_place():
     # Rebuilding it would move a screen reader's place: what's there stays,
     # and only what changed is changed.
