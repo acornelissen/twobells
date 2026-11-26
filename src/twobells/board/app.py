@@ -36,8 +36,11 @@ from .route import RouteView, target
 from .scroll import Frame, board_seconds
 from .speaker import Speaker
 from .state import (
+    BIG_BOX,
     MEMORY_ONLY,
     NOT_UPDATING,
+    big_box_from_dict,
+    big_box_to_dict,
     departure_to_dict,
     departures_from_dicts,
     from_iso,
@@ -92,6 +95,13 @@ class SourceConfig:
         if self.fallback_policy is not None and getattr(self.source, "falling_back", False):
             return self.fallback_policy
         return self.policy
+
+
+class RemembersBigBox(Protocol):
+    """A source that remembers a box found too big for one answer, and
+    when, by the board's clock (sources/bodsbus.py's BodsBusSource)."""
+
+    big_box: tuple[tuple[float, float, float, float], datetime] | None
 
 
 class VehicleSource(Protocol):
@@ -588,6 +598,32 @@ def run_once(
         _present(display, frame, now)
         state["last_render"] = drawn
     return result
+
+
+def give_big_box(board: Board, state: dict) -> None:
+    """Gives each source that remembers a box found too big for one answer
+    (sources/bodsbus.py's BodsBusSource.big_box) the one its entry in the
+    state keeps, or none if that isn't of the shape (board/state.py's
+    big_box_from_dict). For the e-paper timer, a new process each run
+    (cli/run.py), with take_big_box after it; a running screen's sources
+    keep their own in memory, and are given nothing."""
+    for config in board.sources:
+        if hasattr(config.source, "big_box"):
+            entry = state.get("sources", {}).get(config.source.name)
+            found = big_box_from_dict(entry.get(BIG_BOX)) if isinstance(entry, dict) else None
+            cast(RemembersBigBox, config.source).big_box = found
+
+
+def take_big_box(board: Board, state: dict) -> None:
+    """Saves in each such source's entry the box it now remembers (give_big_box), or none."""
+    for config in board.sources:
+        if not hasattr(config.source, "big_box"):
+            continue
+        found = cast(RemembersBigBox, config.source).big_box
+        if found is not None:
+            state.setdefault("sources", {}).setdefault(config.source.name, {})[BIG_BOX] = big_box_to_dict(*found)
+        elif isinstance(entry := state.get("sources", {}).get(config.source.name), dict):
+            entry.pop(BIG_BOX, None)
 
 
 def _make(board: Board, state: dict, display: Display, now: datetime, prime: bool,

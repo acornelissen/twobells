@@ -721,3 +721,150 @@ def test_bank_holidays_kept_in_memory_still_shut_the_board_s_windows(timer, gov_
     for minute in range(10):
         timer.run(datetime(2026, 8, 31, 7, minute))
     assert gov_uk.calls == 1 and timer.calls == 1  # no trains on a bank holiday
+
+
+# --- 6. The bus timetable's live positions in a city, where one box's answer is too big ---
+
+
+class City:
+    """BODS for the timer's BODS bus, by the board's clock: an answer for the
+    one box round the stops is over the cap (AnswerTooBig), a small box's has
+    no buses. Counts the boxes asked for."""
+
+    def __init__(self, timer, monkeypatch, tmp_path):
+        from twobells.sources import bodsbus
+        from twobells.sources.bods import AnswerTooBig
+        from twobells.timetable import build as timetable
+        from twobells.timetable.model import Calendar, Call, Journey, Schedule, StopPosition
+
+        city = self
+        self.boxes: list[tuple[float, float, float, float]] = []
+
+        class Vehicles:
+            def __init__(self, api_key, box, lines, base_url, http_get, now):
+                self.box = box
+
+            def fetch(self, max_bytes=0):
+                city.boxes.append(self.box)
+                if city.big(self.box):
+                    raise AnswerTooBig("BODS's answer for the box was over 2,000,000 bytes")
+                return []
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return timer.now.replace(tzinfo=tz)
+
+        monkeypatch.setattr(bodsbus, "BodsVehicleSource", Vehicles)
+        monkeypatch.setattr(bodsbus, "datetime", Clock)
+        # Henry Street, Glossop, with stops before it 5 km round: one box of 12 by 13 km.
+        stops = {f"G{n}": StopPosition(f"Way {n}", 53.44384 + lat, -1.948999 + lon)
+                 for n, (lat, lon) in enumerate([(-0.05, -0.05), (0.05, -0.05), (-0.05, 0.05), (0.05, 0.05)])}
+        henry = StopPosition("Henry Street", 53.44384, -1.948999)
+        journey = Journey("341", "BNGN", "Hadfield", "4173", (*(Call(atco, 600) for atco in stops),
+                                                             Call("1000DGHS0900", 610)), Calendar(frozenset(range(7))))
+        timetable.save(timer.state.parent, Schedule(datetime(2026, 10, 5, 3, 0), None, {"A": "1000DGHS0900"},
+                                                    (journey,), {**stops, "1000DGHS0900": henry}))
+        (tmp_path / "config.toml").write_text(
+            f'state_file = "{timer.state}"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+            '[bus]\nsource = "bods"\noperators = ["BNML"]\nwindows = ["Mon-Sun 06:00-23:00"]\n'
+            '[bus.stops]\nA = "1000DGHS0900"\n')
+        (tmp_path / "secrets.env").write_text("RDM_API_KEY=k\nBODS_API_KEY=b\n")
+
+    @staticmethod
+    def big(box) -> bool:
+        from twobells.sources.bodsbus import SMALL_BOX_DEGREES
+
+        west, south, east, north = box
+        return north - south > SMALL_BOX_DEGREES[0] + 1e-9
+
+    @property
+    def big_asks(self) -> int:
+        return sum(1 for box in self.boxes if self.big(box))
+
+
+@pytest.fixture
+def city(timer, monkeypatch, tmp_path):
+    return City(timer, monkeypatch, tmp_path)
+
+
+@pytest.mark.parametrize("full", [False, True])
+def test_the_timer_asks_for_a_box_found_too_big_once_in_6_hours_not_every_check(timer, city, full):
+    from twobells.sources.bodsbus import BIG_BOX_RETRY
+
+    timer.full = full
+    for minutes in range(0, 7 * 60, 10):
+        timer.run(THU_0700 + timedelta(minutes=minutes))
+    assert len({box for box in city.boxes if not city.big(box)}) > 1  # small boxes every check
+    assert city.big_asks == 2  # 07:00, then once 6 hours on
+    assert at("13:00") == THU_0700 + BIG_BOX_RETRY
+
+
+def test_the_box_found_too_big_is_saved_in_the_bus_entry_and_kept_in_memory_on_a_full_card(timer, city):
+    timer.run(at("07:00"))
+    saved = json.loads(timer.state.read_text())["sources"]["bus"]["big_box"]
+    assert saved["at"] == "2026-10-08T07:00:00" and len(saved["box"]) == 4
+    timer.full = True
+    timer.run(at("07:02"))
+    assert json.loads((timer.folder / "unsaved-sources.json").read_text())["bus"]["big_box"] == saved
+    timer.full = False
+    timer.run(at("07:04"))
+    assert json.loads(timer.state.read_text())["sources"]["bus"]["big_box"] == saved
+    assert city.big_asks == 1
+
+
+def test_a_state_from_before_the_box_was_saved_asks_for_it_once(timer, city):
+    timer.state.write_text(json.dumps({"sources": {"bus": {"last_attempt": "2026-10-08T06:50:00"}}}))  # 0.6.0's
+    for minute in range(0, 30, 2):
+        timer.run(THU_0700 + timedelta(minutes=minute))
+    assert city.big_asks == 1
+
+
+def test_a_clock_gone_back_past_the_box_found_too_big_asks_for_it_whole(timer, city):
+    timer.run(at("08:00"))
+    timer.run(at("07:00"))  # a Pi with no clock battery, say
+    assert city.big_asks == 2
+    timer.run(at("07:02"))
+    assert city.big_asks == 2  # and found too big again, at 07:00
+
+
+def test_a_box_found_too_big_for_other_stops_asks_for_this_one_whole(timer, city):
+    timer.run(at("07:00"))
+    saved = json.loads(timer.state.read_text())
+    saved["sources"]["bus"]["big_box"]["box"][3] += 0.01  # the timetable since rebuilt with another stop, say
+    timer.state.write_text(json.dumps(saved))
+    timer.run(at("07:02"))
+    assert city.big_asks == 2
+
+
+HOSTILE_BOXES = [
+    None, [], {"box": [-2.0, 53.39, -1.9, 53.5]}, {"box": "x", "at": "2026-10-08T07:00:00"},
+    {"box": [-2.0, 53.39, -1.9], "at": "2026-10-08T07:00:00"},
+    {"box": [-1.9, 53.39, -2.0, 53.5], "at": "2026-10-08T07:00:00"},
+    {"box": [-2.0, 53.39, -1.9, 95.0], "at": "2026-10-08T07:00:00"},
+    {"box": [-2.0, 53.39, -1.9, 53.5], "at": "9999-12-31T23:59:00"},
+    {"box": [-2.0, 53.39, -1.9, 53.5], "at": "2026-10-08T07:00:00+01:00"},
+    {"box": [-2.0, 53.39, -1.9, 53.5], "at": "2026-10-08T07:00:00", "x": 1},
+]
+
+
+@pytest.mark.parametrize("hostile", HOSTILE_BOXES)
+def test_a_box_found_too_big_saved_of_any_other_shape_is_none(timer, city, hostile):
+    timer.run(at("07:00"))
+    saved = json.loads(timer.state.read_text())
+    saved["sources"]["bus"]["big_box"] = hostile
+    timer.state.write_text(json.dumps(saved))
+    assert timer.run(at("07:02")) == 0
+    assert city.big_asks == 2  # asked for whole, as with nothing remembered
+    assert json.loads(timer.state.read_text())["sources"]["bus"]["big_box"]["at"] == "2026-10-08T07:02:00"
+
+
+@pytest.mark.parametrize("hostile", HOSTILE_BOXES)
+def test_a_box_found_too_big_kept_in_memory_of_any_other_shape_is_none(timer, city, hostile):
+    timer.full = True
+    timer.run(at("07:00"))
+    kept = json.loads((timer.folder / "unsaved-sources.json").read_text())
+    kept["bus"]["big_box"] = hostile
+    (timer.folder / "unsaved-sources.json").write_text(json.dumps(kept))
+    assert timer.run(at("07:02")) != 0
+    assert city.big_asks == 2

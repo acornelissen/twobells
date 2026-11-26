@@ -65,9 +65,9 @@ SMALL_BOXES_BYTES = MAX_RESPONSE_BYTES  # all their answers together: one full a
 SMALL_BOXES_TIME = timedelta(seconds=30)  # and no more is asked for once a check has taken this long
 # A box found too big is remembered, so the checks after go straight to the
 # small boxes rather than download 2 MB to throw away, for this long; then
-# it is tried again, as the buses in an area change. Only in memory, as the
-# timetable read is: the minutely e-paper run, a new process each time,
-# starts without it.
+# it is tried again, as the buses in an area change. In memory, as the
+# timetable read is; the minutely e-paper run, a new process each time, is
+# handed it from the board's state (BodsBusSource.big_box).
 BIG_BOX_RETRY = timedelta(hours=6)
 
 
@@ -309,6 +309,25 @@ class BodsBusSource:
                 self._too_big = None
                 return vehicles
         return self._in_small_boxes(schedule, box, lines, started)
+
+    @property
+    def big_box(self) -> tuple[tuple[float, float, float, float], datetime] | None:
+        """The box whose answer was last over the cap, and when, by the
+        board's clock (local, with no zone); None if there is none. For a
+        caller that keeps it from one process to the next (the e-paper
+        timer: board/app.py's give_big_box), and hands it back here."""
+        if self._too_big is None:
+            return None
+        box, found = self._too_big
+        return box, found.astimezone(self._tz).replace(tzinfo=None) if found.tzinfo else found
+
+    @big_box.setter
+    def big_box(self, value: tuple[tuple[float, float, float, float], datetime] | None) -> None:
+        if value is None:
+            self._too_big = None
+            return
+        box, found = value
+        self._too_big = (box, found.replace(tzinfo=self._tz) if found.tzinfo is None else found)
 
     def _known_too_big(self, box: tuple[float, float, float, float], now: datetime) -> bool:
         """Whether `box` was found too big less than BIG_BOX_RETRY ago. A

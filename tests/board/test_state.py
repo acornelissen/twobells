@@ -395,3 +395,46 @@ def test_a_saved_not_updating_mark_reads_back(tmp_path, mark):
     path = tmp_path / "state.json"
     path.write_text(json.dumps({"sources": {"train": {"not_updating": mark}}}))
     assert StateStore(path).load()["sources"]["train"]["not_updating"] == mark
+
+
+BOX = (-2.01, 53.38, -1.89, 53.50)
+
+
+def test_a_box_found_too_big_reads_back_as_saved(tmp_path):
+    from twobells.board.state import big_box_from_dict, big_box_to_dict
+
+    saved = big_box_to_dict(BOX, datetime(2026, 10, 8, 7, 0, 0, 123456))
+    assert saved == {"box": list(BOX), "at": "2026-10-08T07:00:00.123456"}
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": {"bus": {"big_box": saved}}}))
+    loaded = StateStore(path).load()["sources"]["bus"]["big_box"]
+    assert big_box_from_dict(loaded) == (BOX, datetime(2026, 10, 8, 7, 0, 0, 123456))
+    assert big_box_from_dict({"box": [-2, 53, -1, 54], "at": "2026-10-08T07:00:00"})[0] == (-2.0, 53.0, -1.0, 54.0)
+
+
+@pytest.mark.parametrize("box", [
+    None, "x", [], [-2.01, 53.38, -1.89], [-2.01, 53.38, -1.89, 53.50, 0], ["-2.01", 53.38, -1.89, 53.50],
+    [True, 53.38, -1.89, 53.50], [float("nan"), 53.38, -1.89, 53.50], [-2.01, 53.38, float("inf"), 53.50],
+    [-2.01, 53.38, 10**400, 53.50], [-1.89, 53.38, -2.01, 53.50], [-2.01, 53.50, -1.89, 53.38],
+    [-2.01, 53.38, -2.01, 53.50], [-181, 53.38, -1.89, 53.50], [-2.01, -91, -1.89, 53.50],
+    [-2.01, 53.38, 181, 53.50], [-2.01, 53.38, -1.89, 91], [53.38, -2.01, 53.50, -1.89 + 100],
+])
+def test_a_box_found_too_big_not_on_the_map_in_order_is_none(tmp_path, box):
+    from twobells.board.state import big_box_from_dict
+
+    saved = {"box": box, "at": "2026-10-08T07:00:00"}
+    assert big_box_from_dict(saved) is None
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps({"sources": {"bus": {"last_success": "2026-10-08T07:00:00", "big_box": saved}}}))
+    assert StateStore(path).load()["sources"]["bus"] == {"last_success": "2026-10-08T07:00:00"}  # dropped at load
+
+
+@pytest.mark.parametrize("value", [
+    None, [], {"box": list(BOX)}, {"box": list(BOX), "at": "2026-10-08T07:00:00", "x": 1},
+    {"box": list(BOX), "at": "07:00"}, {"box": list(BOX), "at": "2026-10-08T07:00:00+01:00"},
+    {"box": list(BOX), "at": "9999-12-31T23:59:00"}, {"box": list(BOX), "at": 1},
+])
+def test_a_box_found_too_big_of_any_other_shape_is_none(value):
+    from twobells.board.state import big_box_from_dict
+
+    assert big_box_from_dict(value) is None

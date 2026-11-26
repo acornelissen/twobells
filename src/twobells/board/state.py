@@ -141,6 +141,39 @@ def is_time(value: object) -> bool:
     return moment.tzinfo is None and sane_time(moment)
 
 
+# Saved in the BODS bus source's entry by the e-paper timer: the box round
+# its stops whose live positions were too many for one answer, and when, by
+# the board's clock (sources/bodsbus.py's BodsBusSource.big_box), so the
+# next run, a new process, goes straight to the small boxes for as long as
+# a running screen would (board/app.py's give_big_box).
+BIG_BOX = "big_box"
+
+
+def big_box_to_dict(box: tuple[float, float, float, float], found: datetime) -> dict:
+    return {"box": list(box), "at": to_iso(found)}
+
+
+def big_box_from_dict(value: object) -> tuple[tuple[float, float, float, float], datetime] | None:
+    """A box found too big as big_box_to_dict saves it, or None if `value`
+    isn't exactly one: four finite numbers, west to east and south to north
+    on the map, and a time is_time passes."""
+    if not isinstance(value, dict) or set(value) != {"box", "at"} or not is_time(value["at"]):
+        return None
+    box = value["box"]
+    if not isinstance(box, list) or len(box) != 4:
+        return None
+    west, south, east, north = (finite(number) for number in box)
+    if west is None or south is None or east is None or north is None:
+        return None
+    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
+        return None
+    return (west, south, east, north), datetime.fromisoformat(value["at"])
+
+
+def is_big_box(value: object) -> bool:
+    return big_box_from_dict(value) is not None
+
+
 def _readable(items: list, read) -> tuple[list, int]:
     """The saved `items` that `read` reads back, and how many it didn't."""
     kept = []
@@ -173,6 +206,9 @@ def _clean(state: dict) -> list[str]:
         if NOT_UPDATING in entry and not is_mark(entry[NOT_UPDATING]):
             dropped.append(f"{name!r} not updating mark")
             del entry[NOT_UPDATING]
+        if BIG_BOX in entry and not is_big_box(entry[BIG_BOX]):
+            dropped.append(f"{name!r} box found too big")
+            del entry[BIG_BOX]
         if "departures" in entry:
             if not isinstance(entry["departures"], list):
                 dropped.append(f"{name!r} departures")

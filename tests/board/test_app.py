@@ -2447,3 +2447,70 @@ def test_no_key_trains_never_take_on_a_mark_the_keyed_trains_left():
                   modes=("train",))
     assert not run_once(board, state, display, at("12:00")).view.section("train").stale
     assert "not_updating" not in state["sources"]["train"]
+
+
+# --- A box found too big for the bus source's live positions (sources/bodsbus.py's big_box) ---
+
+from twobells.board.app import give_big_box, take_big_box  # noqa: E402
+
+TOO_BIG = {"box": [-2.0, 53.39, -1.9, 53.5], "at": "2026-10-08T06:59:00"}
+
+
+class Remembering(FakeSource):
+    """A bus source that remembers a box found too big, and says when it is handed one."""
+
+    def __init__(self, name, departures=()):
+        super().__init__(name, departures)
+        self.given = []
+        self._big_box = None
+
+    @property
+    def big_box(self):
+        return self._big_box
+
+    @big_box.setter
+    def big_box(self, value):
+        self.given.append(value)
+        self._big_box = value
+
+
+def test_the_timer_gives_the_bus_source_the_box_its_entry_keeps_and_takes_back_what_it_has():
+    buses = Remembering("bus", [bus()])
+    board = make_board(FakeSource("train", [train()]), buses)
+    state = {"sources": {"train": {"last_attempt": "2026-10-08T06:58:00"}, "bus": {"big_box": TOO_BIG}}}
+    give_big_box(board, state)
+    assert buses.big_box == ((-2.0, 53.39, -1.9, 53.5), datetime(2026, 10, 8, 6, 59))
+    buses.big_box = ((-2.1, 53.39, -1.9, 53.5), datetime(2026, 10, 8, 7, 0))
+    take_big_box(board, state)
+    assert state["sources"] == {"train": {"last_attempt": "2026-10-08T06:58:00"},
+                                "bus": {"big_box": {"box": [-2.1, 53.39, -1.9, 53.5], "at": "2026-10-08T07:00:00"}}}
+    buses.big_box = None  # the one box under the cap again
+    take_big_box(board, state)
+    assert state["sources"]["bus"] == {}
+
+
+@pytest.mark.parametrize("state", [{}, {"sources": {}}, {"sources": {"bus": None}}, {"sources": {"bus": {}}},
+                                   {"sources": {"bus": {"big_box": {**TOO_BIG, "at": "soon"}}}}])
+def test_with_no_box_of_the_shape_in_its_entry_the_bus_source_is_given_none(state):
+    buses = Remembering("bus", [bus()])
+    buses.big_box = ((-2.1, 53.39, -1.9, 53.5), datetime(2026, 10, 8, 7, 0))
+    board = make_board(FakeSource("train", [train()]), buses)
+    shape = {key: dict(value) for key, value in state.items()}
+    give_big_box(board, state)
+    assert buses.big_box is None
+    take_big_box(board, state)
+    assert set(state) == set(shape) and set(state.get("sources", {})) == set(shape.get("sources", {}))
+    assert not isinstance(state.get("sources", {}).get("bus"), dict) or "big_box" not in state["sources"]["bus"]
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_running_screen_gives_its_bus_source_nothing_from_the_state(scrolling):
+    # One process: the source keeps its own in memory, as ever.
+    buses = Remembering("bus", [bus()])
+    board = make_board(FakeSource("train", [train()]), buses)
+    state = {"sources": {"bus": {"big_box": dict(TOO_BIG)}}}
+    screen, wall = (ScrollingScreen() if scrolling else FakeScreen()), WallClock(1000.0)
+    run_loop(board, state, screen, endless(THU_0700, 60), 1, ticks=10, sleep=wall.sleep,
+             frame_seconds=SCROLL_FRAME_S if scrolling else None, wall=wall)
+    assert buses.calls > 0 and buses.given == []
+    assert state["sources"]["bus"]["big_box"] == TOO_BIG

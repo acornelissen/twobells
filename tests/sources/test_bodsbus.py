@@ -396,6 +396,58 @@ def test_another_box_is_tried_whole_though_the_last_was_too_big(tmp_path):
     assert not small(bods.boxes()[0]) and inside(bods.boxes()[0], far.lat, far.lon)
 
 
+def test_a_box_found_too_big_is_given_out_by_the_board_s_clock_and_taken_back(tmp_path):
+    # As the e-paper timer hands it from one run, a new process, to the next.
+    bods = Bods(city, at(10, 4, 5))
+    first = city_source(tmp_path, bods)
+    assert first.big_box is None
+    first.fetch_live()
+    box, found = first.big_box
+    assert found == datetime(2026, 10, 9, 10, 4, 5) and box == pytest.approx(bods.boxes()[0], abs=1e-5)
+    bods.asked.clear()
+    bods.now = at(10, 4) + BIG_BOX_RETRY - timedelta(seconds=1)
+    second = city_source(tmp_path, bods)
+    second.big_box = (box, found)
+    second.fetch_live()
+    assert len(bods.asked) == MAX_SMALL_BOXES and all(small(box) for box in bods.boxes())
+    assert second.big_box == (box, found)
+    second.big_box = None
+    bods.asked.clear()
+    second.fetch_live()
+    assert not small(bods.boxes()[0])
+
+
+@pytest.mark.parametrize("now, whole", [
+    (at(10, 4, 5), False), (at(10, 4) + BIG_BOX_RETRY, False),
+    (at(10, 4) + BIG_BOX_RETRY + timedelta(seconds=5), True),  # its 6 hours are up
+    (at(10, 4), True),  # the clock gone back past when it was found
+])
+def test_a_box_given_back_is_tried_whole_once_its_time_is_up_or_the_clock_goes_back(tmp_path, now, whole):
+    box = _city_box(tmp_path)
+    bods = Bods(city, now)
+    bus = city_source(tmp_path, bods)
+    bus.big_box = (box, datetime(2026, 10, 9, 10, 4, 5))
+    bus.fetch_live()
+    assert small(bods.boxes()[0]) is not whole
+
+
+def test_another_box_than_the_one_given_back_is_tried_whole(tmp_path):
+    west, south, east, north = _city_box(tmp_path)
+    bods = Bods(city, at(10, 5))
+    bus = city_source(tmp_path, bods)
+    bus.big_box = ((west, south, east, north + 0.01), datetime(2026, 10, 9, 10, 4))
+    bus.fetch_live()
+    assert not small(bods.boxes()[0])
+
+
+def _city_box(tmp_path) -> tuple[float, float, float, float]:
+    """The one box round the city's stops, as the bus source remembers it."""
+    bus = city_source(tmp_path, Bods(city, at(10, 0)))
+    bus.fetch_live()
+    assert bus.big_box is not None
+    return bus.big_box[0]
+
+
 @pytest.mark.parametrize(
     "body",
     [

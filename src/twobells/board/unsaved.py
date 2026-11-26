@@ -25,7 +25,7 @@ from pathlib import Path
 from ..core.bounded import finite
 from ..sources.holidays import is_held
 from .runfolder import MOST_SOURCES, SOURCE, RunFile
-from .state import NOT_UPDATING, departure_from_dict, is_mark, is_time
+from .state import BIG_BOX, NOT_UPDATING, departure_from_dict, is_big_box, is_mark, is_time
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,8 @@ class KeptRender(RunFile):
 
 
 # What a run changes in a source's entry, each kept as the state saves it.
-_ENTRY_KEYS = frozenset({"departures", "last_attempt", "last_success", "last_error", "messages", "note", NOT_UPDATING})
+_ENTRY_KEYS = frozenset({"departures", "last_attempt", "last_success", "last_error", "messages", "note", NOT_UPDATING,
+                         BIG_BOX})
 _MOST_DEPARTURES = 32  # a section shows 6 at most
 _MOST_MESSAGES = 16
 _MOST_CHARS = 2000  # a notice; an error or a note is shorter (core/errors.py)
@@ -101,6 +102,7 @@ _CHECKS = {
     "messages": _messages,
     "note": _text,
     NOT_UPDATING: is_mark,
+    BIG_BOX: is_big_box,
 }
 
 

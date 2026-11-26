@@ -16,7 +16,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ..board import runfolder
-from ..board.app import RunResult, Started, run_loop, run_once
+from ..board.app import RunResult, Started, give_big_box, run_loop, run_once, take_big_box
 from ..board.config import first_run_settings
 from ..board.displays.display import PngDisplay, open_display
 from ..board.names import DISPLAY_PANELS
@@ -115,11 +115,20 @@ def _run(args) -> int:
     # card can't be saved is back in the state (_single), or a card that has
     # never saved would have every source fetched every minute.
     prime = "sources" not in state
-    # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
-    return _single(store, state, lambda started: run_once(
-        settings.board, state, display, local_now(settings.timezone), prime=prime and not state.get("sources"),
-        save=lambda kept: _save(store, kept), started=started,
-    ), folder, {config.source.name for config in settings.board.sources}, unsaved)
+
+    def draw(started: Started | None) -> RunResult:
+        # A new process each run: a box found too big for the bus source's
+        # live positions is handed to it from the state, and back again.
+        give_big_box(settings.board, state)
+        try:
+            # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
+            return run_once(settings.board, state, display, local_now(settings.timezone),
+                            prime=prime and not state.get("sources"), save=lambda kept: _save(store, kept),
+                            started=started)
+        finally:
+            take_big_box(settings.board, state)
+
+    return _single(store, state, draw, folder, {config.source.name for config in settings.board.sources}, unsaved)
 
 
 def _single(store: StateStore, state: dict, draw: Callable[[Started | None], RunResult], folder: Path | None,

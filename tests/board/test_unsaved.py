@@ -160,6 +160,32 @@ def test_an_entry_not_of_the_shape_is_never_kept(run):
     assert json.loads((run / SOURCES_NAME).read_text()) == {"bus": {"last_attempt": "2026-10-08T09:29:00"}}
 
 
+BIG_BOX = {"box": [-2.0, 53.39, -1.9, 53.5], "at": "2026-10-08T09:29:00"}
+
+
+def test_the_bus_source_s_box_found_too_big_is_kept_and_goes_back(run):
+    entry = {"last_attempt": "2026-10-08T09:29:00", "big_box": BIG_BOX}
+    assert KeptSources(run, ("bus",)).keep({"sources": {"bus": entry}})
+    card = {"sources": {"bus": {"last_attempt": "2026-10-08T09:00:00"}}}
+    KeptSources(run, ("bus",)).carry(card)
+    assert card == {"sources": {"bus": entry}}
+    KeptSources(run, ("bus",)).keep({"sources": {"bus": {"last_attempt": "2026-10-08T09:31:00"}}})
+    card = {"sources": {"bus": {"last_attempt": "2026-10-08T09:00:00", "big_box": BIG_BOX}}}
+    KeptSources(run, ("bus",)).carry(card)
+    assert card == {"sources": {"bus": {"last_attempt": "2026-10-08T09:31:00"}}}  # the one box worked since
+
+
+@pytest.mark.parametrize("big_box", [
+    None, {**BIG_BOX, "at": "soon"}, {**BIG_BOX, "box": [-1.9, 53.39, -2.0, 53.5]}, {**BIG_BOX, "x": 1},
+    {**BIG_BOX, "box": [-2.0, 53.39, -1.9, 153.5]}, {**BIG_BOX, "box": [-2.0, 53.39, -1.9]},
+])
+def test_a_box_found_too_big_kept_not_of_the_shape_puts_nothing_back(run, big_box):
+    (run / SOURCES_NAME).write_text(json.dumps({"bus": {"last_attempt": "2026-10-08T09:29:00", "big_box": big_box}}))
+    card = {"sources": {"bus": {"last_attempt": "2026-10-08T09:00:00"}}}
+    KeptSources(run, ("bus",)).carry(card)
+    assert card == {"sources": {"bus": {"last_attempt": "2026-10-08T09:00:00"}}}
+
+
 # --- The forecast, kept beside the sources ---
 
 HOUR = {"start": "2026-10-08T08:00:00", "probability": 70, "precipitation": 0.4}
