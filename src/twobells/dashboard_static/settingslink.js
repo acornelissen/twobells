@@ -10,5 +10,5 @@ export function pointSettingsLink() {
   const link = document.getElementById("settings-link");
   const port = link?.dataset.port ?? "";
   if (!PORT.test(port) || Number(port) < 1 || Number(port) > 65535) return;
-  link.href = `${location.protocol}//${location.hostname}:${Number(port)}/settings`;
+  link.href = `http://${location.hostname}:${Number(port)}/settings`;  // plain HTTP, as the server serves
 }

@@ -260,7 +260,7 @@ def test_the_settings_link_goes_to_their_own_port_at_the_name_this_page_was_open
     found = run_js("""
         import { pointSettingsLink } from "./settingslink.js";
         const point = (hostname, port) => {
-          globalThis.location = { protocol: "http:", hostname };
+          globalThis.location = { protocol: "https:", hostname };  // the server is plain HTTP, whatever it says
           const link = { href: "/settings", dataset: { port } };
           document.getElementById = (id) => (id === "settings-link" ? link : null);
           pointSettingsLink();
