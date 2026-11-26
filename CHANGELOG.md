@@ -11,6 +11,7 @@ Fixes from a review of the whole app: the board keeps going on a full SD card an
 - The setup wizard's Keys step has **Carry on without the rail key**, for while Rail Data Marketplace approval is pending. Until you add the key in Settings > Keys, the board and the dashboard say so instead of showing trains, and nothing asks the rail service.
 - The wizard asks before you leave or reload once you have made choices, until it is saved.
 - A **Scrolling text** button beside **Look** at the bottom of the dashboard stops the calling-at line scrolling in this browser, and starts it again. It is left out where no look scrolls, on a wall tablet, and when the settings have scrolling off.
+- Live bus positions in big cities. Where the one box round your stops holds so many buses that the answer is over the 2 MB limit (as over London), the buses are now asked for in up to 6 small boxes round your stops instead, within the same limit in all. Until now such a place had timetabled times only. Not yet tried against the real feed for London.
 
 ### Changed
 
