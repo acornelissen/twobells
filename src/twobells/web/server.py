@@ -925,11 +925,17 @@ def make_server(app: DashboardApp, host: str = "127.0.0.1", port: int = DEFAULT_
 
 class Servers:
     """The dashboard's listener and the settings', in one process, sharing
-    one app and one set of limits."""
+    one app and one set of limits. If the settings' listener stops by
+    itself, it stops the dashboard's too and `failed` says so, so serve
+    ends in failure and the service is started again whole, rather than
+    run on with its settings' port bound but unanswered."""
 
     def __init__(self, dashboard: DashboardServer, settings: DashboardServer) -> None:
         self.dashboard = dashboard
         self.settings = settings
+        self.failed = False
+        self._stopping = threading.Event()  # set once stopping was asked for, or the caller's thread interrupted
+        self._settings_done = threading.Event()  # set once the settings' loop has ended, however
 
     @property
     def ports(self) -> tuple[int, int]:
@@ -940,18 +946,34 @@ class Servers:
         """Serve both until shutdown(), or until the caller's thread is
         interrupted: the settings on a thread of their own, the dashboard
         on the caller's. Either way the settings have stopped when this returns."""
-        thread = threading.Thread(target=self.settings.serve_forever, args=(poll_interval,),
+        thread = threading.Thread(target=self._serve_settings, args=(poll_interval,),
                                   name="settings-server", daemon=True)
         thread.start()
         try:
             self.dashboard.serve_forever(poll_interval)
         finally:
-            if thread.is_alive():  # else it has stopped already, and shutdown would wait for it forever
+            self._stopping.set()
+            if not self._settings_done.is_set():  # else shutdown could wait for it forever
                 self.settings.shutdown()
             thread.join()
 
+    def _serve_settings(self, poll_interval: float) -> None:
+        """The settings' listener's loop; if it ends without being asked to,
+        the dashboard's is stopped too."""
+        try:
+            self.settings.serve_forever(poll_interval)
+        except Exception as error:  # noqa: BLE001 - said, by its type, and made the end of both
+            log.error("The settings' listener stopped: %s", type(error).__name__)
+        finally:
+            self._settings_done.set()  # before the dashboard's stops, which serve_forever then sees
+        if not self._stopping.is_set():
+            self.failed = True
+            log.error("The settings' listener stopped by itself; stopping the dashboard's too")
+            self.dashboard.shutdown()
+
     def shutdown(self) -> None:
         """Stop serve_forever from another thread, as one server's shutdown does."""
+        self._stopping.set()
         self.dashboard.shutdown()
         self.settings.shutdown()
 

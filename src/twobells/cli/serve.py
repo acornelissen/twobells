@@ -503,6 +503,10 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     finally:
         if history is not None:
             history.close()
+    if server.failed:
+        # Ended in failure, so systemd's Restart=on-failure, or Docker's restart policy, starts both again.
+        print("The settings' listener stopped by itself, so serve stopped too; see the log above.", file=sys.stderr)
+        return 1, None
     return 0, ((port, settings_port) if watch is not None and watch.restart else None)
 
 

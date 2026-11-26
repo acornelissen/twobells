@@ -1951,3 +1951,64 @@ def test_a_desktop_takes_the_next_pair_both_free(static_dir):
 def test_a_listener_has_one_of_the_roles():
     with pytest.raises(ValueError, match="role"):
         server_module.DashboardServer(("127.0.0.1", 0), None, "everything")  # type: ignore[arg-type]
+
+
+# The settings' listener stopping by itself stops the dashboard's, so the service starts again whole.
+
+
+def serving(servers):
+    """servers.serve_forever on a thread of its own, once the dashboard's listener answers."""
+    thread = threading.Thread(target=servers.serve_forever, args=(0.05,), daemon=True)
+    thread.start()
+    return thread
+
+
+@pytest.mark.parametrize("how", ["raises", "returns"])
+def test_the_settings_listener_stopping_by_itself_stops_the_dashboards(static_dir, caplog, how):
+    servers = make_servers(make_app(static_dir), "127.0.0.1", 0, 0)
+
+    def stops(poll_interval=0.5):
+        if how == "raises":
+            raise OSError("the settings' loop broke")
+
+    servers.settings.serve_forever = stops
+    try:
+        thread = serving(servers)
+        thread.join(5)
+        assert not thread.is_alive()  # the dashboard's listener stopped too
+        assert servers.failed
+        assert "settings" in caplog.text and "stopped" in caplog.text
+        assert "the settings' loop broke" not in caplog.text  # its type, never its words
+    finally:
+        servers.server_close()
+
+
+def test_stopping_both_as_asked_is_no_failure(static_dir):
+    servers = make_servers(make_app(static_dir), "127.0.0.1", 0, 0)
+    try:
+        thread = serving(servers)
+        conn = http.client.HTTPConnection("127.0.0.1", servers.ports[1], timeout=5)
+        conn.request("GET", "/settings/login", headers={"Host": "localhost"})
+        assert conn.getresponse().status == 200
+        conn.close()
+        servers.shutdown()
+        thread.join(5)
+        assert not thread.is_alive() and not servers.failed
+    finally:
+        servers.server_close()
+
+
+def test_an_interrupt_on_the_dashboards_listener_is_no_failure_either(static_dir):
+    servers = make_servers(make_app(static_dir), "127.0.0.1", 0, 0)
+
+    def interrupted(poll_interval=0.5):
+        time.sleep(0.2)  # the settings' listener under way
+        raise KeyboardInterrupt
+
+    servers.dashboard.serve_forever = interrupted
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            servers.serve_forever(0.05)
+        assert not servers.failed
+    finally:
+        servers.server_close()

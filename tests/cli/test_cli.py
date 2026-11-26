@@ -1249,6 +1249,32 @@ def test_the_settings_need_a_port_of_their_own(dashboard_config, tmp_path, serve
     assert "app" not in served  # nothing listened
 
 
+def test_serve_ends_in_failure_when_the_settings_listener_stops_by_itself(dashboard_config, tmp_path, monkeypatch,
+                                                                          capsys):
+    # So systemd's Restart=on-failure, or Docker's restart policy, starts both again.
+    from twobells.core import net
+    from twobells.web import server as dashserver
+
+    def offline(request, timeout):
+        raise OSError("offline in tests")
+
+    real = dashserver.DashboardServer.serve_forever
+
+    def settings_break(self, poll_interval=0.5):
+        if self.role == "settings":
+            time.sleep(0.2)
+            raise OSError("broken")
+        return real(self, 0.05)
+
+    monkeypatch.setattr(net, "urlopen", offline)
+    monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", settings_break)
+    folder = tmp_path / "dash"
+    code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                 "--state-dir", str(folder), "--port", "0", "--no-browser"])
+    assert code == 1
+    assert "The settings' listener stopped" in capsys.readouterr().err
+
+
 def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_config, tmp_path, monkeypatch, capsys):
     from twobells.core import net
     from twobells.dashboard.config import load_dashboard
@@ -1386,6 +1412,7 @@ class Stopped:
     """Both listeners, stopping as soon as they start, as for Ctrl+C."""
 
     ports = (8090, 8091)
+    failed = False  # stopped as asked (Ctrl+C), not by the settings' listener ending by itself
 
     def serve_forever(self, poll_interval=0.5):
         raise KeyboardInterrupt
