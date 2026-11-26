@@ -208,9 +208,9 @@ class RunResult:
 def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
           save: Callable[[dict], bool] | None = None) -> bool:
     """Fetch if due, saying whether a fetch succeeded. `prime` fetches
-    regardless of windows; the budget still applies. With `save`, a source
-    with a budget has the state saved as spent before it fetches, and
-    doesn't fetch if that fails."""
+    regardless of windows; the budget still applies. With `save`, a fetch
+    that costs some of a daily budget has the state saved as spent before
+    it is made, and isn't made if that fails."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
     if not prime and not config.current_policy().is_due(now, _saved_time(entry, "last_attempt")):
@@ -222,10 +222,11 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
                 entry["note"] = safe_message(note)
         return False
 
-    if config.daily_budget is not None:
+    # A fetch that costs nothing (the bus timetable) has nothing to spend or to save as spent.
+    cost = getattr(config.source, "cost", 1) if config.daily_budget is not None else 0
+    if config.daily_budget is not None and cost != 0:
         budgets = state.setdefault("budgets", {})
         budget = DailyBudget.from_dict(budgets.get(name), config.daily_budget)
-        cost = getattr(config.source, "cost", 1)
         if not budget.try_spend(now.date(), cost):
             # Warned of once, as the last of it was spent (below), not at every check refused since.
             log.debug("%s: daily budget of %d spent, skipping", name, config.daily_budget)

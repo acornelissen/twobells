@@ -1105,7 +1105,7 @@ def test_a_source_that_costs_nothing_never_spends_the_budget():
     for minutes in range(0, 120, 2):
         run_once(board, state, display, THU_0700 + timedelta(minutes=minutes))
     assert buses.calls == 60
-    assert state["budgets"]["bus"]["used"] == 0
+    assert state.get("budgets", {}).get("bus", {}).get("used", 0) == 0  # nothing spent: none kept
 
 
 def test_a_source_s_note_is_saved_with_its_departures_and_cleared_after():
@@ -2023,6 +2023,17 @@ def test_a_budgeted_fetch_whose_spend_cant_be_saved_is_not_made():
     assert trains.calls == 120  # not budgeted: fetched as ever
 
 
+def test_a_budgeted_source_that_costs_nothing_is_fetched_though_the_state_cant_be_saved():
+    # The bus timetable costs none of TransportAPI's allowance: nothing to save as spent.
+    trains, buses, board, display, state = setup(bus_budget=28)
+    buses.cost = 0
+    saves = []
+    result = run_once(board, state, display, THU_0700, save=lambda s: saves.append(1) and False)
+    assert buses.calls == 1 and saves == []
+    assert [r.left for r in result.view.section("bus").rows] == ["341"]
+    assert "bus" not in state.get("budgets", {})  # nothing spent, so nothing to keep
+
+
 def test_a_screen_whose_bus_spend_cant_be_saved_tries_again_at_the_next_check():
     trains, buses, board, display, state = setup(bus_budget=28)
     tries = []
@@ -2237,7 +2248,7 @@ def test_a_start_fetches_a_budgeted_source_outside_its_windows_only_while_it_cos
     # The bus timetable costs nothing to read; TransportAPI, standing in for it, does.
     trains, buses, board, state = saved_on_friday_morning(bus_cost=0)
     results = loop_results(board, state, FRIDAY_EVENING, 3, False)
-    assert buses.calls == 2 and state["budgets"]["bus"]["used"] == 0
+    assert buses.calls == 2 and state.get("budgets", {}).get("bus", {}).get("used", 0) == 0
     assert not results[-1].view.section("bus").stale
 
 
