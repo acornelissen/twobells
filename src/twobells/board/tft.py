@@ -75,7 +75,7 @@ class TftPainter(Painter):
             strip_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         """A row in white with its time in the accent, and its status in a
         pill. A cancelled row isn't reversed out: its red pill says it."""
-        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room)
+        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room, self.timed)
         self.row_text(row, layout, y, train, self.ink, self.paper, self.p.accent, time_ink=self.p.accent)
         self.status(row, layout, y)
 

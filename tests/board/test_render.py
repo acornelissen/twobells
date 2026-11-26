@@ -11,10 +11,12 @@ from tests.paths import ROOT
 from twobells.board.panel import HDMI_1280X400, HDMI_1920X440, PHAT, PHAT_V1, WAVESHARE_10IN85G
 from twobells.board.render import (
     HEIGHT,
+    PAD,
     WIDTH,
     Palette,
     drawn_length,
     fit_text,
+    has_times,
     header_text,
     heights,
     leave_column,
@@ -1592,6 +1594,49 @@ def test_with_scrolling_off_the_route_page_cuts_a_long_title_short():
 
 TRAMS = Section("Trams and metro", (Row("07:15", "Altrincham", "Due"), Row("07:27", "Bury", "On time")),
                 "No trams or metro", mode="metro")
+
+
+# London's rows count down on a screen, so they leave their clock time out and the destination has its room.
+
+UNDERGROUND = Section("Underground", (Row("", "Hammersmith & City: Hammersmith", "4 min", platform="Plat 6"),
+                                      Row("", "DLR: Bank", "Due")), "No trains", mode="metro")
+
+
+def test_a_row_layout_without_a_column_of_times_starts_the_middle_at_the_edge():
+    fonts = load_fonts()
+    row = Row("", "Hammersmith & City: Hammersmith", "4 min")
+    timed, untimed = row_layout(row, fonts), row_layout(row, fonts, timed=False)
+    assert untimed.middle_x == PAD and timed.middle_x == PAD + left_column_width(fonts)
+    assert untimed.middle_room == timed.middle_room + left_column_width(fonts)  # the room goes to the destination
+    assert has_times([row]) is False and has_times([Row("07:04", "Epping", "Live"), row]) is True
+
+
+@pytest.mark.parametrize("look", ["plain", "tft", "flap"])
+@pytest.mark.parametrize("panel", [HDMI_1280X400, HDMI_1920X440], ids=lambda p: p.name)
+def test_every_look_draws_a_countdown_section_without_times_and_lines_up_a_mixed_one(look, panel, monkeypatch):
+    import twobells.board.render as render_module
+    import twobells.board.splitflap as splitflap_module
+    import twobells.board.tft as tft_module
+    from twobells.board.themes import THEMES
+
+    seen = []
+    real = render_module.row_layout
+
+    def spy(*args, **kwargs):
+        layout = real(*args, **kwargs)
+        seen.append((args[0].left, layout.middle_x))
+        return layout
+
+    for module in (render_module, tft_module, splitflap_module):
+        monkeypatch.setattr(module, "row_layout", spy)
+    clock = "07:03:15"
+    THEMES[look].render(BoardView("Bank", (UNDERGROUND,), "07:03", clock=clock), PALETTE, panel)
+    assert {middle_x for _, middle_x in seen} == {PAD * plain_scale(panel)}  # no column of times
+    seen.clear()
+    mixed = dataclasses.replace(UNDERGROUND, rows=(Row("07:04", "Central: Epping", "Due"), UNDERGROUND.rows[0]))
+    THEMES[look].render(BoardView("Bank", (mixed,), "07:03", clock=clock), PALETTE, panel)
+    assert [left for left, _ in seen] == ["07:04", ""]
+    assert len({middle_x for _, middle_x in seen}) == 1 and seen[0][1] > PAD * plain_scale(panel)  # aligned
 
 
 def test_the_rows_are_shared_a_row_each_then_the_first_modes_first():

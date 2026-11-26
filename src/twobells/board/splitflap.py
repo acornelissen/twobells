@@ -205,7 +205,7 @@ class SplitFlapPainter(Painter):
             strip_x: float | None = None, train: bool = True, stop_room: float | None = None) -> None:
         """A row on tiles, its status coloured as status_colours says. A
         cancelled row isn't reversed out: its amber tiles say it."""
-        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room)
+        layout = row_layout(row, self.f, self.width, self.s, platform_x, leave_x, strip_x, stop_room, self.timed)
         if self._section is not None:
             self._row = (self._section, self._index)
             self._index += 1

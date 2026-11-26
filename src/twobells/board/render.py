@@ -214,8 +214,18 @@ def draw_text(image: Image.Image, xy: tuple[float, float], text: str, font: Imag
     image.paste(fill, (int(xy[0]) + dx, int(xy[1]) + dy), mask)
 
 
-def left_column_width(fonts: Fonts, scale: int = 1) -> float:
-    return text_length(fonts.bold, "00:00") + 5 * scale
+def left_column_width(fonts: Fonts, scale: int = 1, timed: bool = True) -> float:
+    """How wide the column of times (or a bus's routes) is, none where no row
+    has one (has_times)."""
+    return text_length(fonts.bold, "00:00") + 5 * scale if timed else 0
+
+
+def has_times(rows) -> bool:
+    """Whether any of a section's rows has a clock time (or route) to show. A
+    row that counts down ("4 min", London's on a screen) leaves its time out,
+    so a section of them has no column of times, and the destinations
+    have its room."""
+    return any(r.left for r in rows)
 
 
 @dataclass(frozen=True)
@@ -291,6 +301,7 @@ def row_layout(
     leave_x: float | None = None,
     strip_x: float | None = None,
     stop_room: float | None = None,
+    timed: bool = True,
 ) -> RowLayout:
     """Column positions for a row. The destination gives way so times stay whole.
     `platform_x` and `leave_x` are where a section's platform and leave
@@ -298,11 +309,12 @@ def row_layout(
     left of the row's own status. `strip_x` is where the little line starts,
     with the where words after it, on a board with that column (strip_column).
     `stop_room` is how wide a bus row's stop names are, on a board that
-    names them (stop_column)."""
+    names them (stop_column). Without `timed` (has_times), the section has no
+    column of times, and the middle starts at the edge."""
     pad, gap = PAD * scale, _COL_GAP * scale
     right_x = width - pad - fonts.pill - drawn_length(fonts.bold, row.right)
     status_x = right_x - fonts.pill  # where the status starts, with its pill
-    middle_x = pad + left_column_width(fonts, scale)
+    middle_x = pad + left_column_width(fonts, scale, timed)
     left_room = middle_x - pad - 3 * scale
     stop = stop_x = None
     if stop_room is not None:
@@ -454,7 +466,7 @@ def _own_strip_x(section: Section, rows, fonts: Fonts, width: int, scale: int) -
     before the next column."""
     gap = _COL_GAP * scale
     small, regular = partial(drawn_length, fonts.small), partial(drawn_length, fonts.regular)
-    lead = PAD * scale + left_column_width(fonts, scale)
+    lead = PAD * scale + left_column_width(fonts, scale, has_times(rows))
     names = _names_wanted(rows, section.stop_names, fonts, width, scale, True) if section.kind == "bus" else None
     target = regular(_DEST_TARGET[section.kind])
     if names is not None:
@@ -731,6 +743,8 @@ class Painter:
         self.limits = row_limits(panel, text_size)
         # The mode whose first train's "Calling at" line is drawn, if any (calling_section).
         self.calling_for: str | None = None
+        # Whether the section being drawn has a column of times (has_times).
+        self.timed = True
         self.header_h, self.label_h, self.row_h = heights(text_size)
         self.calling_h = calling_height(text_size)
         # Smaller type sits on the same baseline as the row text.
@@ -804,6 +818,7 @@ class Painter:
             self.text((x, y + s), _NOT_UPDATING, self.f.small, self.p.accent)
             label_end = x + text_length(self.f.small, _NOT_UPDATING)
         rows = self.drawn_rows(section)
+        self.timed = has_times(rows)
         # As on the sign, a leave time for a row that doesn't fit is left out.
         if section.leave and (section.leave_for is None or section.leave_for < len(rows)):
             room = self.width - pad - label_end - 8 * s
@@ -845,7 +860,7 @@ class Painter:
         type from the destinations' column to the edge, scrolling when it is
         too long for that. Returns where the next row starts."""
         s, pad = self.s, PAD * self.s
-        x = pad + left_column_width(self.f, s)
+        x = pad + left_column_width(self.f, s, self.timed)
         room = self.width - pad - x
         shown = fit_text(text, self.f.small, room, partial(drawn_length, self.f.small))
         # A pixel up, so the small type's capitals and descenders fit its line.
@@ -864,7 +879,7 @@ class Painter:
             paper = self.ink
         elif row.style is Style.ALERT:
             status_ink = self.p.accent
-        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, strip_x, stop_room)
+        layout = row_layout(row, self.f, self.width, s, platform_x, leave_x, strip_x, stop_room, self.timed)
         self.row_text(row, layout, y, train, ink, paper, yours_fill)
         self.text((layout.right_x, y + s), row.right, self.f.bold, status_ink)
 
@@ -1023,12 +1038,18 @@ def _wrapped(text: str, font: ImageFont.FreeTypeFont, width: float) -> list[str]
     else after as many characters as fit (at least one, so it always ends)."""
     lines = []
     while text:
-        keep = max(1, _longest_fit(1, len(text), lambda n: _drawn_width(font, text[:n]) <= width))
-        if keep < len(text) and "-" in text[1:keep]:
-            keep = text.rindex("-", 1, keep) + 1
+        keep = _line_keep(text, font, width)
         lines.append(text[:keep])
         text = text[keep:]
     return lines
+
+
+def _line_keep(text: str, font: ImageFont.FreeTypeFont, width: float) -> int:
+    """How many characters of `text` make a line of `font` within `width`."""
+    keep = max(1, _longest_fit(1, len(text), lambda n: _drawn_width(font, text[:n]) <= width))
+    if keep < len(text) and "-" in text[1:keep]:
+        keep = text.rindex("-", 1, keep) + 1
+    return keep
 
 
 def _drawn_width(font: ImageFont.FreeTypeFont, text: str) -> float:

@@ -103,8 +103,17 @@ _WHERE_LEAST = _FONT.getlength("3 stops away")
 _WHERE_MOST = _FONT.getlength("Left Manchester Oxford Road")
 _DEST_TARGET = {"train": _FONT.getlength("Manchester Piccadilly"), "bus": _FONT.getlength("Ashton-under-Lyne")}
 _DEST_MOST = _FONT.getlength("Heathrow Terminals 2 & 3")
-# Where a train row's destination starts.
-_TRAIN_DEST_X = MARGIN + _FONT.getlength(_ORDINAL_W) + _COL_GAP + _FONT.getlength("00:00") + _COL_GAP
+# Where a train row's time starts, and the room it takes with its gap.
+_TIME_X = MARGIN + _FONT.getlength(_ORDINAL_W) + _COL_GAP
+_TIME_ROOM = _FONT.getlength("00:00") + _COL_GAP
+
+
+def _train_dest_x(section: Section) -> float:
+    """Where a train section's destinations start: after the times, unless
+    none of its rows has one. A row that counts down ("4 min", London's on a
+    screen) leaves its clock time out, so a section of them has no time
+    column and its destinations start there, with the room it took."""
+    return _TIME_X + (_TIME_ROOM if any(r.left for r in section.rows) else 0)
 # On a screen, twice the usual gap between the leave words and the status,
 # so "Leave in 2 min" and "Exp 07:24" don't read as one phrase; e-paper keeps
 # the one.
@@ -262,7 +271,7 @@ def _own_strip_x(section: Section, columns: _Columns, width: int) -> float:
     words_end = columns.end - _WHERE_GAP
     wanted = _names_wanted(section, width, True) if section.kind == "bus" else None
     if section.kind == "train":
-        lead = _TRAIN_DEST_X
+        lead = _train_dest_x(section)
         steps = [("words", _WHERE_LEAST), ("destination", _DEST_TARGET["train"])]
     elif wanted is None:
         lead = _bus_lead(section, width, True, 0)[2]
@@ -320,8 +329,7 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
     it. sign_layout gives it as many as fit with their lines; on a board too
     small for even one, the first row is drawn and the lines under it left
     out rather than run into the bottom line."""
-    time_x = MARGIN + _w(_ORDINAL_W) + _COL_GAP
-    dest_x = time_x + _w("00:00") + _COL_GAP
+    time_x, dest_x = _TIME_X, _train_dest_x(section)
     rows = section.rows[:most]
     if not rows:
         layout.add(MARGIN, y, section.empty_text)
@@ -343,7 +351,8 @@ def _trains(layout: SignLayout, section: Section, y: int, width: int, columns: _
         else:
             dest_end = status_x - _COL_GAP
         layout.add(MARGIN, y, _ORDINALS[index], inverted)
-        layout.add(time_x, y, row.left, inverted)
+        if row.left:  # a row that counts down has none
+            layout.add(time_x, y, row.left, inverted)
         destination = destination_text(row, columns.platform_x is not None, width >= PLATFORM_COLUMN_MIN_WIDTH)
         layout.fit(dest_x, y, destination, dest_end - dest_x, inverted)
         if strip_x is not None:

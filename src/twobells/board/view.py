@@ -247,8 +247,8 @@ def _tram_row(dep: Departure, walk: WalkTimes | None, clock: str | None, several
     timetable alone (Status.UNKNOWN), says words.SCHEDULED, as a bus known
     only from the timetable does; a replacement bus says so where a train's
     would. A London one, live from TfL, counts down on a screen ("3 min",
-    "Due") and says words.LIVE on e-paper, which never redraws for a
-    countdown, and has its platform. With `several` tram stops each row
+    "Due"), with no clock time beside it, and says words.LIVE on e-paper,
+    which never redraws for a countdown, and keeps its time; it has its platform. With `several` tram stops each row
     names its stop by label first ("T: Bury"); a London one with `lines`
     (more than one line among the rows) names its line instead ("Central: Epping").
     Without `platforms`, it has no platform or via words."""
@@ -263,7 +263,8 @@ def _tram_row(dep: Departure, walk: WalkTimes | None, clock: str | None, several
     else:
         destination = dep.destination
     right = words.due_in(max(0, minutes_between(clock[:5], dep.scheduled))) if clock else words.LIVE
-    return Row(dep.scheduled, destination, right, Style.NORMAL, via=dep.via if platforms else None,
+    # The countdown says when, so a screen leaves the clock time out (left is empty) for the destination's room.
+    return Row("" if clock else dep.scheduled, destination, right, Style.NORMAL, via=dep.via if platforms else None,
                platform=words.platform(dep.platform) if dep.platform and platforms else None)
 
 

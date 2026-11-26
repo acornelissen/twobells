@@ -1646,3 +1646,55 @@ def test_the_not_updating_badge_calls_london_s_section_by_its_heading():
     underground = Section("Underground", (Row("07:15", "Epping", "3 min"),), "No trains", stale=True, mode="metro")
     view = dataclasses.replace(board(TRAINS, BUSES), sections=(*board(TRAINS, BUSES).sections, underground))
     assert "Not updating: underground" in texts(sign_layout(view, *dots(WAVESHARE_10IN85G)).items)
+
+
+# London's rows on a screen count down ("4 min"), so they leave their clock time out.
+
+
+def underground(*rows):
+    return dataclasses.replace(screen(), sections=(Section("Underground", rows, "No trains", mode="metro"),))
+
+
+def destination_of(layout, y):
+    """The destination's item on the row at y: the first word after the ordinal (and the time, if it has one)."""
+    return next(i for i in sorted(layout.items, key=lambda i: i.x) if i.y == y and i.text[:1].isalpha()
+                and i.text not in {"1st", "2nd", "3rd"})
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_row_that_counts_down_has_no_clock_time_and_its_destination_starts_where_the_time_did(panel):
+    rows = [Row("", "Central: Epping", "4 min", platform="Plat 6"), Row("", "DLR: Bank", "Due")]
+    layout = sign_layout(underground(*rows), *dots(panel))
+    assert not [t for t in texts(layout.items) if t[:1].isdigit() and ":" in t and t != CLOCK]
+    time_x = MARGIN + FONT.getlength("4th") + 5
+    assert destination_of(layout, find(layout.items, "1st").y).x == time_x
+    assert find(layout.items, "4 min").x > time_x
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_a_name_that_scrolled_beside_the_clock_time_fits_where_the_time_was(panel):
+    text = "Hammersmith & City: Hammersmith (via Paddington and Edgware Road, Baker Street and Kings Cross)"
+    width, height = dots(panel)
+    probe = sign_layout(underground(Row("07:04", text, "4 min", platform="Plat 6")), width, height)
+    room = destination_of(probe, find(probe.items, "1st").y).box  # what the destination has beside the time
+    freed = FONT.getlength("00:00") + 5  # the time's column and its gap
+    # The shortest start of the text that is too long for that room: it fits in the room and the time's.
+    name = next(text[:n] for n in range(1, len(text)) if FONT.getlength(text[:n]) > room)
+    assert room < FONT.getlength(name) <= room + freed
+    old = sign_layout(underground(Row("07:04", name, "4 min", platform="Plat 6")), width, height)
+    new = sign_layout(underground(Row("", name, "4 min", platform="Plat 6")), width, height)
+    y = find(old.items, "1st").y
+    assert destination_of(old, y).box == room  # scrolling beside the time
+    assert destination_of(new, y).text == name and destination_of(new, y).box is None  # whole without it
+
+
+@pytest.mark.parametrize("panel", STRIP_PANELS, ids=lambda p: p.name)
+def test_rows_with_and_without_a_countdown_keep_their_columns_aligned(panel):
+    rows = [Row("07:04", "Central: Epping", "Due", platform="Plat 6"),
+            Row("", "Central: Ealing", "4 min", platform="Plat 5")]
+    layout = sign_layout(underground(*rows), *dots(panel))
+    first, second = (find(layout.items, ordinal).y for ordinal in ("1st", "2nd"))
+    assert "07:04" in texts(line_of(layout.items, "1st"))
+    assert not [t for t in texts(line_of(layout.items, "2nd")) if t[:1].isdigit() and ":" in t]
+    assert destination_of(layout, first).x == destination_of(layout, second).x
+    assert find(layout.items, "Plat 6").x == find(layout.items, "Plat 5").x
