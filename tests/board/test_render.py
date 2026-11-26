@@ -843,7 +843,7 @@ def test_the_code_page_signature_never_carries_the_code():
 
 # --- The set-me-up page, until the board is set up ---
 
-SETUP_PAGE = SetupView("http://raspberrypi.local:8090/settings")  # as setup_url gives it
+SETUP_PAGE = SetupView("http://raspberrypi.local:8091/settings")  # as setup_url gives it
 PANELS = [PHAT, PHAT_V1, WAVESHARE_10IN85G, HDMI_1280X400, HDMI_1920X440]
 
 
@@ -868,18 +868,18 @@ def test_the_address_is_drawn_across_the_panel(panel):
 def test_an_address_too_long_to_read_on_one_line_breaks_before_its_port():
     from twobells.board.render import MIN_ADDRESS_PX, _biggest_bold, address_lines
 
-    long_url = "http://my-very-long-departure-board-name.local:8090/settings"
+    long_url = "http://my-very-long-departure-board-name.local:8091/settings"
     one_line = _biggest_bold(long_url, 200, 40)
     assert one_line.size < MIN_ADDRESS_PX  # too small to read on one line
     lines, font = address_lines(long_url, 200, 40)
-    assert lines == ["http://my-very-long-departure-board-name.local", ":8090/settings"]
+    assert lines == ["http://my-very-long-departure-board-name.local", ":8091/settings"]
     assert font.size > one_line.size  # bigger, broken in two
     for line in lines:
         left, _, right, _ = font.getbbox(line, mode="1")
         assert right - left <= 200
     # A usual name stays on one line.
-    lines, _ = address_lines("http://pi.local:8090/settings", 200, 40)
-    assert lines == ["http://pi.local:8090/settings"]
+    lines, _ = address_lines("http://pi.local:8091/settings", 200, 40)
+    assert lines == ["http://pi.local:8091/settings"]
 
 
 @pytest.mark.parametrize("panel", PANELS)
@@ -889,15 +889,28 @@ def test_the_settings_address_the_board_shows_fits_with_a_long_name(panel, off):
     from twobells.cli.run import OFF_HEADING, OFF_NOTE
 
     url = setup_url("my-very-long-departure-board-name")
-    assert url.endswith(":8090/settings")
+    assert url.endswith(":8091/settings")  # the settings' own port
     page = SetupView(url, heading=OFF_HEADING, note=OFF_NOTE) if off else SetupView(url)
     left, top, right, bottom = ink_box(render_setup(page, PALETTE, panel), PALETTE.white)
     assert left > 0 and top > 0 and right < panel.width and bottom < panel.height
 
 
+@pytest.mark.parametrize("panel", PANELS)
+@pytest.mark.parametrize("name", ["raspberrypi", "kitchen-board", "my-very-long-departure-board-name"])
+def test_the_settings_address_on_its_own_port_fits_every_panel_whatever_the_text_size(panel, name):
+    # render_setup takes no text size: the page draws at its own sizes, whatever
+    # text_size the board's look has, so one drawing per panel covers them all.
+    from twobells.cli.common import setup_url
+
+    view = SetupView(setup_url(name))
+    assert view.shown == f"{name}.local:8091/settings"
+    left, top, right, bottom = ink_box(render_setup(view, PALETTE, panel), PALETTE.white)
+    assert left > 0 and top > 0 and right < panel.width and bottom < panel.height
+
+
 def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black():
     page = render_setup(SETUP_PAGE, PALETTE, PHAT)
-    assert page.tobytes() != render_setup(SetupView("http://pi.local:8090/settings"), PALETTE, PHAT).tobytes()
+    assert page.tobytes() != render_setup(SetupView("http://pi.local:8091/settings"), PALETTE, PHAT).tobytes()
     assert colours(page) == {PALETTE.white, PALETTE.black}
     assert colours(render_setup(SETUP_PAGE, PALETTE, PHAT, dark=True)) == {PALETTE.black, PALETTE.accent}
     mono = Palette(white=0, black=1, accent=1)
@@ -905,17 +918,17 @@ def test_the_setup_page_shows_its_address_and_is_ink_on_paper_or_light_on_black(
 
 
 def test_the_board_shows_the_address_without_http():
-    # Browsers take name.local:8090/settings as typed; leaving out http://
+    # Browsers take name.local:8091/settings as typed; leaving out http://
     # keeps a long Pi name readable on the small panels.
-    view = SetupView("http://kitchen-board.local:8090/settings")
-    assert view.shown == "kitchen-board.local:8090/settings"
-    bare = SetupView("kitchen-board.local:8090/settings")
+    view = SetupView("http://kitchen-board.local:8091/settings")
+    assert view.shown == "kitchen-board.local:8091/settings"
+    bare = SetupView("kitchen-board.local:8091/settings")
     assert render_setup(view, PALETTE, PHAT).tobytes() == render_setup(bare, PALETTE, PHAT).tobytes()
 
 
 def test_the_setup_page_signature_follows_its_address():
     assert SETUP_PAGE.signature() == SetupView(SETUP_PAGE.url).signature()
-    assert SETUP_PAGE.signature() != SetupView("http://pi.local:8090/settings").signature()
+    assert SETUP_PAGE.signature() != SetupView("http://pi.local:8091/settings").signature()
 
 
 OFF_PAGE = SetupView(SETUP_PAGE.url, heading="Board off", note="Turn it on in Settings:")

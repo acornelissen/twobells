@@ -1,7 +1,7 @@
 """Signing in to a page on the home network: the password, sessions, form
 tokens, the lockout after wrong guesses, and the checks every request passes.
 
-Used by the settings site (web/settingsite.py) under the one server. The password
+Used by the settings site (web/settingsite.py), on its own listener. The password
 lives in a file only the service user can read. It is set on the Pi itself,
 or on the page with a one-time code shown on the board (see
 settings/resetcodes.py), so being on the network is not enough to claim it. A session is a random token in an
@@ -616,8 +616,11 @@ class PasswordCheck:
 
 def same_origin(headers) -> bool:
     """Whether a request's Origin, or its Referer when there is no Origin,
-    names the host it was sent to. A form posted from another site, or with
-    `Origin: null`, fails. `headers` is anything with .get, like http.server's."""
+    names the host it was sent to. A form posted from another site, from
+    another port of this one (the dashboard's), or with `Origin: null`,
+    fails. Its port is compared with Host's, never with the port the server
+    listens on, so a port Docker publishes under another number still
+    works. `headers` is anything with .get, like http.server's."""
     origin = headers.get("Origin") or headers.get("Referer")
     if not origin:
         return False

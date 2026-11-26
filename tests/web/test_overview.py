@@ -495,26 +495,36 @@ def test_the_overview_says_each_keys_state_as_the_keys_page_does():
 # Shortcuts and the wall tablet
 
 
+# The settings are on their own port: the tablet's address is the name they were
+# opened at, on the dashboard's port.
 @pytest.mark.parametrize("host, address", [
-    ("glossop.local:8090", "http://glossop.local:8090/?kiosk"),
-    ("192.168.1.20:8090", "http://192.168.1.20:8090/?kiosk"),
-    ("[fd00::1]:8090", "http://[fd00::1]:8090/?kiosk"),
-    ("board", "http://board/?kiosk"),
-    ("localhost:8090", None),
-    ("127.0.0.1:8090", None),
-    ("[::1]:8090", None),
+    ("glossop.local:8091", "http://glossop.local:8090/?kiosk"),
+    ("Glossop.Local", "http://glossop.local:8090/?kiosk"),
+    ("192.168.1.20:8091", "http://192.168.1.20:8090/?kiosk"),
+    ("[fd00::1]:8091", "http://[fd00::1]:8090/?kiosk"),
+    ("board", "http://board:8090/?kiosk"),
+    ("localhost:8091", None),
+    ("app.localhost:8091", None),
+    ("127.0.0.1:8091", None),
+    ("[::1]:8091", None),
+    ("[::ffff:127.0.0.1]", None),
     ('evil"><script>x</script>', None),
     ("a b", None),
+    ("glossop.local:8091/x", None),
     ("", None),
     (None, None),
 ])
 def test_the_wall_tablets_address_is_the_host_used_if_another_device_can_reach_it(host, address):
-    assert overview.kiosk_address(host) == address
+    assert overview.kiosk_address(host, 8090) == address
+
+
+def test_without_the_dashboards_port_there_is_no_wall_tablet_address():
+    assert overview.kiosk_address("glossop.local:8091", None) is None
 
 
 def test_the_shortcuts_change_all_or_one_part_and_open_the_dashboard(tmp_path):
     data = {"train": {"crs": "GLO"}, "bus": {"stops": {"A": "1800GLA0001"}}}
-    page = overview.render_actions(data, "/settings/setup/", True, "glossop.local:8090")
+    page = overview.render_actions(data, "/settings/setup/", True, "glossop.local:8091", 8090)
     links = re.findall(r'<a href="([^"]+)">([^<]+)</a>', page)
     assert links == [("/settings/setup/", "Change home, station or stops"),
                      ("/settings/setup/?step=stops", "Change stops only"),
@@ -524,13 +534,13 @@ def test_the_shortcuts_change_all_or_one_part_and_open_the_dashboard(tmp_path):
 
 
 def test_without_the_dashboard_there_is_no_link_to_it_or_wall_tablet(tmp_path):
-    page = overview.render_actions({}, "/settings/setup/", False, "glossop.local:8090")
+    page = overview.render_actions({}, "/settings/setup/", False, "glossop.local:8091", 8090)
     assert re.findall(r'<a href="([^"]+)">', page) == ["/settings/setup/"]
     assert "kiosk" not in page
 
 
 def test_on_this_computer_itself_the_tablets_address_is_explained_not_made_up():
-    page = overview.render_actions({}, "/settings/setup/", True, "localhost:8090")
+    page = overview.render_actions({}, "/settings/setup/", True, "localhost:8091", 8090)
     assert "localhost" not in page and "<code>/?kiosk</code>" in page
 
 

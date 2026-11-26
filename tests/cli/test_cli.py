@@ -21,6 +21,7 @@ from twobells.core.errors import ConfigError
 from twobells.settings.config import load_env_file
 from twobells.sources import holidays
 from twobells.web.auth import TOO_COMMON
+from twobells.web.server import make_servers  # the real one, for ask(), as the served fixture stands in for it
 
 
 @pytest.fixture(autouse=True)
@@ -1220,7 +1221,32 @@ def test_dashboard_never_moves_off_a_port_it_was_given(dashboard_config, tmp_pat
                      "--state-dir", str(tmp_path / "dash"), "--port", str(port), "--no-browser"])
     assert code == 2
     err = capsys.readouterr().err
-    assert f"127.0.0.1:{port}" in err and "--port" in err
+    assert f"Can't listen on 127.0.0.1: Port {port} already in use" in err and "--port" in err
+
+
+def test_the_settings_never_move_off_a_port_they_were_given_either(dashboard_config, tmp_path, capsys):
+    import socket
+
+    with socket.socket() as blocker:
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen()
+        busy = blocker.getsockname()[1]
+        code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                     "--state-dir", str(tmp_path / "dash"), "--port", "0", "--settings-port", str(busy)])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert f"Can't listen on 127.0.0.1: Port {busy} already in use" in err and "--settings-port" in err
+
+
+@pytest.mark.parametrize("argv, said", [
+    (["--port", "8090", "--settings-port", "8090"], "a port of their own"),
+    (["--port", "65535"], "would be 65536"),
+])
+def test_the_settings_need_a_port_of_their_own(dashboard_config, tmp_path, served, capsys, argv, said):
+    code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
+                 "--state-dir", str(tmp_path / "dash"), "--no-browser", *argv])
+    assert code == 2 and said in capsys.readouterr().err
+    assert "app" not in served  # nothing listened
 
 
 def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_config, tmp_path, monkeypatch, capsys):
@@ -1236,7 +1262,7 @@ def test_dashboard_runs_until_interrupted_and_lets_go_of_its_folder(dashboard_co
 
     opened = []
     monkeypatch.setattr(net, "urlopen", offline)
-    monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", interrupted)
+    monkeypatch.setattr(dashserver.Servers, "serve_forever", interrupted)
     monkeypatch.setattr("webbrowser.open", opened.append)
     folder = tmp_path / "dash"
     code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
@@ -1255,6 +1281,16 @@ def free_port():
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
+
+
+def free_ports():
+    """Two free ports, for the dashboard and the settings."""
+    import socket
+
+    with socket.socket() as one, socket.socket() as other:
+        one.bind(("127.0.0.1", 0))
+        other.bind(("127.0.0.1", 0))
+        return one.getsockname()[1], other.getsockname()[1]
 
 
 def answering(port, deadline=10.0):
@@ -1286,7 +1322,7 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
     monkeypatch.setattr(serve, "SETTINGS_CHECK_S", 0.05)
     monkeypatch.setattr(serve, "_start_again", started_again.append)
     caplog.set_level("INFO")
-    folder, port = tmp_path / "dash", free_port()
+    folder, (port, settings_port) = tmp_path / "dash", free_ports()
 
     def owner():
         assert answering(port)
@@ -1299,41 +1335,57 @@ def test_dashboard_starts_again_when_its_saved_settings_change(dashboard_config,
     helper = threading.Thread(target=owner, daemon=True)
     helper.start()
     code = main(["serve", "--config", str(dashboard_config), "--secrets", str(tmp_path / "nonexistent"),
-                 "--state-dir", str(folder), "--port", str(port), "--no-browser"])
+                 "--state-dir", str(folder), "--port", str(port), "--settings-port", str(settings_port),
+                 "--no-browser"])
     helper.join(timeout=5)
-    assert code == 0 and started_again == [port]
+    assert code == 0 and started_again == [(port, settings_port)]
     assert "Settings changed but don't load" in caplog.text  # the broken one kept the old settings
     assert "starting the dashboard again" in caplog.text
     assert load_dashboard(dashboard_config, {"RDM_API_KEY": "k"}, folder).title == "Our house"  # lock let go
 
 
-def test_starting_again_runs_the_same_command_on_the_same_port_without_the_browser(monkeypatch):
+def test_starting_again_runs_the_same_command_on_the_same_ports_without_the_browser(monkeypatch):
     from twobells.cli import serve
 
     ran = []
     monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "dashboard", "--lan"])
     monkeypatch.setattr(os, "execv", lambda path, argv: ran.append((path, argv)))
-    serve._start_again(8091)
+    serve._start_again((8092, 8093))
     assert ran == [(sys.executable, [sys.executable, "-m", "twobells", "dashboard", "--lan",
-                                     "--no-browser", "--port", "8091"])]
+                                     "--no-browser", "--port", "8092", "--settings-port", "8093"])]
 
 
-def test_starting_again_and_again_adds_the_port_and_no_browser_once(monkeypatch):
-    # A process started again has them on its own command line already.
+def test_starting_again_and_again_adds_the_ports_and_no_browser_once(monkeypatch):
+    # A process started again has them on its own command line already, or (started again
+    # by the version before the settings had a port of their own) the dashboard's alone.
     from twobells.cli import serve
 
     ran = []
-    again = ["--no-browser", "--port", "8091"]
-    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "serve", "--port", "8090", *again, *again])
+    again = ["--no-browser", "--port", "8092", "--settings-port", "8093"]
+    old = ["--no-browser", "--port", "8092"]
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "serve", "--port", "8090",
+                                           *old, *again, *old, *again])
     monkeypatch.setattr(os, "execv", lambda path, argv: ran.append(argv))
-    serve._start_again(8091)
+    serve._start_again((8092, 8093))
     assert ran == [[sys.executable, "-m", "twobells", "serve", "--port", "8090", *again]]
 
 
-class Stopped:
-    """A server that stops as soon as it starts, as for Ctrl+C."""
+def test_starting_again_keeps_what_was_asked_for_before_its_own_tail(monkeypatch):
+    from twobells.cli import serve
 
-    server_address = ("127.0.0.1", 8090)
+    ran = []
+    asked = ["--port", "9000", "--settings-port", "9005", "--no-browser"]
+    monkeypatch.setattr(sys, "orig_argv", ["python3", "-m", "twobells", "serve", *asked])
+    monkeypatch.setattr(os, "execv", lambda path, argv: ran.append(argv))
+    serve._start_again((9000, 9005))
+    assert ran == [[sys.executable, "-m", "twobells", "serve", *asked,
+                    "--no-browser", "--port", "9000", "--settings-port", "9005"]]
+
+
+class Stopped:
+    """Both listeners, stopping as soon as they start, as for Ctrl+C."""
+
+    ports = (8090, 8091)
 
     def serve_forever(self, poll_interval=0.5):
         raise KeyboardInterrupt
@@ -1347,7 +1399,7 @@ class Stopped:
 
 @pytest.fixture
 def served(monkeypatch):
-    """What serve would serve, and where: make_server records it and the server stops at once."""
+    """What serve would serve, and where: make_servers records it and the servers stop at once."""
     from twobells.core import net
     from twobells.web import netguard
     from twobells.web import server as dashserver
@@ -1357,8 +1409,8 @@ def served(monkeypatch):
 
     made = {}
 
-    def make_server(app, host, port, attempts=1):
-        made.update(app=app, host=host, port=port, attempts=attempts)
+    def make_servers(app, host, port, settings_port, attempts=1):
+        made.update(app=app, host=host, port=port, settings_port=settings_port, attempts=attempts)
         return Stopped()
 
     def send(address):
@@ -1366,7 +1418,7 @@ def served(monkeypatch):
         return made.get("guard", errno.EPERM)
 
     monkeypatch.setattr(net, "urlopen", offline)
-    monkeypatch.setattr(dashserver, "make_server", make_server)
+    monkeypatch.setattr(dashserver, "make_servers", make_servers)
     monkeypatch.setattr(netguard, "_send", send)  # nothing sent from the tests
     monkeypatch.setattr("webbrowser.open", lambda url: made.setdefault("opened", []).append(url))
     return made
@@ -1374,15 +1426,15 @@ def served(monkeypatch):
 
 def ask(app, path, fields=None):
     """A GET to `app`, or with `fields` a form's POST from its own page, served
-    for real on a free port: (status, Location, body)."""
+    for real on free ports, to the settings' listener for a path under
+    /settings and to the dashboard's for the rest: (status, Location, body)."""
     from urllib.parse import urlencode
 
-    from twobells.web.server import DashboardServer
-
-    server = DashboardServer(("127.0.0.1", 0), app)
+    server = make_servers(app, "127.0.0.1", 0, 0)
     threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+        port = server.ports[1] if path.startswith("/settings") else server.ports[0]
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         if fields is None:
             conn.request("GET", path, headers={"Host": "localhost"})
         else:
@@ -1428,21 +1480,25 @@ def test_serve_tells_the_dashboard_and_the_settings_its_version(tmp_path, served
     assert f"twobells {wanted}" in app.static.get("index.html").body.decode()
 
 
-@pytest.mark.parametrize("argv, host, port, attempts, browser", [
-    (["serve", "--install", "docker"], "0.0.0.0", 8090, 1, False),
-    (["serve", "--install", "docker", "--port", "8091"], "0.0.0.0", 8091, 1, False),
-    (["serve"], "127.0.0.1", 8090, 10, True),  # a desktop: the next free port, and the browser
-    (["serve", "--install", "desktop", "--lan", "--no-browser"], "0.0.0.0", 8090, 10, False),
-    (["serve", "--install", "desktop", "--port", "8095", "--host", "192.168.1.5"], "192.168.1.5", 8095, 1, True),
+@pytest.mark.parametrize("argv, host, ports, attempts, browser", [
+    (["serve", "--install", "docker"], "0.0.0.0", (8090, 8091), 1, False),
+    (["serve", "--install", "docker", "--port", "8092"], "0.0.0.0", (8092, 8093), 1, False),
+    (["serve", "--install", "docker", "--settings-port", "9000"], "0.0.0.0", (8090, 9000), 1, False),
+    (["serve"], "127.0.0.1", (8090, 8091), 5, True),  # a desktop: the next free pair, and the browser
+    (["serve", "--install", "desktop", "--lan", "--no-browser"], "0.0.0.0", (8090, 8091), 5, False),
+    (["serve", "--install", "desktop", "--port", "8095", "--host", "192.168.1.5"], "192.168.1.5", (8095, 8096), 1,
+     True),
+    (["serve", "--install", "desktop", "--settings-port", "8099"], "127.0.0.1", (8090, 8099), 1, True),
 ])
 def test_serve_listens_and_opens_the_browser_as_its_install_does(tmp_path, served, dashboard_config, argv, host,
-                                                                  port, attempts, browser):
+                                                                  ports, attempts, browser):
     paths = ["--config", str(dashboard_config), "--secrets", str(tmp_path / "none.env"),
              "--state-dir", str(tmp_path / "data")]
     assert main([*argv, *paths]) == 0
-    assert (served["host"], served["port"], served["attempts"]) == (host, port, attempts)
-    assert bool(served.get("opened")) is browser
+    assert (served["host"], (served["port"], served["settings_port"]), served["attempts"]) == (host, ports, attempts)
+    assert served.get("opened", []) == (["http://localhost:8090/"] if browser else [])  # Stopped's ports
     assert served["app"].hub is not None  # its dashboard view is on, and set up
+    assert served["app"].settings.dashboard_port == 8090  # for the wall tablet's address
 
 
 def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetch_service(tmp_path, served,
@@ -1454,7 +1510,8 @@ def test_serve_on_a_pi_not_set_up_shows_no_dashboard_and_hands_setup_to_the_fetc
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
     assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
-    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)
+    found = served["host"], served["port"], served["settings_port"], served["attempts"]
+    assert found == ("0.0.0.0", 8090, 8091, 1)
     app = served["app"]
     assert not app.dashboard_on() and app.settings.install.name == "pi" and not served.get("opened")
     assert ask(app, "/") == (303, "/settings", b"")
@@ -1603,35 +1660,40 @@ def test_serve_on_a_pi_never_looks_up_a_name(tmp_path, monkeypatch, pi_with_the_
     args, folder, _ = pi_with_the_dashboard
     PasswordStore(folder / "web.json").set(DASH_PASSWORD)
     answered = {}
-    serve_forever = dashserver.DashboardServer.serve_forever
+    serve_forever = dashserver.Servers.serve_forever
 
-    def serve_a_while(server, poll_interval=0.5):
-        thread = threading.Thread(target=serve_forever, args=(server, 0.05), daemon=True)
+    def serve_a_while(servers, poll_interval=0.5):
+        thread = threading.Thread(target=serve_forever, args=(servers, 0.05), daemon=True)
         thread.start()
         try:
-            browser = Browser(server.server_address[1])
+            dashboard_port, settings_port = servers.ports
+            browser = Browser(dashboard_port)
             for path in ("/", "/healthz", "/api/snapshot", "/api/performance", "/nowhere", "/settings/login"):
-                answered[path] = browser("GET", path)[0].status
-            answered["sign in"] = browser("POST", "/settings/login", {"password": DASH_PASSWORD})[0].status
+                answered[path] = browser("GET", path)[0].status  # the last, the page saying where they are
+            settings = Browser(settings_port)
+            answered["settings /"] = settings("GET", "/")[0].status
+            answered["sign in"] = settings("POST", "/settings/login", {"password": DASH_PASSWORD})[0].status
             for path in (*TAB_PATHS.values(), "/settings/setup/"):
-                answered[path] = browser("GET", path)[0].status
-            answered["outsider"] = browser("GET", "/settings/login", headers={"Host": "evil.example.com"})[0].status
-            with socket.socket() as raw:
-                raw.settimeout(5)
-                raw.connect(("127.0.0.1", server.server_address[1]))
-                raw.sendall(b"GET\r\n\r\n")
-                answered["broken"] = raw.recv(64).split(b" ")[1]
+                answered[path] = settings("GET", path)[0].status
+            answered["outsider"] = settings("GET", "/settings/login", headers={"Host": "evil.example.com"})[0].status
+            for port in servers.ports:
+                with socket.socket() as raw:
+                    raw.settimeout(5)
+                    raw.connect(("127.0.0.1", port))
+                    raw.sendall(b"GET\r\n\r\n")
+                    answered[f"broken {port}"] = raw.recv(64).split(b" ")[1]
         finally:
-            server.shutdown()
+            servers.shutdown()
             thread.join(5)
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(dashserver.DashboardServer, "serve_forever", serve_a_while)
+    monkeypatch.setattr(dashserver.Servers, "serve_forever", serve_a_while)
     code = main([*args, "--host", "127.0.0.1", "--port", "0"])
     assert looked_up == []
     assert code == 0
-    # Each was answered: the pages, signed in, and the requests turned away.
-    assert answered.pop("broken") == b"400" and answered.pop("outsider") == 403
+    # Each was answered, on both listeners: the pages, signed in, and the requests turned away.
+    assert [answered.pop(key) for key in list(answered) if key.startswith("broken")] == [b"400", b"400"]
+    assert answered.pop("outsider") == 403 and answered.pop("settings /") == 303
     assert answered.pop("/nowhere") == 404 and answered.pop("sign in") == 303
     assert answered.pop("/healthz") == 503  # nothing handed over by the fetch service yet
     assert set(answered.values()) == {200}, answered
@@ -1826,9 +1888,10 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     monkeypatch.setattr(serve, "_start_again", started_again.append)
     monkeypatch.setenv("RDM_API_KEY", "from-the-environment")
     caplog.set_level("INFO")
-    folder, port = tmp_path / "data", free_port()
+    folder, (port, settings_port) = tmp_path / "data", free_ports()
     argv = ["serve", "--install", "docker", "--config", str(tmp_path / "missing.toml"),
-            "--secrets", str(tmp_path / "none.env"), "--state-dir", str(folder), "--port", str(port)]
+            "--secrets", str(tmp_path / "none.env"), "--state-dir", str(folder), "--port", str(port),
+            "--settings-port", str(settings_port)]
     seen = {}
 
     def owner():
@@ -1842,10 +1905,10 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
 
     def setting_up():
         assert answering(port)
-        browser = Browser(port)
-        response, _ = browser("GET", "/")
+        response, _ = Browser(port)("GET", "/")
         seen["home"] = (response.status, response.getheader("Location"))
-        # Claim the settings with a code from the container's log.
+        # Claim the settings, on their own port, with a code from the container's log.
+        browser = Browser(settings_port)
         _, page = browser("GET", "/settings/login")
         token = re.search(r'name="form" value="([^"]+)"', page).group(1)
         browser("POST", "/settings/forgot", {"form": token})
@@ -1874,13 +1937,13 @@ def test_dockers_first_run_claims_in_the_log_sets_up_and_starts_the_dashboard_ag
     status, finished = seen["finish"]
     assert status == 200 and "starts again" in finished["message"]  # its words are tests/setup/test_api.py's
     assert finished["links"][0] == {"label": "The dashboard", "href": "/"}
-    assert started_again == [port] and "starting the dashboard again" in caplog.text
+    assert started_again == [(port, settings_port)] and "starting the dashboard again" in caplog.text
 
     # Started again, as _start_again would: now the Collector runs.
     started, made = [], {}
     start = collector.Collector.start
     monkeypatch.setattr(collector.Collector, "start", lambda self: started.append(self) or start(self))
-    monkeypatch.setattr(dashserver, "make_server", lambda app, host, port, attempts=1: made.update(app=app) or Stopped())
+    monkeypatch.setattr(dashserver, "make_servers", lambda app, *args: made.update(app=app) or Stopped())
     assert main(argv) == 0
     assert made["app"].hub is not None and len(started) == 1
     # Its upkeep builds the bus timetable within Docker's limits, which fit the container.
@@ -2153,7 +2216,7 @@ def no_dashboard(monkeypatch):
         raise AssertionError("the dashboard started")
 
     monkeypatch.setattr(dashconfig, "load_dashboard", started)
-    monkeypatch.setattr(dashserver, "make_server", started)
+    monkeypatch.setattr(dashserver, "make_servers", started)
 
 
 def test_dashboard_set_password_needs_only_its_folder_as_in_docker(tmp_path, typed, no_dashboard, capsys):
@@ -2355,7 +2418,7 @@ def test_a_template_config_shows_the_setup_page_instead_of_failing(tmp_path, mon
     assert Image.open(tmp_path / "board.png").size == (250, 122)
     state = json.loads((tmp_path / "state" / "state.json").read_text())
     assert state["last_render"]["page"] == "setup" and "sources" not in state
-    assert "http://kitchen-board.local:8090/settings" in caplog.text
+    assert "http://kitchen-board.local:8091/settings" in caplog.text
     # Drawn once: e-paper wears, and the page doesn't change.
     rendered = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rendered=")]
     assert rendered == ["rendered=True", "rendered=False", "rendered=False"]
@@ -2374,7 +2437,7 @@ def test_a_pi_not_set_up_shows_set_me_up_with_the_settings_address(tmp_path, mon
     if FIRST_RUNS[config] is not None:
         path.write_text(FIRST_RUNS[config])
     assert main(first_run_args(tmp_path, path)) == 0
-    assert "Not set up yet: showing http://kitchen-board.local:8090/settings on the board" in caplog.text
+    assert "Not set up yet: showing http://kitchen-board.local:8091/settings on the board" in caplog.text
     assert Image.open(tmp_path / "board.png").size == (250, 122)
     assert saved_page(folder) == "setup"  # in systemd's folder, even without a config.toml
 
@@ -2565,7 +2628,7 @@ def signed_in(app, folder):
     from twobells.web.server import DashboardServer
 
     PasswordStore(folder / "web.json").set(DASH_PASSWORD)
-    server = DashboardServer(("127.0.0.1", 0), app)
+    server = DashboardServer(("127.0.0.1", 0), app, "settings")
     threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
     try:
         browser = Browser(server.server_address[1])
@@ -2610,7 +2673,8 @@ def test_the_pis_settings_hand_setup_to_the_fetch_service(tmp_path, monkeypatch,
     run = tmp_path / "run"
     monkeypatch.setenv("RUNTIME_DIRECTORY", str(run))  # as systemd gives it
     assert main(["serve", "--install", "pi", "--config", str(config), "--secrets", str(tmp_path / "none.env")]) == 0
-    assert (served["host"], served["port"], served["attempts"]) == ("0.0.0.0", 8090, 1)  # the old 8080 no more
+    found = served["host"], served["port"], served["settings_port"], served["attempts"]
+    assert found == ("0.0.0.0", 8090, 8091, 1)  # the old 8080 no more
     site = served["app"].settings
     assert site.install.name == "pi" and not served["app"].dashboard_on()
     runner = site.setup._runner
@@ -2640,7 +2704,7 @@ def test_without_a_folder_in_memory_the_setup_spool_is_refused(tmp_path, monkeyp
     from twobells.setup.spool.worker import Worker
     from twobells.web import server as dashserver
 
-    monkeypatch.setattr(dashserver, "make_server", lambda *args, **kwargs: pytest.fail("served"))
+    monkeypatch.setattr(dashserver, "make_servers", lambda *args, **kwargs: pytest.fail("served"))
     monkeypatch.setattr(Worker, "run", lambda self: pytest.fail("ran"))
     config = installed_template(tmp_path)
     (tmp_path / "state").mkdir()
@@ -2787,15 +2851,23 @@ def test_without_a_config_the_settings_start_in_systemds_folder(tmp_path, monkey
 
 
 @pytest.mark.parametrize("name, url", [
-    ("kitchen-board", "http://kitchen-board.local:8090/settings"),
-    ("Board.lan", "http://board.local:8090/settings"),
-    ("bad name\n", "http://raspberrypi.local:8090/settings"),
-    ("", "http://raspberrypi.local:8090/settings"),
+    ("kitchen-board", "http://kitchen-board.local:8091/settings"),
+    ("Board.lan", "http://board.local:8091/settings"),
+    ("bad name\n", "http://raspberrypi.local:8091/settings"),
+    ("", "http://raspberrypi.local:8091/settings"),
 ])
 def test_the_setup_address_is_this_pis_name(name, url):
     from twobells.cli.common import setup_url
 
     assert setup_url(name) == url
+
+
+def test_the_board_shows_the_settings_own_port():
+    # The board's renderer doesn't load the web server for one number: the two are kept the same here.
+    from twobells.cli.common import WEB_PORT
+    from twobells.web.server import DEFAULT_PORT, SETTINGS_PORT
+
+    assert WEB_PORT == SETTINGS_PORT == DEFAULT_PORT + 1
 
 
 # The tram timetable, built by the same command and timer.

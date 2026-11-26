@@ -170,7 +170,9 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", help="address to listen on (default: all on a Pi and in Docker, "
                                       "this computer only on a desktop)")
     serve.add_argument("--port", type=_port,
-                       help="port to listen on (default: 8090, or on a desktop the next free one)")
+                       help="the dashboard's port (default: 8090, or on a desktop the next free pair)")
+    serve.add_argument("--settings-port", type=_port,
+                       help="the settings' port, which must differ (default: the dashboard's plus one)")
     serve.add_argument("--lan", action="store_true", help="listen on all addresses, for phones at home")
     serve.add_argument("--no-browser", action="store_true", help="don't open the browser")
     _password_flags(serve)

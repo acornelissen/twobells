@@ -38,7 +38,7 @@ from twobells.web.auth import (
     Sessions,
 )
 from twobells.web.icons import icon
-from twobells.web.server import DashboardApp, StaticFiles, make_server
+from twobells.web.server import DashboardApp, StaticFiles, make_servers
 from twobells.web.settingsite import SettingsSite
 
 PASSWORD = "correct horse battery"
@@ -120,14 +120,20 @@ class Running:
         hub = Hub("Glossop", WalkTimes()) if dashboard else None
         self.app = DashboardApp(hub, StaticFiles({}, False), lambda: True, self.site,
                                 dashboard_on=lambda: self.on["now"], allowed_hosts=hosts)
-        self.server = make_server(self.app, "127.0.0.1", 0)
-        self.port = self.server.server_address[1]
         self.seen = []
+        self._listen()
+
+    def _listen(self):
+        """Both listeners, as serve has them: the settings' on self.port, the dashboard's beside it."""
+        self.server = make_servers(self.app, "127.0.0.1", 0, 0)
+        self.dashboard_port, self.port = self.server.ports
+        self.site.dashboard_port = self.dashboard_port
         threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True).start()
 
     def __call__(self, method, path, body=None, cookie=None, origin="same", host=None, headers=None,
-                 json_body=None):
-        host = host or f"localhost:{self.port}"
+                 json_body=None, to="settings"):
+        port = self.port if to == "settings" else self.dashboard_port
+        host = host or f"localhost:{port}"
         sent = {"Host": host}
         if origin == "same":
             sent["Origin"] = f"http://{host}"
@@ -143,7 +149,7 @@ class Running:
             data = json.dumps(json_body)
             sent["Content-Type"] = "application/json"
         sent.update(headers or {})
-        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
         conn.request(method, path, data, sent)
         response = conn.getresponse()
         text = response.read().decode()
@@ -185,9 +191,7 @@ class Running:
                                  dashboard_on=lambda: self.on["now"], clock=self.clock)
         self.app = DashboardApp(self.app.hub, StaticFiles({}, False), lambda: True, self.site,
                                 dashboard_on=lambda: self.on["now"], allowed_hosts=self.app.allowed_hosts)
-        self.server = make_server(self.app, "127.0.0.1", 0)
-        self.port = self.server.server_address[1]
-        threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True).start()
+        self._listen()
 
     def saved(self):
         return tomllib.loads((self.folder / "settings.toml").read_text())
@@ -282,7 +286,7 @@ def test_the_old_pages_cookies_are_ignored_and_never_mistaken_for_ours(signed):
         assert signed("GET", "/settings", cookie=old)[0].status == 303
     both = f"session=pi-token-xyz; dash_session=dash-token; {cookie}; form=old-form"
     assert signed("GET", "/settings", cookie=both)[0].status == 200
-    assert signed("GET", "/", cookie=f"session=pi-token-xyz; {cookie}")[0].status == 200
+    assert signed("GET", "/", cookie=f"session=pi-token-xyz; {cookie}", to="dashboard")[0].status == 200
     assert Sessions().token_from(both) == "pi-token-xyz"  # the old name reads only its own
 
 
@@ -413,7 +417,7 @@ def test_what_a_page_asks_for_by_itself_never_keeps_the_browser_signed_in(signed
         assert not (response.getheader("Set-Cookie") or "").startswith("settings_session="), path
     # The dashboard's page and API, beside the settings, don't either.
     for path in ("/", "/api/snapshot", "/healthz"):
-        signed("GET", path, cookie=cookie)
+        signed("GET", path, cookie=cookie, to="dashboard")
     signed.clock.now += 120
     for method, path, payload in background:  # and once it has run out, none of them is let in as signed in
         response, text = signed(method, path, cookie=cookie, headers={"X-CSRF-Token": csrf}, json_body=payload,
@@ -532,8 +536,10 @@ def test_only_opening_a_page_keeps_the_browser_signed_in_not_another_page_fetchi
         assert response.status == 200 and renewed(response, cookie), pairs
     signed.clock.now += SESSION_SECONDS - 120
     for pairs in FETCHED:
+        # Served all the same, or refused by the settings' listener as another
+        # page's fetch (tests/web/test_server.py says which); never renewed.
         response, text = framed_get(signed, path, pairs, cookie)
-        assert response.status == 200 and not renewed(response, cookie), pairs  # served all the same
+        assert response.status in (200, 403) and not renewed(response, cookie), pairs
     signed.clock.now += 120
     assert signed("GET", "/settings", cookie=cookie)[0].getheader("Location") == "/settings/login"
 
@@ -941,7 +947,7 @@ def test_on_a_bank_holiday_the_overview_says_the_board_keeps_sunday_times(pi):
 def test_the_overview_gives_the_wall_tablets_address_on_the_host_used(dash):
     cookie = dash.session()
     page = dash("GET", "/settings", cookie=cookie, host=f"glossop.local:{dash.port}")[1]
-    assert f"<code>http://glossop.local:{dash.port}/?kiosk</code>" in page
+    assert f"<code>http://glossop.local:{dash.dashboard_port}/?kiosk</code>" in page  # the dashboard's port
     assert '<a href="/">Open the dashboard</a>' in page
     page = dash("GET", "/settings", cookie=cookie)[1]  # localhost: no use to a tablet
     assert "http://localhost" not in page and "<code>/?kiosk</code>" in page
@@ -2397,7 +2403,8 @@ def test_the_wizard_api_needs_the_session_and_its_csrf_token(pi):
         response, text = pi("POST", "/settings/setup/api/begin", cookie=sent_cookie, origin=origin,
                             headers=headers, json_body={})
         assert response.status == status, (sent_cookie, headers, origin)
-        assert origin != "same" or "error" in json.loads(text)
+        # The site answers in JSON; another site's fetch is the listener's to refuse, first and plainly.
+        assert origin != "same" or "Sec-Fetch-Site" in headers or "error" in json.loads(text)
     assert pi.setup.calls == []
     response, text = pi("POST", "/settings/setup/api/begin", cookie=cookie, headers=token, json_body={"x": [1, 2]})
     assert response.status == 200 and json.loads(text) == {"step": "begin"}
@@ -2426,15 +2433,22 @@ def test_todays_choices_for_the_wizards_shortcuts_need_the_session_and_its_token
 def test_the_wizard_api_refuses_another_sites_page_outright(pi):
     cookie = pi.session()
     csrf = pi.csrf(cookie)
-    cross = {"Sec-Fetch-Site": "cross-site"}
-    for method, path in (("GET", "/settings/setup/api/session"), ("GET", "/settings/setup/api/begin"),
-                         ("HEAD", "/settings/setup/api/session"), ("PUT", "/settings/setup/api/begin")):
-        response, text = pi(method, path, cookie=cookie, headers=cross)
-        assert response.status == 403, (method, path)
-        assert csp(response) == PAGE_HEADERS["Content-Security-Policy"]
-        assert method == "HEAD" or (json.loads(text) == {"error": "Not from another site"} and csrf not in text)
-    response, text = step(pi, "begin", cookie=cookie, csrf=csrf, extra={"Sec-Fetch-Site": "Cross-Site "})
-    assert response.status == 403 and json.loads(text) == {"error": "Not from another site"}
+    # Another site's fetch, or the dashboard's, is refused by the settings' listener before the site.
+    for site in ("cross-site", "same-site"):
+        for method, path in (("GET", "/settings/setup/api/session"), ("GET", "/settings/setup/api/begin"),
+                             ("HEAD", "/settings/setup/api/session"), ("PUT", "/settings/setup/api/begin")):
+            response, text = pi(method, path, cookie=cookie, headers={"Sec-Fetch-Site": site})
+            assert response.status == 403, (method, path)
+            assert csp(response) == PAGE_HEADERS["Content-Security-Policy"]
+            assert method == "HEAD" or (text == "Forbidden" and csrf not in text)
+        response, text = step(pi, "begin", cookie=cookie, csrf=csrf, extra={"Sec-Fetch-Site": site.title() + " "})
+        assert response.status == 403 and csrf not in text
+    # Opened in the browser's window from another site, the listener lets it by, and the site refuses it.
+    opened = {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+    for site in ("cross-site", "same-site"):
+        response, text = pi("GET", "/settings/setup/api/session", cookie=cookie, headers={**opened,
+                                                                                         "Sec-Fetch-Site": site})
+        assert response.status == 403 and json.loads(text) == {"error": "Not from another site"}, site
     assert pi.setup.calls == []
     for same in ("same-origin", "none"):  # the page's own fetches, and a typed-in address
         assert pi("GET", "/settings/setup/api/session", cookie=cookie, headers={"Sec-Fetch-Site": same})[0].status == 200
@@ -2639,9 +2653,9 @@ def test_the_wizard_runs_its_own_scripts_under_its_own_headers(pi):
 
 def test_the_read_only_dashboard_keeps_its_own_headers(signed):
     for path in ["/", "/api/snapshot", "/healthz", "/settingsx", "/api/settings"]:
-        response, _ = signed("GET", path)
+        response, _ = signed("GET", path, to="dashboard")
         assert csp(response) == DASHBOARD_CSP, path
-    response, _ = signed("POST", "/api/snapshot", {"a": "1"})
+    response, _ = signed("POST", "/api/snapshot", {"a": "1"}, to="dashboard")
     assert response.status == 405 and response.getheader("Allow") == "GET, HEAD"
 
 

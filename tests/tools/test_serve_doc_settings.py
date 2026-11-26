@@ -92,7 +92,8 @@ def test_the_package_site_alone_asks_for_the_password(tool, tmp_path):
     """The signing in is the tool's: the site it builds, served as serve does, redirects to sign in."""
     install = INSTALLS["pi"]
     site = tool.make_site(tool.make_store(tmp_path, install), install, None)
-    running = Served(make_server(DashboardApp(None, StaticFiles({}, False), lambda: True, site), "127.0.0.1", 0))
+    app = DashboardApp(None, StaticFiles({}, False), lambda: True, site)
+    running = Served(make_server(app, "127.0.0.1", 0, role="settings"))
     try:
         response, _ = running("GET", "/settings")
         assert response.status == 303 and response.getheader("Location").startswith("/settings/login")

@@ -1,10 +1,11 @@
 """The settings site: everything under /settings, on every install.
 
-The one server (web/server.py) hands it every request under /settings,
-once it has let the request in
-(from the home network, naming a local host). The rest of the server is
-the read-only dashboard; this part changes what the board and the
-dashboard run on, so it needs signing in. The machinery is web/auth.py's (the
+The server's settings listener (web/server.py), on a port of its own,
+hands it every request under /settings, once it has let the request in
+(from the home network, naming a local host, not fetched by another
+site's page). The dashboard is the server's other listener, read-only;
+this part changes what the board and the dashboard run on, so it needs
+signing in. The machinery is web/auth.py's (the
 reset codes settings/resetcodes.py's), and the pages and forms web/formpages.py's:
 
 - The password is web.json in the store, one per install. The first
@@ -272,9 +273,11 @@ class SettingsSite:
     `version` (by default the package's) is what it says is running.
     `hub` is where the dashboard's snapshot is (serve sets it, with
     `healthy()` saying whether its pollers are working), for the
-    Overview's health; and on a Pi, `network_guard` says whether the server
-    can connect out (a netguard.Guard serve checked at start, which the
-    Overview asks again), None until it has looked."""
+    Overview's health; `dashboard_port` is the dashboard's port, for the
+    wall tablet's address (serve sets it once it listens); and on a Pi,
+    `network_guard` says whether the server can connect out (a
+    netguard.Guard serve checked at start, which the Overview asks again),
+    None until it has looked."""
 
     def __init__(self, store: Store, install: Install, setup: SetupSteps, *,
                  dashboard_on: Callable[[], bool] = lambda: False, stylesheet: bytes | None = None,
@@ -287,6 +290,7 @@ class SettingsSite:
         self.problem = ""
         self.hub: SnapshotSource | None = None
         self.healthy: Callable[[], bool] = lambda: True
+        self.dashboard_port: int | None = None
         self.network_guard: Guard | None = None
         self.setup = setup
         self._dashboard_on = dashboard_on
@@ -560,7 +564,7 @@ class SettingsSite:
         out.append(view.render_health(groups, now, PREFIX, problems=1 if self.problem else 0, note=note))
         out.append(view.render_place(data, self.store.folder, now, zone))
         out.append(view.render_keys(keystate.key_states(self.store, self.install), TAB_PATHS["keys"]))
-        out.append(view.render_actions(data, SETUP, running, host))
+        out.append(view.render_actions(data, SETUP, running, host, self.dashboard_port))
         return "".join(out)
 
     def _board_state(self) -> dict | None:

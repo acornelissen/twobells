@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import html
 import ipaddress
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..core.errors import safe_message
 from ..core.places import tram_stop_names
@@ -31,6 +31,7 @@ from ..sources.darwin import TRAINS_NEED_KEY
 from ..timetable import build as timetable
 from ..timetable import trams
 from . import places
+from .auth import origin_for
 from .icons import icon
 from .keystate import KeyState, pill
 from .status import SOURCES, as_dict, poll_policy, positive, switched_off, time_ago
@@ -79,8 +80,6 @@ GUARD = {
 _GUARD_FIX = ("What to do", "On the Pi, load the guard again and restart the services it holds: sudo systemctl "
               "restart twobells-guard twobells-web twobells-fetch. If it stays off, journalctl "
               "-u twobells-guard -u twobells-web says why.")
-# A Host header as the server let it in: a name or an address, and a port.
-_HOST = re.compile(r"(?:\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)(?::[0-9]{1,5})?")
 
 
 @dataclass(frozen=True)
@@ -519,29 +518,31 @@ def render_keys(states: Sequence[KeyState], keys_page: str) -> str:
             f'<p><a href="{e(keys_page)}">Change or test keys</a></p></section>')
 
 
-def kiosk_address(host: str | None) -> str | None:
-    """The wall tablet's address on the host the browser used (the Host
-    header, already let in by the server), or None when that can't reach
-    this device from another one: this computer's own name or address, or a
-    header not shaped as one."""
-    if not host or not _HOST.fullmatch(host.strip()):
-        return None
-    host = host.strip()
-    name = host[1:host.index("]")] if host.startswith("[") else host.rsplit(":", 1)[0]
-    if name.lower() == "localhost" or name.lower().endswith(".localhost"):
+def kiosk_address(host: str | None, port: int | None) -> str | None:
+    """The wall tablet's address: the dashboard's `port` at the name the
+    browser used (the Host header, already let in by the server), or None
+    when that can't reach this device from another one: this computer's own
+    name or address, a header not shaped as one, or no port."""
+    origin = origin_for(host, port) if port is not None else None
+    name = urlsplit(origin).hostname if origin else None
+    if not name or name == "localhost" or name.endswith(".localhost"):
         return None
     try:
-        if ipaddress.ip_address(name).is_loopback:
-            return None
+        ip = ipaddress.ip_address(name)
     except ValueError:
         pass
-    return f"http://{host}/?kiosk"
+    else:
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+        if ip.is_loopback:
+            return None
+    return f"{origin}/?kiosk"
 
 
-def render_actions(data: dict, setup: str, dashboard: bool, host: str | None) -> str:
+def render_actions(data: dict, setup: str, dashboard: bool, host: str | None, port: int | None = None) -> str:
     """The ways to change your place with setup (all of it, or the stops or
     the station alone), to open the dashboard while it runs, and the wall
-    tablet's address."""
+    tablet's address, on the dashboard's `port`."""
     e = html.escape
     items = [f'<li><a href="{e(setup)}">Change home, station or stops</a></li>']
     if "bus" in data:
@@ -555,7 +556,7 @@ def render_actions(data: dict, setup: str, dashboard: bool, host: str | None) ->
            '<p class="hint">Setup goes step by step, with walk times and the bus companies; '
            "the shortcuts start it at that step with today's choices.</p>"]
     if dashboard:
-        address = kiosk_address(host)
+        address = kiosk_address(host, port)
         out.append('<h3 id="kiosk-title">Wall tablet</h3>')
         if address:
             out.append(f'<p>Open <code>{e(address)}</code> on a tablet on your home network. It shows the next '

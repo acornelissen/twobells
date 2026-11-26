@@ -181,17 +181,25 @@ class _SettingsWatch(threading.Thread):
             self.join(timeout=10)
 
 
-def _start_again(port: int) -> None:
+def _start_again(ports: tuple[int, int]) -> None:
     """Replace this process with a fresh one, started the same way, on the
-    same port and without opening the browser again. Nothing of the old one
-    is left: every thread, the lock and the listening socket go with it.
-    Inside Docker the process stays the container's main one throughout.
-    A process started again ends with what it adds already: those copies
-    go first, so the command line doesn't grow with every start."""
+    same ports (the dashboard's and the settings') and without opening the
+    browser again. Nothing of the old one is left: every thread, the lock
+    and the listening sockets go with it. Inside Docker the process stays
+    the container's main one throughout. A process started again ends with
+    what it adds already: those copies go first, so the command line
+    doesn't grow with every start; so do those of a version that added
+    the dashboard's port alone."""
     given = sys.orig_argv[1:]
-    while len(given) >= 3 and given[-3:-1] == ["--no-browser", "--port"]:
-        given = given[:-3]
-    argv = [sys.executable, *given, "--no-browser", "--port", str(port)]
+    while True:
+        if len(given) >= 5 and given[-5:-3] == ["--no-browser", "--port"] and given[-2] == "--settings-port":
+            given = given[:-5]
+        elif len(given) >= 3 and given[-3:-1] == ["--no-browser", "--port"]:
+            given = given[:-3]
+        else:
+            break
+    port, settings_port = ports
+    argv = [sys.executable, *given, "--no-browser", "--port", str(port), "--settings-port", str(settings_port)]
     sys.stdout.flush()
     sys.stderr.flush()
     os.execv(sys.executable, argv)  # noqa: S606 - starts this same program afresh, no shell involved
@@ -315,10 +323,30 @@ def _mirror(store: Store, install: Install, runner, dash):
     )
 
 
-def _serve_with(args, store: Store, install: Install, runner, dash, problem: str) -> tuple[int, int | None]:
+def _ports(args, install: Install) -> tuple[int, int, int]:
+    """The dashboard's port, the settings', and how many pairs to try: a
+    port asked for is that port or nothing (Docker's health check expects
+    it); without, a desktop takes the next pair both free after the
+    defaults. The settings' is the dashboard's plus one unless asked for
+    (both 0, any free port, in tests). ValueError if they can't differ."""
+    from ..web import server as dashserver
+
+    port = dashserver.DEFAULT_PORT if args.port is None else args.port
+    settings_port = args.settings_port
+    if settings_port is None:
+        settings_port = port + 1 if port else 0
+    if settings_port > 65535:
+        raise ValueError(f"The settings' port would be {settings_port}: pass --settings-port")
+    if settings_port and settings_port == port:
+        raise ValueError("The settings need a port of their own: pass a --settings-port other than --port")
+    asked = args.port is not None or args.settings_port is not None
+    return port, settings_port, (5 if install.browser and not asked else 1)
+
+
+def _serve_with(args, store: Store, install: Install, runner, dash, problem: str) -> tuple[int, tuple[int, int] | None]:
     """Run the server until stopped, with the dashboard if `dash` (its
-    settings) is given. The exit code, and the port to start again on if
-    the settings changed."""
+    settings) is given. The exit code, and the ports (the dashboard's and
+    the settings') to start again on if the settings changed."""
     import sqlite3
 
     from ..dashboard.collector import Collector
@@ -412,21 +440,22 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             recent=recent,
             performance=performance,
             allowed_hosts=dash.options.allowed_hosts if dash is not None else _allowed_hosts(store),
+            moved_hint=install.settings_moved,
         )
         host = "0.0.0.0" if args.lan else (args.host or install.host)  # noqa: S104 - --lan asks for every interface
-        # A port asked for is that port or nothing (Docker's health check expects
-        # it); without one, a desktop takes the next free port after the default.
-        if args.port is None:
-            port, attempts = dashserver.DEFAULT_PORT, (10 if install.browser else 1)
-        else:
-            port, attempts = args.port, 1
         try:
-            server = dashserver.make_server(app, host, port, attempts)
-        except OSError as error:
-            hint = " Stop the other process or pass another --port." if args.port is not None else ""
-            print(f"Can't listen on {host}:{port}: {error.strerror or error}.{hint}", file=sys.stderr)
+            port, settings_port, attempts = _ports(args, install)
+        except ValueError as error:
+            print(error, file=sys.stderr)
             return 2, None
-        port = server.server_address[1]
+        try:
+            server = dashserver.make_servers(app, host, port, settings_port, attempts)
+        except OSError as error:
+            hint = " Stop the other process or pass another --port and --settings-port." if attempts == 1 else ""
+            print(f"Can't listen on {host}: {error.strerror or error}.{hint}", file=sys.stderr)
+            return 2, None
+        port, settings_port = server.ports
+        site.dashboard_port = port
         if install.network_guard:
             # Whether the kernel really keeps this server off the internet; in the log and on the Overview,
             # which asks again as it is drawn.
@@ -438,15 +467,16 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
             mirror.start()
         if needs_setup(store):
             print("Not set up yet: sign in and the page opens the setup wizard", file=sys.stderr)
-        url = f"http://localhost:{port}/"
+        url, settings_url = f"http://localhost:{port}/", f"http://localhost:{settings_port}/settings"
         if hub is not None and dashboard_on():
             print(f"Dashboard at {url}  (Ctrl+C to stop)")
-        print(f"Settings at {url}settings  (home network only)")
+        print(f"Settings at {settings_url}  (home network only)")
         if args.lan:
             name = socket.gethostname().split(".")[0]
-            print(f"On your home network: http://{name}.local:{port}/ or this computer's IP address and port {port}")
+            print(f"On your home network: http://{name}.local:{port}/ and "
+                  f"http://{name}.local:{settings_port}/settings, or this computer's IP address with those ports")
         if install.browser and not args.no_browser:
-            webbrowser.open(url if hub is not None else f"{url}settings")
+            webbrowser.open(url if hub is not None else settings_url)
         # docker stop and systemctl stop send SIGTERM: shut down as for Ctrl+C (signals reach the main thread only).
         on_main = threading.current_thread() is threading.main_thread()
         previous = signal.signal(signal.SIGTERM, _interrupt) if on_main else None
@@ -470,7 +500,7 @@ def _serve_with(args, store: Store, install: Install, runner, dash, problem: str
     finally:
         if history is not None:
             history.close()
-    return 0, (port if watch is not None and watch.restart else None)
+    return 0, ((port, settings_port) if watch is not None and watch.restart else None)
 
 
 def _password(args, store: Store, install: Install) -> int:

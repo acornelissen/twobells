@@ -137,7 +137,7 @@ def static_dir(tmp_path):
 
 
 class Running:
-    def __init__(self, app, role="both", **limits):
+    def __init__(self, app, role="dashboard", **limits):
         self.app = app
         seconds = limits.pop("request_seconds", REQUEST_DEADLINE_S)
         self.server = make_server(app, "127.0.0.1", 0, role=role, limits=Limits(**limits), request_seconds=seconds)
@@ -219,8 +219,8 @@ def server(static_dir):
     running.close()
 
 
-def start(static_dir, limits=None, **overrides):
-    return Running(make_app(static_dir, **overrides), **(limits or {}))
+def start(static_dir, limits=None, role="dashboard", **overrides):
+    return Running(make_app(static_dir, **overrides), role, **(limits or {}))
 
 
 def assert_secure(response):
@@ -655,7 +655,8 @@ def test_with_the_dashboard_off_only_the_settings_and_the_health_check_answer(st
             assert response.status == 404 and b"Glossop" not in body, path
         response, body = running.request("/healthz")
         assert (response.status, body) == (200, b"ok")  # up, with nothing to fetch
-        assert running.request("/settings/login")[0].status == 200
+        response, body = running.request("/settings/login")  # which says where the settings are
+        assert response.status == 200 and b"The settings are on port" in body
         assert running.request("/api/snapshot", "POST")[0].status == 405
     finally:
         running.close()
@@ -850,7 +851,7 @@ def test_a_request_sent_a_line_at_a_time_is_dropped_at_its_deadline(static_dir):
 
 
 def test_a_body_sent_a_byte_at_a_time_is_dropped_at_its_deadline(static_dir):
-    running = start(static_dir, limits={"request_seconds": 0.5})
+    running = start(static_dir, limits={"request_seconds": 0.5}, role="settings")
     head = (b"POST /settings/login HTTP/1.1\r\nHost: localhost\r\nOrigin: http://localhost\r\n"
             b"Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\n\r\n")
     try:
@@ -939,14 +940,15 @@ def refusal(reply):
     return status, {name.lower(): value for name, _, value in (line.partition(": ") for line in lines)}, body
 
 
-def assert_refused(reply, status, phrase):
-    """`reply` is the short plain answer to an over-limit request: our headers, nothing of the request's."""
+def assert_refused(reply, status, phrase, security=SECURITY):
+    """`reply` is the short plain answer to an over-limit request: our headers
+    (`security`, the listener's), nothing of the request's."""
     line, headers, body = refusal(reply)
     assert line == f"HTTP/1.0 {status} {phrase}"
     assert headers["connection"] == "close" and headers["content-type"] == "text/plain; charset=utf-8"
     assert headers["content-length"] == str(len(body)) and body == phrase.encode()
     assert headers["cache-control"] == "no-store"
-    for name, value in SECURITY.items():
+    for name, value in security.items():
         assert headers[name.lower()] == value, name
     assert b"MARK" not in reply  # nothing of what was sent
 
@@ -1075,7 +1077,7 @@ def test_a_body_is_read_whole_whatever_its_headers_read_ahead_of_it(static_dir, 
     """The reader in front of the socket reads ahead, so part of the body
     may be in before the headers are parsed: none of it counts against the
     headers' budget, nor is any of it lost to the body's."""
-    running = start(static_dir)
+    running = start(static_dir, role="settings")
     request = padded_post("/settings/login", b"a=MARK" + b"b" * (60 * 1024 - 6), head_size)
     try:
         sock, counted = counted_from(running)
@@ -1093,7 +1095,7 @@ def test_a_body_has_its_own_64_kib_and_past_them_is_refused_with_413(static_dir,
     """However short the headers, the body has its own allowance, no more:
     so the whole request comes to at most MAX_REQUEST_BYTES."""
     taking_any_length(monkeypatch)
-    running = start(static_dir)
+    running = start(static_dir, role="settings")
     try:
         for length in (MAX_BODY_BYTES, MAX_BODY_BYTES + 1):
             request = padded_post(path, b"a=MARK" + b"b" * (length - 6), head_size)
@@ -1104,10 +1106,10 @@ def test_a_body_has_its_own_64_kib_and_past_them_is_refused_with_413(static_dir,
                 assert refusal(reply)[0] == READ[path]
                 assert counted.taken == len(request)
             else:
-                assert_refused(reply, 413, HTTPStatus(413).phrase)
+                assert_refused(reply, 413, HTTPStatus(413).phrase, settingsite.SETTINGS_HEADERS)
                 assert_took(counted, head_size + MAX_BODY_BYTES)
                 assert head_size + MAX_BODY_BYTES <= MAX_REQUEST_BYTES
-        assert running.request("/healthz")[1] == b"ok"
+        assert running.request("/settings/login")[0].status == 200
     finally:
         running.close()
 
@@ -1128,7 +1130,7 @@ def test_a_post_to_the_dashboards_api_is_refused_with_its_body_unread(static_dir
 
 @pytest.mark.parametrize("path", ["/settings/login", "/settings/setup/api/begin"])
 def test_a_length_past_the_cap_is_refused_with_413_before_any_body_is_sent(static_dir, path):
-    running = start(static_dir)
+    running = start(static_dir, role="settings")
     try:
         sock, counted = counted_from(running)
         with sock:
@@ -1149,16 +1151,16 @@ def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir, m
     """A browser posting too much keeps sending as the server stops reading:
     the answer still reaches it, and the server lets go within its deadline."""
     taking_any_length(monkeypatch)
-    running = start(static_dir, limits={"request_seconds": 3})
+    running = start(static_dir, limits={"request_seconds": 3}, role="settings")
     try:
         body = b"a=" + b"b" * (4 * 1024 * 1024)  # well past the request
         request = padded_post("/settings/login", body, MAX_HEADER_BYTES + 1 if past == "headers" else 1024)
         with socket.create_connection(("127.0.0.1", running.port), timeout=10) as sock:
             began = time.monotonic()
             reply = send_and_read(sock, request)
-        assert_refused(reply, status, HTTPStatus(status).phrase)
+        assert_refused(reply, status, HTTPStatus(status).phrase, settingsite.SETTINGS_HEADERS)
         assert time.monotonic() - began < 5
-        assert running.request("/healthz")[1] == b"ok"
+        assert running.request("/settings/login")[0].status == 200
     finally:
         running.close()
 
@@ -1185,7 +1187,14 @@ UNFINISHED = {
     "unknown-step": (post_to("/settings/setup/api/no_where", MORE), "404"),
     "dashboard-post": (post_to("/api/snapshot", MORE), "405"),
     "junk-after-the-body": (post_to("/settings/login", MORE, length=0), "403"),  # the sign-in page
+    "moved-post": (post_to("/settings/login", MORE), "405"),  # to the dashboard's port, where the settings aren't
 }
+# The dashboard's listener answers these; the settings' the rest.
+ON_THE_DASHBOARD = {"dashboard-post", "moved-post"}
+
+
+def listener_for(past):
+    return "dashboard" if past in ON_THE_DASHBOARD else "settings"
 
 
 def refused_mid_send(past):
@@ -1200,7 +1209,7 @@ def test_a_client_still_sending_after_its_answer_has_a_second_to_read_it_then_is
     the answer on its way; so after any answer that leaves part of the
     request unread, the server waits up to LINGER_S, throwing away no
     more than LINGER_BYTES, then closes."""
-    running = start(static_dir)
+    running = start(static_dir, role=listener_for(past))
     request, answer = refused_mid_send(past)
     try:
         sock, counted = counted_from(running)
@@ -1217,7 +1226,7 @@ def test_a_client_still_sending_after_its_answer_has_a_second_to_read_it_then_is
 
 @pytest.mark.parametrize("past", list(UNFINISHED))
 def test_a_client_done_sending_after_its_answer_is_closed_on_at_once(static_dir, past):
-    running = start(static_dir)
+    running = start(static_dir, role=listener_for(past))
     request, answer = refused_mid_send(past)
     request = request[:len(request) - 4 * 1024 * 1024 + 100]  # 100 bytes of the 4 MiB, then done
     try:
@@ -1262,6 +1271,7 @@ def holds_no_slot(running, request):
     """Whether, once `request` is answered and the client has read to the
     end (keeping its connection open), the server lets go of its slot
     well inside LINGER_S: the server here takes one connection an address."""
+    probe = "/healthz" if running.server.role == "dashboard" else "/settings/style.css"
     with socket.create_connection(("127.0.0.1", running.port), timeout=5) as sock:
         sock.sendall(request)
         reply = b""
@@ -1270,7 +1280,7 @@ def holds_no_slot(running, request):
         until = time.monotonic() + server_module.LINGER_S / 2
         while time.monotonic() < until:
             try:
-                if running.request("/healthz")[1] == b"ok":
+                if running.request(probe)[0].status == 200:
                     return reply
             except (ConnectionError, http.client.HTTPException):
                 time.sleep(0.02)
@@ -1285,7 +1295,8 @@ def holds_no_slot(running, request):
     (post_to("/settings/login", b""), "403"),
 ], ids=["get", "head", "api", "form-post", "empty-post"])
 def test_an_answer_to_a_request_read_whole_lets_go_at_once(static_dir, request_bytes, status):
-    running = start(static_dir, limits={"max_per_client": 1})
+    role = "settings" if b"/settings/" in request_bytes.split(b"\r\n", 1)[0] else "dashboard"
+    running = start(static_dir, limits={"max_per_client": 1}, role=role)
     try:
         reply = holds_no_slot(running, request_bytes)
         assert reply is not None, "the slot was held"
@@ -1364,7 +1375,7 @@ def form_post(path, body, padding=0):
 
 
 def test_the_largest_form_with_the_longest_headers_allowed_is_still_answered(static_dir):
-    running = start(static_dir)
+    running = start(static_dir, role="settings")
     body = b"a=" + b"b" * (MAX_FORM_BODY - 2)
     request = form_post("/settings/login", body)
     request = form_post("/settings/login", body, MAX_HEADER_BYTES - (len(request) - len(body)))
@@ -1545,12 +1556,12 @@ def test_connections_beyond_the_cap_are_closed_unanswered(static_dir):
 
 def test_a_busy_port_is_an_error_unless_retrying(static_dir):
     app = make_app(static_dir)
-    blocker = make_server(app, "127.0.0.1", 0)
+    blocker = make_server(app, "127.0.0.1", 0, role="dashboard")
     port = blocker.server_address[1]
     try:
         with pytest.raises(OSError, match=str(port)):
-            make_server(app, "127.0.0.1", port)
-        moved = make_server(app, "127.0.0.1", port, attempts=5)
+            make_server(app, "127.0.0.1", port, role="dashboard")
+        moved = make_server(app, "127.0.0.1", port, attempts=5, role="dashboard")
         assert moved.server_address[1] != port
         moved.server_close()
     finally:
@@ -1882,7 +1893,7 @@ def test_the_connection_caps_are_shared_by_both_listeners(static_dir):
 
 def test_both_listeners_bind_before_either_serves_and_a_busy_one_names_its_port(static_dir):
     app = make_app(static_dir)
-    blocker = make_server(app, "127.0.0.1", 0)
+    blocker = make_server(app, "127.0.0.1", 0, role="dashboard")
     busy = blocker.server_address[1]
     try:
         with pytest.raises(OSError, match=f"Port {busy} already in use"):
@@ -1898,7 +1909,7 @@ def test_a_desktop_takes_the_next_pair_both_free(static_dir):
     with socket.socket() as probe:  # a free port, with those after it for the pairs
         probe.bind(("127.0.0.1", 0))
         base = probe.getsockname()[1]
-    blocker = make_server(app, "127.0.0.1", base + 1)  # the first pair's settings port is taken
+    blocker = make_server(app, "127.0.0.1", base + 1, role="dashboard")  # the first pair's settings port is taken
     try:
         servers = make_servers(app, "127.0.0.1", base, base + 1, attempts=3)
         assert servers.ports == (base + 2, base + 3)

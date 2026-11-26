@@ -20,8 +20,8 @@ from ..settings.config import holiday_division
 from ..settings.store import Store, check_owner
 from ..sources.holidays import bank_holidays
 
-# The settings' port on a Pi, as twobells-web.service serves them.
-WEB_PORT = 8090
+# The settings' port on a Pi, as twobells-web.service serves them (--settings-port).
+WEB_PORT = 8091
 
 
 def local_now(timezone: str) -> datetime:

@@ -43,7 +43,7 @@ from twobells.setup import lookups as setup
 from twobells.setup.api import SetupApi
 from twobells.setup.keytest import KeyResult
 from twobells.web.groupform import check_views
-from twobells.web.server import DashboardApp, DashboardServer, StaticFiles, make_server
+from twobells.web.server import DEFAULT_PORT, DashboardApp, DashboardServer, StaticFiles, make_server
 from twobells.web.settingsite import PREFIX, SettingsSite, wizard_files
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -245,10 +245,11 @@ def make_site(store: Store, install: Install, scheme: str | None) -> SettingsSit
 
 
 def serve(folder: Path, install: Install, scheme: str | None = None, port: int = 8932) -> DashboardServer:
-    """The server for the sample settings in `folder`, on 127.0.0.1 only."""
+    """The settings' listener for the sample settings in `folder`, on 127.0.0.1 only, with no dashboard beside it."""
     site = make_site(make_store(folder, install), install, scheme)
+    site.dashboard_port = DEFAULT_PORT  # for the wall tablet's address, as serve sets it
     app = DashboardApp(None, StaticFiles({}, False), lambda: True, SignedIn(site))  # type: ignore[arg-type]
-    return make_server(app, "127.0.0.1", port)
+    return make_server(app, "127.0.0.1", port, role="settings")
 
 
 def main() -> None:

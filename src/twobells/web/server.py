@@ -1,5 +1,12 @@
-"""The one web server on every install: the settings site, and the dashboard's
-page, its static files and the read-only API in docs/dashboard-api.md.
+"""The one web server on every install, in two listeners on two ports, so
+each is an origin of its own: the dashboard's page, its static files and
+the read-only API in docs/dashboard-api.md on one (DEFAULT_PORT), and the
+settings site on the other (SETTINGS_PORT). What a request gets is the
+role of the socket that accepted it (Servers, make_servers), never what
+its Host says, and the links between the two are made from the name it
+used and the other's port (auth.origin_for). So a script on the
+dashboard's page, were one ever to get past its CSP, can't read a
+settings page or its form token.
 
 Home network only. Every request must come from a private address and name
 a local host (or one in allowed_hosts), in one Host header, which blocks
@@ -12,21 +19,27 @@ MAX_BODY_BYTES. So a misbehaving client, or one sending its request a
 byte at a time, can't use up the threads, nor one sending huge headers
 the memory. One past its deadline is dropped unanswered; one past its
 bytes is answered 431 (its line and headers) or 413 (its body), with
-nothing more of it used, and let go after at most LINGER_S.
+nothing more of it used, and let go after at most LINGER_S. The caps are
+for both listeners together (Limits).
 
-Everything under /settings goes
-to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
+On the settings' listener, everything under /settings goes to the
+settings site (web/settingsite.py): it signs the owner in, takes POSTs
 (same-origin, with a CSRF token, bodies capped) and has its own security
-headers, with scripts only on the setup wizard's pages.
+headers, with scripts only on its own pages that need them. A request
+another site's page or the dashboard's sent is refused there, but a
+browser opening a page. Its / goes to the dashboard while that is on;
+nothing else is found.
 
+On the dashboard's listener, everything under /settings is a fixed page
+saying where the settings are now, which asks the settings site nothing.
 The dashboard is the rest, while it is on (DashboardApp.dashboard_on): read
 only, with no password: only GET and HEAD, only files from an allowlist read
 into memory at start. Its two pages, / and /performance, are files from
 it. While it is off (its view is off, the settings aren't set up or don't
-load), / goes to the settings, /healthz is still answered, and its pages,
-files and API are not found. Every response, errors
-included, carries the security headers: the dashboard's while it is on,
-else the settings site's.
+load), / goes to /settings, /healthz is still answered, and its pages,
+files and API are not found. Every response, errors included, carries the
+security headers: the dashboard's while it is on, else the settings site's
+with no script.
 """
 
 from __future__ import annotations
@@ -68,8 +81,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 8090  # the dashboard's
 SETTINGS_PORT = 8091  # the settings', by default the dashboard's plus one
-# What a listener serves: the dashboard or the settings, or (one socket alone) both.
-ROLES = ("dashboard", "settings", "both")
+# What a listener serves: the dashboard or the settings, never both (see Servers).
+ROLES = ("dashboard", "settings")
 MAX_CONNECTIONS = 48
 # Open connections from one address. Above two browsers' six each (an event stream
 # among them), as Docker Desktop and rootless Podman show a household as one address.
@@ -450,14 +463,9 @@ class _Handler(BaseHTTPRequestHandler):
         is on; else, and on the page saying where the settings are, the
         settings site's with no script."""
         owned = path is not None and settingsite.owns(path)
-        role = self.server.role
-        if role == "dashboard":
-            return SECURITY_HEADERS if not owned and self._on() else settingsite.SETTINGS_HEADERS
-        if path is not None and owned:
-            return settingsite.headers_for(path)
-        if role == "settings":
-            return settingsite.SETTINGS_HEADERS
-        return SECURITY_HEADERS if self._on() else settingsite.SETTINGS_HEADERS
+        if self.server.role == "settings":
+            return settingsite.headers_for(path) if path is not None and owned else settingsite.SETTINGS_HEADERS
+        return SECURITY_HEADERS if not owned and self._on() else settingsite.SETTINGS_HEADERS
 
     def _head(self, status: int, content_type: str | None, length: int | None, cache: str = "no-store",
               extra: dict[str, str] | None = None, security: dict[str, str] | None = None) -> None:
@@ -524,21 +532,21 @@ class _Handler(BaseHTTPRequestHandler):
                         self.app.client_allowed)
 
     def _fetch_header(self, name: str) -> str | None:
-        """A Fetch Metadata header's value, lower-cased: "" if it wasn't sent, None if sent more than once."""
+        """A Fetch Metadata header's value, lower-cased; None unless it was sent once."""
         values = self.headers.get_all(name) or []
-        if len(values) > 1:
-            return None
-        return values[0].strip().lower() if values else ""
+        return values[0].strip().lower() if len(values) == 1 else None
 
     def _from_elsewhere(self) -> bool:
         """Whether a request to the settings' listener came from another
         site's page or the dashboard's (Sec-Fetch-Site other than
         same-origin or none, or sent twice), unless it is a GET opening a
         page in the browser's window, as following a link does. One without
-        Fetch Metadata, from an older browser or curl, is let in: the
+        Sec-Fetch-Site, from an older browser or curl, is let in: the
         settings site's own checks still apply to it."""
+        if self.headers.get_all("Sec-Fetch-Site") is None:
+            return False
         site = self._fetch_header("Sec-Fetch-Site")
-        if site in ("", "same-origin", "none"):
+        if site in ("same-origin", "none"):
             return False
         opening = (site in ("same-site", "cross-site") and self.command == "GET"
                    and self._fetch_header("Sec-Fetch-Mode") == "navigate"
@@ -710,7 +718,8 @@ class _Handler(BaseHTTPRequestHandler):
         if path != "/":
             self._error(404)
             return
-        dashboard = origin_for(self.headers.get("Host"), self.server.dashboard_port) if self._on() else None
+        port = self.server.dashboard_port
+        dashboard = origin_for(self.headers.get("Host"), port) if port is not None and self._on() else None
         self._send(303, b"", extra={"Location": f"{dashboard}/" if dashboard else settingsite.PREFIX})
 
     def _moved(self) -> None:
@@ -722,7 +731,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(405, {"Allow": "GET, HEAD", "Connection": "close"})
             self._linger()
             return
-        port = self.server.settings_port
+        port = self.server.settings_port or SETTINGS_PORT
         address = origin_for(self.headers.get("Host"), port)
         page = moved_page(f"{address}{settingsite.PREFIX}" if address else None, port, self.app.moved_hint)
         self._send(200, page, CONTENT_TYPES[".html"])
@@ -842,13 +851,13 @@ class DashboardServer(ThreadingHTTPServer):
     closed at once, unread and unanswered), each request in within
     `request_seconds`. Its `role` is what it serves, fixed by the socket
     that accepts a connection and never by what a request says:
-    "dashboard", "settings", or "both" (one socket for everything).
+    "dashboard" or "settings".
     `dashboard_port` and `settings_port` are where each is, for the links
     between them."""
 
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], app: DashboardApp, role: str = "both", limits: Limits | None = None,
+    def __init__(self, address: tuple[str, int], app: DashboardApp, role: str, limits: Limits | None = None,
                  request_seconds: float = REQUEST_DEADLINE_S) -> None:
         if role not in ROLES:
             raise ValueError(f"Unknown role {role!r}")
@@ -857,7 +866,9 @@ class DashboardServer(ThreadingHTTPServer):
         self.limits = Limits() if limits is None else limits
         self.request_seconds = request_seconds
         super().__init__(address, _Handler)
-        self.dashboard_port = self.settings_port = self.server_address[1]
+        # Set by make_servers; None for a listener alone, with no other to link to.
+        self.dashboard_port: int | None = None
+        self.settings_port: int | None = None
 
     def server_bind(self) -> None:
         """Binds as http.server's does, but without looking up this
@@ -892,7 +903,7 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 def make_server(app: DashboardApp, host: str = "127.0.0.1", port: int = DEFAULT_PORT, attempts: int = 1,
-                *, role: str = "both", limits: Limits | None = None,
+                *, role: str, limits: Limits | None = None,
                 request_seconds: float = REQUEST_DEADLINE_S) -> DashboardServer:
     """One listener with `role`, bound to `port`, or the next free one within `attempts` ports."""
     for candidate in range(port, port + attempts):
@@ -928,7 +939,8 @@ class Servers:
         try:
             self.dashboard.serve_forever(poll_interval)
         finally:
-            self.settings.shutdown()
+            if thread.is_alive():  # else it has stopped already, and shutdown would wait for it forever
+                self.settings.shutdown()
             thread.join()
 
     def shutdown(self) -> None:

@@ -1323,7 +1323,7 @@ def test_the_emulator_shows_the_code_page(panel):
 
 # --- The set-me-up page, until the board is set up ---
 
-SETUP_PAGE = SetupView("http://raspberrypi.local:8090/settings")
+SETUP_PAGE = SetupView("http://raspberrypi.local:8091/settings")
 
 
 def first_run(**overrides):
@@ -1832,7 +1832,7 @@ def test_the_speaker_is_quiet_outside_the_train_windows_and_in_the_quiet_hours()
 def test_the_speaker_says_nothing_unless_chosen_on_e_paper_or_before_setup():
     assert speaker_run(dataclasses.replace(speaking_board(), show=frozenset()), FakeScreen(), [THU_0700]) == []
     assert speaker_run(speaking_board(), FakeDisplay(), [THU_0700]) == []
-    setup_page = SetupView("http://twobells.local:8090/settings/setup/")
+    setup_page = SetupView("http://twobells.local:8091/settings/setup/")
     assert speaker_run(speaking_board(setup=setup_page), FakeScreen(), [THU_0700]) == []
 
 
@@ -1920,7 +1920,7 @@ def endless(start, step):
     return lambda: next(moments)
 
 
-SETUP_PAGE = SetupView("http://twobells.local:8090/settings")
+SETUP_PAGE = SetupView("http://twobells.local:8091/settings")
 
 
 @pytest.mark.parametrize("scrolling", [False, True])
