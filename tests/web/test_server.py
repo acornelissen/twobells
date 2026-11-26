@@ -20,6 +20,7 @@ from twobells.web import server as server_module
 from twobells.web import settingsite
 from twobells.web.formpages import MAX_FORM_BODY
 from twobells.web.server import (
+    LINGER_BYTES,
     MAX_BODY_BYTES,
     MAX_CONNECTIONS,
     MAX_HEADER_BYTES,
@@ -870,14 +871,28 @@ def test_the_deadline_is_for_each_request_not_the_connection(static_dir):
 
 
 class Counted(socket.socket):
-    """The server's end of a connection, counting the bytes it takes off the wire."""
+    """The server's end of a connection, counting the bytes it takes off the
+    wire: in all, and before it began its answer."""
 
     taken = 0
+    answered = None  # the bytes taken when it began its answer
 
     def recv_into(self, buffer, nbytes=0, flags=0):
         got = super().recv_into(buffer, nbytes, flags)
         self.taken += got
         return got
+
+    def sendall(self, data, flags=0):
+        if self.answered is None:
+            self.answered = self.taken
+        return super().sendall(data, flags)
+
+
+def assert_took(counted, before_answer):
+    """The server took `before_answer` bytes and answered, then threw away
+    no more than LINGER_BYTES as the answer went out."""
+    assert counted.answered == before_answer
+    assert counted.taken - before_answer <= LINGER_BYTES
 
 
 def counted_from(running, address="192.168.1.66"):
@@ -891,8 +906,9 @@ def counted_from(running, address="192.168.1.66"):
 
 def send_and_read(sock, data, step=None):
     """Send `data` from a thread of its own (the server may stop reading part
-    way), all at once or `step` bytes a send, and read what comes back until
-    the server closes the connection."""
+    way), all at once or `step` bytes a send, then say it is done, as a
+    browser would; and read what comes back until the server closes the
+    connection."""
     def send():
         with contextlib.suppress(OSError):
             if step is None:
@@ -900,6 +916,7 @@ def send_and_read(sock, data, step=None):
             else:
                 for at in range(0, len(data), step):
                     sock.sendall(data[at:at + step])
+            sock.shutdown(socket.SHUT_WR)
 
     sender = threading.Thread(target=send, daemon=True)
     sender.start()
@@ -977,7 +994,7 @@ def test_a_line_and_headers_of_32_kib_are_answered(static_dir, lines, step):
 
 @pytest.mark.parametrize("lines", [1, 98], ids=["one-long-line", "many-short-lines"])
 @pytest.mark.parametrize("step", [None, 1], ids=["one-write", "byte-by-byte"])
-def test_a_line_and_headers_past_32_kib_are_refused_with_431_and_no_more_is_read(static_dir, lines, step):
+def test_a_line_and_headers_past_32_kib_are_refused_with_431_and_no_more_is_used(static_dir, lines, step):
     """Even with no body at all: the line and headers have a budget of
     their own, not a share of the whole request's."""
     running = start(static_dir)
@@ -986,7 +1003,7 @@ def test_a_line_and_headers_past_32_kib_are_refused_with_431_and_no_more_is_read
         with sock:
             reply = send_and_read(sock, padded(GET_HEALTH, MAX_HEADER_BYTES + 1, lines), step)
         assert_refused(reply, 431, "Request Header Fields Too Large")
-        assert counted.taken == MAX_HEADER_BYTES
+        assert_took(counted, MAX_HEADER_BYTES)
         assert running.request("/healthz")[1] == b"ok"  # and the server still answers
     finally:
         running.close()
@@ -1005,7 +1022,7 @@ def test_one_enormous_line_is_refused_with_431_once_32_kib_are_in(static_dir, re
         with sock:
             reply = send_and_read(sock, request_bytes)
         assert_refused(reply, 431, "Request Header Fields Too Large")
-        assert counted.taken == MAX_HEADER_BYTES
+        assert_took(counted, MAX_HEADER_BYTES)
     finally:
         running.close()
 
@@ -1023,7 +1040,7 @@ def test_the_audits_six_megabytes_of_headers_stop_at_32_kib(static_dir):
         with sock:
             reply = send_and_read(sock, b"GET /healthz HTTP/1.1\r\nHost: localhost\r\n" + line * 98 + b"\r\n")
         assert_refused(reply, 431, "Request Header Fields Too Large")
-        assert counted.taken == MAX_HEADER_BYTES
+        assert_took(counted, MAX_HEADER_BYTES)
         assert running.request("/healthz")[1] == b"ok"
     finally:
         running.close()
@@ -1084,7 +1101,8 @@ def test_a_body_has_its_own_64_kib_and_past_them_is_refused_with_413(static_dir,
                 assert counted.taken == len(request)
             else:
                 assert_refused(reply, 413, HTTPStatus(413).phrase)
-                assert counted.taken == head_size + MAX_BODY_BYTES <= MAX_REQUEST_BYTES
+                assert_took(counted, head_size + MAX_BODY_BYTES)
+                assert head_size + MAX_BODY_BYTES <= MAX_REQUEST_BYTES
         assert running.request("/healthz")[1] == b"ok"
     finally:
         running.close()
@@ -1136,6 +1154,67 @@ def test_a_client_still_sending_past_the_budget_hears_why_over_tcp(static_dir, m
         assert_refused(reply, status, HTTPStatus(status).phrase)
         assert time.monotonic() - began < 5
         assert running.request("/healthz")[1] == b"ok"
+    finally:
+        running.close()
+
+
+def refused_mid_send(past):
+    """A request refused part way, with 4 MiB more behind it, and the start of its answer."""
+    more = b"a=" + b"b" * (4 * 1024 * 1024)
+    if past == "headers":
+        return padded(GET_HEALTH, MAX_HEADER_BYTES + 1) + more, "HTTP/1.0 431 "
+    return form_post("/settings/login", more), "HTTP/1.0 413 "  # refused by its length, unread
+
+
+@pytest.mark.parametrize("past", ["headers", "length"])
+def test_a_client_still_sending_after_its_refusal_has_a_second_to_read_it_then_is_closed_on(static_dir, past):
+    """Closing on bytes not yet read resets the connection, which can lose
+    the answer on its way; so the server waits up to LINGER_S, throwing
+    away no more than LINGER_BYTES, then closes."""
+    running = start(static_dir)
+    request, answer = refused_mid_send(past)
+    try:
+        sock, counted = counted_from(running)
+        with sock:
+            began = time.monotonic()
+            reply = send_and_read(sock, request)
+            took = time.monotonic() - began
+        assert reply.startswith(answer.encode()) and b"MARK" not in reply
+        assert server_module.LINGER_S * 0.8 < took < server_module.LINGER_S + 2
+        assert counted.taken - counted.answered <= LINGER_BYTES
+    finally:
+        running.close()
+
+
+@pytest.mark.parametrize("past", ["headers", "length"])
+def test_a_client_done_sending_after_its_refusal_is_closed_on_at_once(static_dir, past):
+    running = start(static_dir)
+    request, answer = refused_mid_send(past)
+    request = request[:len(request) - 4 * 1024 * 1024 + 100]  # 100 bytes of the 4 MiB, then done
+    try:
+        sock, _ = counted_from(running)
+        with sock:
+            began = time.monotonic()
+            reply = send_and_read(sock, request)
+            took = time.monotonic() - began
+        assert reply.startswith(answer.encode())
+        assert took < server_module.LINGER_S / 2
+    finally:
+        running.close()
+
+
+def test_waiting_for_a_client_to_read_its_refusal_ends_at_the_requests_deadline(static_dir, monkeypatch):
+    monkeypatch.setattr(server_module, "LINGER_S", 60.0)
+    running = start(static_dir, limits={"request_seconds": 0.5})
+    request, answer = refused_mid_send("headers")
+    try:
+        sock, _ = counted_from(running)
+        with sock:
+            began = time.monotonic()
+            reply = send_and_read(sock, request)
+            took = time.monotonic() - began
+        assert reply.startswith(answer.encode())
+        assert took < 3
     finally:
         running.close()
 

@@ -12,7 +12,7 @@ MAX_BODY_BYTES. So a misbehaving client, or one sending its request a
 byte at a time, can't use up the threads, nor one sending huge headers
 the memory. One past its deadline is dropped unanswered; one past its
 bytes is answered 431 (its line and headers) or 413 (its body), with
-nothing more of it read.
+nothing more of it used, and let go after at most LINGER_S.
 
 Everything under /settings goes
 to the settings site (web/settingsite.py): it signs the owner in, takes POSTs
@@ -83,6 +83,10 @@ MAX_HEADER_BYTES = 32 * 1024
 # A request's body, after its headers: the largest a POST may have, whatever the headers took.
 MAX_BODY_BYTES = max(MAX_FORM_BODY, setupapi.MAX_BODY)
 MAX_REQUEST_BYTES = MAX_HEADER_BYTES + MAX_BODY_BYTES  # the most a request may send all told
+# After refusing a request part unread, how long the server lets the answer go out before it
+# closes, and the most of what the client still sends it reads and throws away meanwhile.
+LINGER_S = 1.0
+LINGER_BYTES = 64 * 1024
 MAX_PATH = 512
 HEARTBEAT_S = 15.0
 STREAM_SECONDS = 30 * 60
@@ -316,13 +320,39 @@ class _Handler(BaseHTTPRequestHandler):
     def _too_big(self, status: int) -> None:
         """The answer to a request past its byte budget, its headers (431)
         or its body (413): a fixed phrase, nothing of the request, and the
-        connection closed. Nothing more of it is read; a browser gone by
-        now is no fault."""
+        connection closed after _linger. Nothing more of it is used; a
+        browser gone by now is no fault."""
         self.close_connection = True
         self.request_version = "HTTP/1.0"  # as send_error: the request's own may not have been read
-        with contextlib.suppress(OSError):  # the browser went away, or stopped reading
+        try:
             self._send(status, HTTPStatus(status).phrase.encode(), extra={"Connection": "close"},
                        security=self._security_for(None))
+        except OSError:  # the browser went away, or stopped reading
+            return
+        self._linger()
+
+    def _linger(self) -> None:
+        """After an answer that leaves part of the request unsent or unread:
+        end our side (the answer, then a FIN), and throw away what the
+        client still sends, up to LINGER_BYTES, until it stops or LINGER_S
+        have passed, never past the request's deadline. Closing with its
+        bytes unread would reset the connection, which can lose the answer
+        on the way (a proxy in front, say); this gives it that long to
+        arrive. A client still sending then is reset, as before."""
+        until = min(time.monotonic() + LINGER_S, self.deadline)
+        left = LINGER_BYTES
+        scrap = bytearray(16 * 1024)
+        with contextlib.suppress(OSError):  # gone, reset, or still sending at `until`
+            self.connection.shutdown(socket.SHUT_WR)
+            while (wait := until - time.monotonic()) > 0:
+                if left <= 0:  # read no more of it, but give the answer its time
+                    time.sleep(wait)
+                    return
+                self.connection.settimeout(wait)
+                got = self.connection.recv_into(scrap, min(left, len(scrap)))
+                if not got:  # the client has stopped: nothing to reset
+                    return
+                left -= got
 
     def version_string(self) -> str:
         return "twobells"  # no Python or OS version for anyone probing
@@ -579,6 +609,8 @@ class _Handler(BaseHTTPRequestHandler):
         query = raw.split("#", 1)[0].partition("?")[2]
         reply = self.app.settings.handle(self.command, path, query, self.headers, self.client_address[0], self.rfile)
         self._send(reply.status, reply.body, reply.content_type, extra=reply.headers)
+        if reply.headers.get("Connection") == "close":  # a body refused unread (formpages.read_body)
+            self._linger()
 
     # Server-sent events
 
