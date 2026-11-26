@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from twobells.board.unsaved import MAX_BYTES, NAME, KeptRender
+from twobells.board.unsaved import MARKS_NAME, MAX_BYTES, NAME, KeptMarks, KeptRender
 
 DRAWN = {"signature": "a" * 64, "at": "2026-10-08T07:00:00", "page": "departures"}
 
@@ -70,3 +70,30 @@ def test_a_hard_link_a_folder_or_a_pipe_in_its_place_counts_as_none(run, tmp_pat
     (run / NAME).rmdir()
     os.mkfifo(run / NAME)
     assert KeptRender(run).read() is None  # without waiting for a writer
+
+
+MARK = {"last_success": "2026-10-08T09:18:00"}
+
+
+def test_marks_kept_go_back_in_place_of_the_card_s_for_the_board_s_sources_only(run):
+    state = {"sources": {"train": {"not_updating": MARK, "departures": []}, "bus": {}, "metro": {"not_updating": MARK}}}
+    KeptMarks(run, ("train", "metro")).keep(state)
+    assert json.loads((run / MARKS_NAME).read_text()) == {"train": MARK, "metro": MARK}
+    assert (run / MARKS_NAME).stat().st_mode & 0o777 == 0o600
+    card = {"sources": {"train": {"not_updating": {"last_success": None}}, "bus": {"departures": []}}}
+    KeptMarks(run, ("train", "bus")).carry(card)  # [metro] since taken off the board
+    assert card == {"sources": {"train": {"not_updating": MARK}, "bus": {"departures": []}}}
+
+
+def test_no_marks_keeps_no_file(run):
+    KeptMarks(run, ("train",)).keep({"sources": {"train": {"not_updating": MARK}}})
+    KeptMarks(run, ("train",)).keep({"sources": {"train": {}}})
+    assert not (run / MARKS_NAME).exists()
+    card = {"sources": {"train": {"not_updating": MARK}}}
+    KeptMarks(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": {"not_updating": MARK}}}  # the card's own stays
+
+
+def test_a_mark_that_isnt_one_is_never_kept(run):
+    KeptMarks(run, ("train",)).keep({"sources": {"train": {"not_updating": {"last_success": "soon"}}}})
+    assert not (run / MARKS_NAME).exists()

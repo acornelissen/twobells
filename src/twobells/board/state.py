@@ -119,7 +119,7 @@ def vehicles_from_dicts(items: list) -> list[Vehicle]:
     return vehicles
 
 
-def _a_mark(value: object) -> bool:
+def is_mark(value: object) -> bool:
     """Whether `value` is a "not updating" mark as board/app.py saves it: the
     entry's last_success then, a time by the board's clock (no offset), or
     None if nothing had come; nothing more."""
@@ -165,7 +165,7 @@ def _clean(state: dict) -> list[str]:
             dropped.append(f"source {name!r}")
             del state["sources"][name]
             continue
-        if NOT_UPDATING in entry and not _a_mark(entry[NOT_UPDATING]):
+        if NOT_UPDATING in entry and not is_mark(entry[NOT_UPDATING]):
             dropped.append(f"{name!r} not updating mark")
             del entry[NOT_UPDATING]
         if "departures" in entry:

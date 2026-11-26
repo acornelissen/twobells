@@ -23,7 +23,7 @@ from ..board.scroll import SCROLL_FRAME_S
 from ..board.sinceboot import SinceBoot
 from ..board.speaker import Speaker
 from ..board.state import StateStore
-from ..board.unsaved import KeptRender
+from ..board.unsaved import KeptMarks, KeptRender
 from ..board.view import SetupView
 from ..core.errors import ConfigError
 from ..settings.config import needs_setup
@@ -129,37 +129,48 @@ def _single(store: StateStore, state: dict, draw: Callable[[set[str] | None], Ru
     fetch. Without the folder `draw` is given None, and trusts what was
     saved, as ever.
 
-    While the state can't be saved, the last redraw is kept in memory instead
-    (board/unsaved.py), so the next minute's run, reading the state afresh,
-    doesn't take the panel to show something else and draw it again. It is
-    forgotten before each save, and kept again only after one that fails
-    with the board drawn, so one that is there is never older than the state
-    on the card; a draw that failed may have left the panel half drawn, and
-    keeps nothing, so the next run draws."""
+    While the state can't be saved, the last redraw and the sources' "not
+    updating" marks are kept in memory instead (board/unsaved.py), so the
+    next minute's run, reading the state afresh, doesn't take the panel to
+    show something else and draw it again, nor lose a mark that showed as a
+    window closed. They are forgotten before each save, and kept again only
+    after one that fails with the board drawn, so what is there is never
+    older than the state on the card; a draw that failed may have left the
+    panel half drawn, and keeps nothing, so the next run draws."""
     folder = runfolder.here()
     kept = KeptRender(folder) if folder is not None else None
+    marks = KeptMarks(folder, sources or ()) if folder is not None else None
     boot = SinceBoot(folder, sources) if folder is not None and sources else None
     if kept is not None:
         drawn = kept.read()
         if drawn is not None:
             state["last_render"] = drawn
+    if marks is not None:
+        marks.carry(state)
     before = boot.fetched() if boot is not None else None
     since_boot = set(before) if before is not None else None
     try:
         result = draw(since_boot)
     except BaseException:
-        if kept is not None:
-            kept.forget()
+        _forget(kept, marks)
         _count_since_boot(boot, before, since_boot, _save(store, state))
         raise
-    if kept is not None:
-        kept.forget()
+    _forget(kept, marks)
     saved = _save(store, state)
     _count_since_boot(boot, before, since_boot, saved)
-    if not saved and kept is not None:
+    if not saved and kept is not None and marks is not None:
         kept.keep(state.get("last_render"))
+        marks.keep(state)
     logging.info("rendered=%s", result.rendered)
     return 0 if saved else UNSAVED
+
+
+def _forget(kept: KeptRender | None, marks: KeptMarks | None) -> None:
+    """Forgets what is kept in memory while the state can't be saved, before a save."""
+    if kept is not None:
+        kept.forget()
+    if marks is not None:
+        marks.forget()
 
 
 def _count_since_boot(boot: SinceBoot | None, before: set[str] | None, since_boot: set[str] | None,

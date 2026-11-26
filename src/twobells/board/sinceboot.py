@@ -17,24 +17,21 @@ nothing fetched.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable
 from pathlib import Path
 
-from .runfolder import RunFile
+from .runfolder import MOST_SOURCES, SOURCE, RunFile
 
 NAME = "since-boot.json"
 MAX_BYTES = 256  # what is written is about 50
 _KEYS = frozenset({"fetched"})
-_SOURCE = re.compile(r"[a-z]{1,16}")  # a source's name, like train
-_MOST_SOURCES = 8
 
 
 def _names(value: object) -> bool:
     """Whether `value` is a list of sources' names, each once."""
-    if not isinstance(value, list) or len(value) > _MOST_SOURCES:
+    if not isinstance(value, list) or len(value) > MOST_SOURCES:
         return False
-    if not all(isinstance(name, str) and _SOURCE.fullmatch(name) for name in value):
+    if not all(isinstance(name, str) and SOURCE.fullmatch(name) for name in value):
         return False
     return len(set(value)) == len(value)
 

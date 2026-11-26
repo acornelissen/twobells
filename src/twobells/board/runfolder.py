@@ -9,11 +9,13 @@ Pi there is no such folder ($RUNTIME_DIRECTORY isn't set), and nothing is
 kept.
 
 Each file has one fixed shape, which its reader checks: the last redraw
-while the state can't be saved (board/unsaved.py), and what was fetched
-since the Pi started (board/sinceboot.py). What is read
-back is untrusted: only a plain file of this user's, with one link and never
-through one, within its size, of exactly its shape, counts. Anything else
-counts as nothing kept.
+and the "not updating" marks while the state can't be saved
+(board/unsaved.py), and what was fetched since the Pi started
+(board/sinceboot.py). What is read back is untrusted: only a plain file of
+this user's, with one link and never through one, within its size, of
+exactly its shape, counts. Anything else counts as nothing kept. Sources
+are named as SOURCE has it, at most MOST_SOURCES of them, and only the
+board's own count; a name is never part of a path.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import stat
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -28,6 +31,9 @@ from pathlib import Path
 from ..core import files
 
 log = logging.getLogger(__name__)
+
+SOURCE = re.compile(r"[a-z]{1,16}")  # a source's name, like train
+MOST_SOURCES = 8
 
 
 def here(environ: Mapping[str, str] | None = None) -> Path | None:
