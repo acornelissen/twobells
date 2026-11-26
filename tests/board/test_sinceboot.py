@@ -76,6 +76,14 @@ def test_a_link_in_its_place_counts_as_nothing_done(run, tmp_path):
     assert SinceBoot(run, SOURCES).read(STATE) == Started()
 
 
+def test_the_biggest_record_there_can_be_is_kept(run):
+    # 8 sources with 16-letter names, each fetched and tried, at times to the microsecond.
+    names = ["abcdefghijklmno" + chr(97 + n) for n in range(8)]
+    state = {"sources": {name: {"last_success": "2026-10-08T07:00:00.123456"} for name in names}}
+    assert SinceBoot(run, names).keep(Started(set(names), set(names)), state)
+    assert SinceBoot(run, names).read(state) == Started(set(names), set(names))
+
+
 def test_a_record_that_cant_be_written_says_so(run):
     (run / NAME).mkdir()
     record = SinceBoot(run, SOURCES)

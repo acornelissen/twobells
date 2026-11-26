@@ -35,7 +35,7 @@ from .runfolder import MOST_SOURCES, SOURCE, RunFile
 from .state import is_time
 
 NAME = "since-boot.json"
-MAX_BYTES = 512  # what is written is about 150
+MAX_BYTES = 1024  # what is written is about 150; the most there can be, about 600
 _KEYS = frozenset({"fetched", "tried"})
 
 
