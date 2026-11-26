@@ -67,6 +67,9 @@ const made = []; // the same, but kept when an edit makes later steps stale: the
 let fixing = false; // a go() putting the browser back on the page's entry is on its way
 let here = 0; // the n of the entry the browser is on, as its last move said: not position while an undo is on its way
 let position = 0; // the position of the step shown: its place in visited, and the n in its entry's state
+let held = null; // a step moved on to while an undo going back is on its way, with its focus: shown once it lands
+let holding = 0; // the timer that shows it anyway if the browser drops the undo
+const WAIT = 500; // ms
 
 // What the person has chosen as it stands: the step's own fields and the
 // answers kept in state, so a change by a map pick or a button shows as well
@@ -87,6 +90,15 @@ function answers(step) {
 }
 
 export function go(step, { focus = true, entry = true } = {}) {
+  // The browser forward of the step shown, with an undo taking it back: a push
+  // now would keep the entries the undo steps back over, and the undo would
+  // land on one of them, so the step waits for it. Behind, a push drops the
+  // entry the undo goes to, so it goes nowhere and need not be waited for.
+  if (entry && step !== state.step && fixing && here > position) {
+    if (!held) holding = setTimeout(letGo, WAIT);
+    held = { step, focus };
+    return;
+  }
   for (const name of STEPS) $(`step-${name}`).hidden = name !== step;
   const at = STEPS.indexOf(step);
   for (const item of $("progress").children) {
@@ -99,7 +111,8 @@ export function go(step, { focus = true, entry = true } = {}) {
   if (entry && step !== state.step) {
     // The page as loaded is the first entry; each step moved on to adds one,
     // and drops what was forward of the entry the browser is really on. A
-    // push makes any undo still on its way pointless, so it is forgotten.
+    // push from behind makes any undo still on its way pointless, so it is
+    // forgotten; from forward, it only comes once the undo is given up on.
     if (visited.length) {
       fixing = false;
       position = here + 1;
@@ -118,6 +131,15 @@ export function go(step, { focus = true, entry = true } = {}) {
   seen = answers(step);
   guard(step);
   if (focus) $(`${step}-heading`).focus();
+}
+
+// Shows the step held back, once the undo has landed or been waited for long enough.
+function letGo() {
+  clearTimeout(holding);
+  const move = held;
+  held = null;
+  fixing = false;
+  if (move) go(move.step, { focus: move.focus });
 }
 
 // Browser Back and Forward (or a gesture) go to the step the entry names, when
@@ -141,7 +163,8 @@ function popped(event) {
   if (ours) here = n;
   const undone = fixing;
   fixing = false;
-  if (!ours || n === position || undone) return;
+  if (undone) return letGo();
+  if (!ours || n === position) return;
   const undo = () => {
     fixing = true;
     window.history.go(position - n);

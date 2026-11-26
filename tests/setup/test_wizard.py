@@ -1936,26 +1936,87 @@ def test_a_save_that_finishes_before_the_undo_of_a_back_lands_leaves_the_next_ba
     assert found["at"] == -1
 
 
+REFUSED_FORWARD = TO_STOPS + """
+    window.history.back();
+    $("station-none").checked = false;
+    $("station-GLO").checked = true;
+    hold = true;
+    window.history.forward();
+    deliver();                              // refused: the page queues go(-1), not yet landed
+"""
+
+
 @needs_node
-def test_next_pressed_before_a_refused_forwards_undo_lands_still_shows_the_step_its_entry_names():
-    # Cosmetic and left as it is: the history can hold the stale entry and its replacement, both
-    # Stops, so a Back may need two presses. What must hold is that the step shown is the entry's.
-    found = run_wizard(TO_STOPS + """
-        window.history.back();
-        $("station-none").checked = false;
-        $("station-GLO").checked = true;
-        hold = true;
-        window.history.forward();
-        deliver();                          // refused: the page queues go(-1)
-        click("station-next");              // Next before it lands
+def test_next_pressed_before_a_refused_forwards_undo_lands_waits_for_it_and_adds_no_duplicate():
+    found = run_wizard(REFUSED_FORWARD + """
+        click("station-next");              // Next before the undo lands
         await settle();
-        const afterNext = { at, entry: pages[at], shown: shown() };
-        drain();
-        const afterUndo = { at, entry: pages[at], shown: shown() };
-        console.log(JSON.stringify({ afterNext, afterUndo }));
+        const held = { shown: shown(), at };
+        drain();                            // the undo lands, then Next's step is shown
+        hold = false;
+        const next = { shown: shown(), at, pages: structuredClone(pages), focus: document.activeElement.id };
+        window.history.back();
+        const afterBack = { shown: shown(), at, focus: document.activeElement.id };
+        console.log(JSON.stringify({ held, next, afterBack }));
     """, trams=None)
-    for seen in found.values():
-        assert seen["shown"] == [f"step-{seen['entry']['step']}"]
+    # Next waits while the browser is still on the refused entry.
+    assert found["held"] == {"shown": ["step-station"], "at": 2}
+    # Then Stops replaces the refused entry: one entry for each step, none twice.
+    assert found["next"]["pages"] == [{"step": "home", "n": 0}, {"step": "station", "n": 1}, {"step": "stops", "n": 2}]
+    assert found["next"]["at"] == 2 and found["next"]["shown"] == ["step-stops"]
+    assert found["next"]["focus"] == "stops-heading"
+    # So one Back goes one step back.
+    assert found["afterBack"] == {"shown": ["step-station"], "at": 1, "focus": "station-heading"}
+
+
+@needs_node
+def test_next_pressed_twice_before_a_refused_forwards_undo_lands_adds_one_entry():
+    found = run_wizard(REFUSED_FORWARD + """
+        click("station-next");
+        await settle();
+        click("station-next");
+        await settle();
+        drain();
+        console.log(JSON.stringify({ shown: shown(), at, pages }));
+    """, trams=None)
+    assert found["pages"] == [{"step": "home", "n": 0}, {"step": "station", "n": 1}, {"step": "stops", "n": 2}]
+    assert found["at"] == 2 and found["shown"] == ["step-stops"]
+
+
+@needs_node
+def test_back_pressed_before_a_refused_forwards_undo_lands_goes_one_step_back():
+    found = run_wizard(REFUSED_FORWARD + """
+        window.history.back();              // the browser's Back, queued behind the undo
+        drain();
+        hold = false;
+        const browser = { shown: shown(), at, focus: document.activeElement.id };
+        console.log(JSON.stringify({ browser, pages }));
+    """, trams=None)
+    assert found["browser"] == {"shown": ["step-home"], "at": 0, "focus": "home-heading"}
+    found = run_wizard(REFUSED_FORWARD + """
+        for (const [type, fn] of $("step-station").querySelector("[data-back]").listeners) if (type === "click") fn();
+        drain();
+        hold = false;
+        console.log(JSON.stringify({ shown: shown(), at, focus: document.activeElement.id }));
+    """, trams=None)
+    assert found == {"shown": ["step-home"], "at": 0, "focus": "home-heading"}
+
+
+@needs_node
+def test_next_pressed_while_an_undo_the_browser_drops_is_on_its_way_still_moves_on():
+    found = run_wizard(REFUSED_FORWARD + """
+        queue.length = 0;                   // the browser never delivers the undo
+        hold = false;
+        click("station-next");
+        await settle();
+        const held = shown();
+        await new Promise((resolve) => { setTimeout(resolve, 1000); });
+        console.log(JSON.stringify({ held, shown: shown(), entry: pages[at], focus: document.activeElement.id }));
+    """, trams=None)
+    # Next waits a moment for the undo, then moves on without it, to the entry the browser is given.
+    assert found["held"] == ["step-station"]
+    assert found["shown"] == ["step-stops"] and found["entry"]["step"] == "stops"
+    assert found["focus"] == "stops-heading"
 
 
 def test_only_the_steps_name_goes_in_the_history_state():
