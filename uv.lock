@@ -358,7 +358,7 @@ wheels = [
 
 [[package]]
 name = "inky"
-version = "2.5.0"
+version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "gpiodevice" },
@@ -368,9 +368,9 @@ dependencies = [
     { name = "smbus2" },
     { name = "spidev" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/cc/9301bb2b16f620c64aee7c0e9f23cc30caa93bd3a9cf299dfb5282bc349e/inky-2.5.0.tar.gz", hash = "sha256:42327c936c609c3f7513f7b6d7fbb649c015cc314507e15dafa5adb553840d97", size = 16160287, upload-time = "2026-09-14T11:05:45.144Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/1f/3dc4804c0e948caf36d18b6bb30318ae4b6ae06d856b258b85ad171d1498/inky-2.6.0.tar.gz", hash = "sha256:bf9e6d8d6d7b2a5b34ab3e82bd26fe3b5ccdffcbf7c01c3b49d74df1f2f85679", size = 16160772, upload-time = "2026-10-15T13:49:54.232Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/54/fb/b8a07dfc1bfa4dc606d8d68f8718698e609f9ebdc6eafd0ca37ec92f653c/inky-2.5.0-py3-none-any.whl", hash = "sha256:8589ad753b094ec5da482c090f88d5e8560457f15502221517993dc01b021573", size = 61041, upload-time = "2026-09-14T11:05:42.668Z" },
+    { url = "https://files.pythonhosted.org/packages/96/23/e98b814b6ea6336fd80fea41747b5374610e32d8bae398c8246500cc23dc/inky-2.6.0-py3-none-any.whl", hash = "sha256:3fd163e937f14f973e593a69e9558eba6fe666d5e46a17e7a82ff30849d7d009", size = 61694, upload-time = "2026-10-15T13:49:52.305Z" },
 ]
 
 [[package]]
@@ -698,20 +698,20 @@ wheels = [
 
 [[package]]
 name = "pyright"
-version = "1.1.406"
+version = "1.1.414"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "nodeenv" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/16/6b4fbdd1fef59a0292cbb99f790b44983e390321eccbc5921b4d161da5d1/pyright-1.1.406.tar.gz", hash = "sha256:c4872bc58c9643dac09e8a2e74d472c62036910b3bd37a32813989ef7576ea2c", size = 4113151, upload-time = "2025-10-02T01:04:45.488Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/1b/244c7b710031ada80f27e579ec20d28a2285dfc318fed0339866b1047f12/pyright-1.1.414.tar.gz", hash = "sha256:523c0a97c60da6333234955c277730c9cf4f5bd6d5399e7b7d2b0fc5d3599524", size = 4154638, upload-time = "2026-09-10T12:26:53.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/a2/e309afbb459f50507103793aaef85ca4348b66814c86bc73908bdeb66d12/pyright-1.1.406-py3-none-any.whl", hash = "sha256:1d81fb43c2407bf566e97e57abb01c811973fdb21b2df8df59f870f688bdca71", size = 5980982, upload-time = "2025-10-02T01:04:43.137Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/ba/18b6e682ead424ad24bcc134339ae5d1b931cd9ae260540592a058a91279/pyright-1.1.414-py3-none-any.whl", hash = "sha256:2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f", size = 6225049, upload-time = "2026-09-10T12:26:51.427Z" },
 ]
 
 [[package]]
 name = "pytest"
-version = "9.1.1"
+version = "9.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -720,9 +720,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/79/42/bb4641652e58dedeac2ec51abc1f8cae4fee4ec63899a0999016229a0f2a/pytest-9.2.0.tar.gz", hash = "sha256:97c4f3b1f3c7414aa36465e09b8220f1d03627993bd51b1282e193753c80557b", size = 1797555, upload-time = "2026-10-27T21:30:20.728Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+    { url = "https://files.pythonhosted.org/packages/51/39/1f5d8c8877a0fa327db959c19341d4be61660de1ab6b7391f9eb805bcd67/pytest-9.2.0-py3-none-any.whl", hash = "sha256:07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588", size = 411776, upload-time = "2026-10-27T21:30:19.131Z" },
 ]
 
 [[package]]
@@ -816,7 +816,7 @@ provides-extras = ["pi", "screen"]
 dev = [
     { name = "fonttools", extras = ["woff"], specifier = ">=4.55" },
     { name = "pygame", specifier = ">=2.5" },
-    { name = "pyright", specifier = "==1.1.406" },
+    { name = "pyright", specifier = "==1.1.414" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-xdist", specifier = ">=3.6" },
     { name = "ruff", specifier = "==0.16.10" },
