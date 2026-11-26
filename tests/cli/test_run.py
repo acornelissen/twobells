@@ -272,3 +272,104 @@ def test_marks_kept_in_memory_of_any_other_shape_are_ignored(timer, kept):
     (timer.folder / "not-updating.json").write_text(json.dumps(kept))
     timer.run(at("09:31"))
     assert not timer.marked  # the card's own: data fine as the window closed
+
+
+# --- 3. The first run after a boot fetches each free source once, its window open or not ---
+
+THU_2100 = at("21:00")  # the trains' window shut since 09:30
+
+
+def test_after_a_boot_in_a_closed_window_with_the_network_up_one_fetch_clears_the_mark(timer):
+    timer.run(at("09:18"))
+    timer.boot()
+    drawn = timer.drawn
+    assert timer.run(THU_2100) == 0
+    assert timer.calls == 2 and not timer.marked
+    for minute in range(1, 60):
+        timer.run(THU_2100 + timedelta(minutes=minute))
+    assert timer.calls == 2 and not timer.marked  # once, not every minute
+    assert timer.drawn - drawn <= 1
+
+
+def test_after_a_boot_in_a_closed_window_with_the_network_down_it_tries_once_and_waits_for_the_window(timer):
+    timer.run(at("09:18"))
+    timer.boot()
+    timer.error = OSError("network down")
+    for minute in range(60):
+        timer.run(THU_2100 + timedelta(minutes=minute))
+        assert timer.marked, minute
+    assert timer.calls == 2  # the one try for the boot
+    timer.error = None
+    timer.run(datetime(2026, 10, 9, 6, 30))  # Friday's window opens
+    assert timer.calls == 3 and not timer.marked
+
+
+def test_after_a_boot_with_a_wrong_clock_saying_the_window_is_shut_and_the_network_down_it_tries_once(timer):
+    # Really 07:30, in the window; the clock without a battery says 06:00, before it.
+    timer.run(at("06:30"))
+    timer.boot()
+    timer.error = OSError("network down")
+    for minute in range(25):
+        timer.run(at("06:00") + timedelta(minutes=minute))
+        assert timer.marked, minute
+    assert timer.calls == 2
+    timer.run(at("06:30"))  # its window, by the clock: as ever, every 2 minutes, with the mark
+    assert timer.calls == 3 and timer.marked
+
+
+def test_after_a_boot_in_a_closed_window_on_a_full_card_it_tries_once_only(timer):
+    timer.run(at("09:18"))
+    timer.boot()
+    timer.full = True
+    assert timer.run(THU_2100) != 0
+    assert timer.calls == 2 and not timer.marked  # this run shows what it fetched
+    for minute in range(1, 30):
+        timer.run(THU_2100 + timedelta(minutes=minute))
+    assert timer.calls == 2 and timer.marked  # what the card has is from before the boot
+
+
+def test_the_first_run_after_an_update_outside_the_windows_fetches_once_and_redraws_once_at_most(timer):
+    timer.run(at("09:18"))
+    (timer.folder / "since-boot.json").unlink()  # the release before kept no record
+    drawn = timer.drawn
+    for minute in range(30):
+        timer.run(THU_2100 + timedelta(minutes=minute))
+    assert timer.calls == 2 and not timer.marked and timer.drawn - drawn <= 1
+
+
+def test_after_a_boot_in_a_closed_window_transportapi_spends_nothing_and_stays_marked(timer, monkeypatch, tmp_path):
+    from twobells.sources.transportapi import TransportApiBusSource
+
+    lookups = []
+    monkeypatch.setattr(TransportApiBusSource, "fetch_raw",
+                        lambda source, atco: lookups.append(atco) or {"departures": {"all": []}})
+    (tmp_path / "config.toml").write_text(
+        f'state_file = "{timer.state}"\n[train]\ncrs = "GLO"\nwindows = ["Mon-Fri 06:30-09:30"]\n'
+        '[bus]\nsource = "transportapi"\nwindows = ["Mon-Fri 07:00-08:00"]\n[bus.stops]\nA = "atco-a"\n')
+    (tmp_path / "secrets.env").write_text("RDM_API_KEY=k\nTAPI_APP_ID=id\nTAPI_APP_KEY=key\n")
+    timer.run(at("07:30"))
+    assert lookups == ["atco-a"]
+    timer.boot()
+    for minute in range(30):
+        timer.run(THU_2100 + timedelta(minutes=minute))
+        view = timer.results[-1].view
+        assert view.section("bus").stale and not view.section("train").stale, minute
+    assert lookups == ["atco-a"] and timer.calls == 2  # the trains' one fetch for the boot; no bus lookup
+    assert json.loads(timer.state.read_text())["budgets"]["bus"]["used"] == 1
+    timer.run(datetime(2026, 10, 9, 7, 0))  # Friday, the bus window open
+    assert lookups == ["atco-a", "atco-a"] and not timer.results[-1].view.section("bus").stale
+
+
+def test_a_rollback_reads_the_state_as_ever_whatever_the_runtime_folder_holds(timer):
+    # A release that knows none of these files reads only state.json, and
+    # last-render.json as it wrote it; neither has anything new in it.
+    failing_into_the_close_on_a_full_card(timer)
+    timer.run(at("09:31"))
+    timer.full = False
+    timer.run(at("09:32"))
+    saved = json.loads(timer.state.read_text())
+    assert set(saved) == {"sources", "last_render"}
+    assert set(saved["sources"]["train"]) <= {"departures", "last_attempt", "last_success", "last_error",
+                                              "not_updating", "messages"}
+    record = json.loads((timer.folder / "since-boot.json").read_text())
+    assert record == {"fetched": ["train"], "tried": []}

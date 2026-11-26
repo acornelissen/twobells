@@ -70,8 +70,10 @@ class PollPolicy:
         return any(window.contains(now, self.holidays) for window in self.windows)
 
     def is_due(self, now: datetime, last_fetch: datetime | None) -> bool:
-        if not self.is_active(now):
-            return False
+        return self.is_active(now) and self.waited(now, last_fetch)
+
+    def waited(self, now: datetime, last_fetch: datetime | None) -> bool:
+        """Whether an interval has passed since `last_fetch`, open window or not."""
         if last_fetch is None or last_fetch > now:
             # Never fetched, or the clock went back (summer time ending): fetch now
             # rather than wait an hour for the clock to catch up.

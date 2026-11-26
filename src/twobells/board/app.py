@@ -185,6 +185,18 @@ def reset_code_page(folder: Path, timezone: str) -> Callable[[], CodeView | None
     return page
 
 
+@dataclass
+class Started:
+    """What a board has done since it started: a running screen, from its own
+    start (run_loop); the e-paper timer, from the Pi's (board/sinceboot.py).
+    `fetched` is the sources fetched since, whose saved departures until
+    then aren't to be trusted (_untrusted); `tried`, those given their one
+    fetch for the start outside their windows (_start_fetch)."""
+
+    fetched: set[str] = field(default_factory=set)
+    tried: set[str] = field(default_factory=set)
+
+
 @dataclass(frozen=True)
 class RunResult:
     view: BoardView
@@ -309,15 +321,36 @@ def _is_stale(config: SourceConfig, entry: dict, now: datetime, untrusted: bool 
     return stale
 
 
-def _untrusted(config: SourceConfig, since_start: set[str] | None) -> bool:
-    """Whether a running board hasn't yet fetched this source since it started
-    (run_loop's `since_start`), so what it saved isn't to be trusted, however
-    recent the clock makes it: a Pi with no clock battery can start with its
-    clock near when it last saved. A source that never asks anything (no rail
-    key yet) has nothing that can be out of date."""
-    if since_start is None or not getattr(config.source, "fetches", True):
+def _untrusted(config: SourceConfig, started: Started | None) -> bool:
+    """Whether a board hasn't yet fetched this source since it started
+    (Started), so what it saved isn't to be trusted, however recent the
+    clock makes it: a Pi with no clock battery can start with its clock near
+    when it last saved. A source that never asks anything (no rail key yet)
+    has nothing that can be out of date."""
+    if started is None or not getattr(config.source, "fetches", True):
         return False
-    return config.source.name not in since_start
+    return config.source.name not in started.fetched
+
+
+def _start_fetch(config: SourceConfig, state: dict, now: datetime, started: Started | None) -> bool:
+    """Whether a source not yet fetched since the board started (_untrusted)
+    is fetched now though its windows are shut, so a start at night (an
+    update, a power cut) doesn't leave it marked until they open. Once for
+    each start, worked or not; only when it costs none of a daily budget,
+    which is for the windows (TransportAPI's: the bus timetable costs
+    nothing); and never within an interval of its last try, saved in the
+    state, so a screen systemd restarts over and over doesn't ask each
+    time. In its windows it is fetched as it is due, as ever."""
+    name = config.source.name
+    if not _untrusted(config, started) or started is None or name in started.tried:
+        return False
+    policy = config.current_policy()
+    if policy.is_active(now):
+        return False
+    if config.daily_budget is not None and getattr(config.source, "cost", 1) != 0:
+        return False
+    entry = state.setdefault("sources", {}).setdefault(name, {})
+    return policy.waited(now, _saved_time(entry, "last_attempt"))
 
 
 def _departures(state: dict, name: str, now: datetime) -> list[Departure]:
@@ -341,16 +374,16 @@ def _keep_messages(config: SourceConfig, state: dict, before: str | None) -> Non
     entry["messages"] = [m for m in messages if isinstance(m, str)]
 
 
-def _notices(board: Board, state: dict, now: datetime, since_start: set[str] | None = None) -> list[str]:
+def _notices(board: Board, state: dict, now: datetime, started: Started | None = None) -> list[str]:
     """Messages from fetches that are still fresh. They age out with the feed:
     once its data is older than stale_after, a notice may no longer be true,
     and a morning's disruption must not still be showing in the evening.
-    Nor do they show from a source a running board hasn't fetched since it
-    started (_untrusted)."""
+    Nor do they show from a source a board hasn't fetched since it started
+    (_untrusted)."""
     notices = []
     for config in board.sources:
         entry = state.get("sources", {}).get(config.source.name, {})
-        if not _fresh(config, _saved_time(entry, "last_success"), now) or _untrusted(config, since_start):
+        if not _fresh(config, _saved_time(entry, "last_success"), now) or _untrusted(config, started):
             continue
         messages = entry.get("messages")
         if isinstance(messages, list):
@@ -527,14 +560,16 @@ def _render_key(shown: BoardView | RouteView | CodeView | SetupView | ClockView,
 
 def run_once(
     board: Board, state: dict, display: Display, now: datetime, prime: bool = False,
-    save: Callable[[dict], bool] | None = None, since_start: set[str] | None = None,
+    save: Callable[[dict], bool] | None = None, started: Started | None = None,
 ) -> RunResult:
     """One tick. `save` writes the state, saying whether it could: given, a
     source with a daily budget is saved as spent before it fetches (_poll).
-    `since_start`, from a running board, is the sources it has fetched since
-    it started, added to as it fetches more: until then, each one's saved
-    departures are marked not updating, and its notices left out (_untrusted)."""
-    result, frame, drawn = _make(board, state, display, now, prime, save, since_start)
+    `started`, from a running board or the e-paper timer on a Pi, is what
+    it has done since it started (Started), added to as it goes: until a
+    source is fetched since, its saved departures are marked not updating,
+    and its notices left out (_untrusted); outside its windows it has one
+    fetch for the start (_start_fetch)."""
+    result, frame, drawn = _make(board, state, display, now, prime, save, started)
     if frame is not None:
         _present(display, frame, now)
         state["last_render"] = drawn
@@ -543,7 +578,7 @@ def run_once(
 
 def _make(board: Board, state: dict, display: Display, now: datetime, prime: bool,
           save: Callable[[dict], bool] | None = None,
-          since_start: set[str] | None = None) -> tuple[RunResult, Frame | None, dict | None]:
+          started: Started | None = None) -> tuple[RunResult, Frame | None, dict | None]:
     """run_once's work but for showing it: fetch whatever is due, and draw the
     board if it has changed. Gives what it found, the Frame to show (None
     if nothing changed) and what to save as the last redraw once it is
@@ -554,11 +589,14 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
     fetched = set()
     for config in board.sources:
         before = state.get("sources", {}).get(config.source.name, {}).get("last_success")
-        if _poll(config, state, now, prime, save):
+        once = _start_fetch(config, state, now, started)
+        if once and started is not None:
+            started.tried.add(config.source.name)
+        if _poll(config, state, now, prime or once, save):
             fetched.add(config.source.name)
         _keep_messages(config, state, before)
-    if since_start is not None:
-        since_start |= fetched
+    if started is not None:
+        started.fetched |= fetched
     # What the board doesn't show isn't asked for: the bus page's positions,
     # the rows' strips (where each is) and the forecast (the rain warning).
     if "bus_page" not in board.show:
@@ -574,7 +612,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
     entries = state.get("sources", {})
     stale = {
         c.source.name for c in board.sources
-        if _is_stale(c, entries.get(c.source.name, {}), now, _untrusted(c, since_start))
+        if _is_stale(c, entries.get(c.source.name, {}), now, _untrusted(c, started))
     }
     departures = {mode: _departures(state, mode, now) for mode in board.modes}
     view = build_view(
@@ -585,7 +623,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
         walk=board.walk,
         wording=board.theme.wording,
         clock=now.strftime("%H:%M:%S") if live else None,
-        notices=_notices(board, state, now, since_start),
+        notices=_notices(board, state, now, started),
         rain=_rain(board, state, [d for found in departures.values() for d in found], now, live),
         strips=strips,
         # Only a screen wide enough draws them; e-paper never asks.
@@ -755,8 +793,9 @@ def run_loop(
     the board shows them (_announce)."""
     sleep = sleep or time.sleep
     saves = _Saves(store)
-    # What it saved before this start counts as not updating until fetched afresh (_untrusted).
-    since_start: set[str] = set()
+    # What it saved before this start counts as not updating until fetched
+    # afresh (_untrusted); outside its windows, each source is tried once (_start_fetch).
+    started = Started()
     if not display.panel.epaper:
         # A screen starts blank: what the last run drew isn't on it, whatever
         # the state says. E-paper keeps its image, so it skips an unchanged one.
@@ -766,16 +805,16 @@ def run_loop(
         def make(now: datetime, first: bool) -> Tick:
             # On the worker's thread, which owns the board, the state, the store and the speaker until it stops.
             nonlocal board
-            started = time.perf_counter()
+            began = time.perf_counter()
             if reload is not None:
                 board = reload() or board
-            result, frame, drawn = _make(board, state, display, now, first, saves.write, since_start)
+            result, frame, drawn = _make(board, state, display, now, first, saves.write, started)
             if drawn is not None:
                 state["last_render"] = drawn  # before it is shown: see below for a fault showing it
             if speaker is not None:
                 _announce(board, state, display, speaker, now)
             saves.tick(state, now)
-            return Tick(now, result, frame, time.perf_counter() - started)
+            return Tick(now, result, frame, time.perf_counter() - began)
 
         ahead = Ahead(make)
         try:
@@ -799,7 +838,7 @@ def run_loop(
         now = clock()
         try:
             result = run_once(board, state, display, now, prime=prime and count == 0, save=saves.write,
-                              since_start=since_start)
+                              started=started)
         except Exception:
             # Keep what was fetched, so a display fault doesn't cost a refetch on restart.
             saves.write(state)  # a card that can't be written mustn't hide the fault

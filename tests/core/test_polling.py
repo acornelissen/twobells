@@ -110,6 +110,14 @@ def test_due_when_the_clock_has_gone_back():
     assert policy().is_due(THU_0700, last_fetch=THU_0700 + timedelta(minutes=59))
 
 
+def test_an_interval_has_waited_whether_or_not_a_window_is_open():
+    for now in (THU_0700, SAT_0700):
+        assert policy().waited(now, last_fetch=None)
+        assert not policy().waited(now, last_fetch=now - timedelta(minutes=4))
+        assert policy().waited(now, last_fetch=now - timedelta(minutes=5) + timedelta(seconds=10))  # the slack
+        assert policy().waited(now, last_fetch=now + timedelta(minutes=59))  # the clock went back
+
+
 # Monday 31 August 2026 is the summer bank holiday in England and Wales.
 BANK_HOLIDAY = date(2026, 8, 31)
 HOLIDAY_MONDAY_0700 = datetime(2026, 8, 31, 7, 0)

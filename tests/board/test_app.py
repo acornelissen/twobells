@@ -2136,8 +2136,9 @@ def test_a_started_screen_unmarks_each_source_as_its_first_fetch_succeeds(scroll
     assert results[-1].view.section("bus").stale  # not yet fetched since the start
 
 
-def test_a_screen_started_outside_the_windows_marks_what_it_saved():
-    # No fetch is possible until the window opens, and the clock that says the window is shut may be wrong.
+def test_a_screen_started_outside_the_windows_within_an_interval_of_the_last_try_marks_what_it_saved():
+    # Its one fetch for the start waits for the interval since the last try
+    # (below), and the clock that says the window is shut may be wrong.
     trains, buses, board, state = saved_a_minute_ago()
     friday_evening = datetime(2026, 10, 9, 21, 0)
     trains.departures = [train("21:30")]
@@ -2174,6 +2175,83 @@ def test_the_e_paper_timer_trusts_what_it_saved_a_minute_ago():
     result = run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=1))
     assert trains.calls == 1
     assert not result.view.section("train").stale and not result.rendered
+
+
+# --- A start outside the windows fetches each free source once, so a closed window doesn't mark it all night ---
+
+FRIDAY_EVENING = datetime(2026, 10, 9, 21, 0)
+
+
+def saved_on_friday_morning(bus_cost=1):
+    """The state a board saved at 08:30, with the evening's trains and buses still to come."""
+    trains, buses, board, display, state = setup()
+    buses.cost = bus_cost
+    trains.departures = [train("21:30")]
+    buses.departures = [bus("21:40")]
+    run_once(board, state, display, datetime(2026, 10, 9, 8, 30))
+    return trains, buses, board, state
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_screen_started_outside_its_windows_fetches_each_free_source_once(scrolling):
+    trains, buses, board, state = saved_on_friday_morning()
+    results = loop_results(board, state, FRIDAY_EVENING, 300, scrolling)
+    assert trains.calls == 2  # the morning's, and one for the start
+    assert not results[0].view.section("train").stale and not results[-1].view.section("train").stale
+    # TransportAPI's daily allowance is for its windows: nothing is spent on a start.
+    assert buses.calls == 1 and state["budgets"]["bus"]["used"] == 1
+    assert results[-1].view.section("bus").stale
+
+
+@pytest.mark.parametrize("scrolling", [False, True])
+def test_a_start_s_fetch_outside_the_windows_that_fails_is_not_tried_again_until_they_open(scrolling):
+    trains, buses, board, state = saved_on_friday_morning()
+    trains.error = OSError("network down")
+    results = loop_results(board, state, FRIDAY_EVENING, 300, scrolling)
+    assert trains.calls == 2  # once at the start, never every tick or every interval
+    assert all(result.view.section("train").stale for result in results)
+
+
+def test_a_start_s_fetch_outside_the_windows_waits_for_the_interval_since_the_last_try():
+    trains, buses, board, state = saved_on_friday_morning()
+    state["sources"]["train"]["last_attempt"] = "2026-10-09T20:59:30"  # by the run before this start
+    results = loop_results(board, state, FRIDAY_EVENING, 120, False)
+    assert trains.calls == 2
+    assert results[0].view.section("train").stale and not results[-1].view.section("train").stale
+    assert state["sources"]["train"]["last_success"] == "2026-10-09T21:01:18"  # 2 minutes, less the slack
+
+
+def test_a_screen_systemd_restarts_over_and_over_asks_once_an_interval_not_at_each_start(tmp_path):
+    trains, buses, board, state = saved_on_friday_morning()
+    store = StateStore(tmp_path / "state.json")
+    store.save(state)
+    trains.error = OSError("network down")
+    for start in range(60):  # Restart=on-failure, RestartSec=10: ten minutes of starts
+        state = store.load()
+        loop_results(board, state, FRIDAY_EVENING + timedelta(seconds=10 * start), 1, False, store=store)
+    # Tried at 21:00:00, 21:01:50, 21:03:40, 21:05:30, 21:07:20 and 21:09:10.
+    assert trains.calls - 1 == 6
+
+
+def test_a_start_fetches_a_budgeted_source_outside_its_windows_only_while_it_costs_nothing():
+    # The bus timetable costs nothing to read; TransportAPI, standing in for it, does.
+    trains, buses, board, state = saved_on_friday_morning(bus_cost=0)
+    results = loop_results(board, state, FRIDAY_EVENING, 3, False)
+    assert buses.calls == 2 and state["budgets"]["bus"]["used"] == 0
+    assert not results[-1].view.section("bus").stale
+
+
+def test_a_start_leaves_a_source_that_never_asks_anything_alone():
+    trains, buses, board, state = saved_on_friday_morning()
+    trains.fetches = False  # the trains with no rail key yet
+    results = loop_results(board, state, FRIDAY_EVENING, 3, False)
+    assert trains.calls == 1 and not results[-1].view.section("train").stale
+
+
+def test_a_start_inside_the_windows_fetches_only_as_each_source_is_due():
+    trains, buses, board, state = saved_a_minute_ago()
+    loop_results(board, state, THU_0700 + timedelta(minutes=1), 30, False)
+    assert (trains.calls, buses.calls) == (1, 1)  # neither due yet: the 07:00 checks were a minute ago
 
 
 # --- A "not updating" mark showing as the window closes stays until a fetch succeeds ---
