@@ -1937,10 +1937,11 @@ def test_a_desktop_takes_the_next_pair_both_free(static_dir):
     blocker = make_server(app, "127.0.0.1", base + 1, role="dashboard")  # the first pair's settings port is taken
     try:
         servers = make_servers(app, "127.0.0.1", base, base + 1, attempts=3)
-        assert servers.ports == (base + 2, base + 3)
+        # The next pair, or the one after if another test running beside this one has a port of it.
+        assert servers.ports in ((base + 2, base + 3), (base + 4, base + 5))
         assert (servers.dashboard.role, servers.settings.role) == ("dashboard", "settings")
-        assert servers.dashboard.settings_port == servers.settings.settings_port == base + 3
-        assert servers.dashboard.dashboard_port == servers.settings.dashboard_port == base + 2
+        assert servers.dashboard.settings_port == servers.settings.settings_port == servers.ports[1]
+        assert servers.dashboard.dashboard_port == servers.settings.dashboard_port == servers.ports[0]
         servers.server_close()
         with pytest.raises(OSError, match=f"Port {base + 1} already in use"):
             make_servers(app, "127.0.0.1", base, base + 1)  # one attempt: that port or nothing
