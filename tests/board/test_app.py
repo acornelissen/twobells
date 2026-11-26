@@ -2325,6 +2325,14 @@ def test_a_check_charged_nothing_never_spends_any_of_a_daily_budget():
     assert buses.lookups == 1 and state["budgets"]["bus"]["used"] == 2
 
 
+def test_a_start_never_fetches_a_budgeted_source_with_no_way_to_fetch_for_nothing():
+    # Its cost says 0, but with no fetch_free nothing says its fetch can't spend.
+    trains, buses, board, state = saved_on_friday_morning(bus_cost=0)
+    results = loop_results(board, state, FRIDAY_EVENING, 3, False)
+    assert buses.calls == 1 and results[-1].view.section("bus").stale
+    assert trains.calls == 2  # the free one still has its fetch
+
+
 def test_a_start_leaves_a_source_that_never_asks_anything_alone():
     trains, buses, board, state = saved_on_friday_morning()
     trains.fetches = False  # the trains with no rail key yet

@@ -105,6 +105,23 @@ def test_a_card_tried_since_keeps_its_own(run):
     assert card == {"sources": {"train": newer}}
 
 
+def test_a_kept_fetch_that_cleared_the_error_and_note_clears_the_card_s(run):
+    fetched = {"last_attempt": "2026-10-08T09:29:00", "last_success": "2026-10-08T09:29:00"}
+    KeptSources(run, ("train",)).keep({"sources": {"train": fetched}})
+    card = {"sources": {"train": {"last_attempt": "2026-10-08T09:18:00", "note": "From TransportAPI",
+                                  "last_error": {"at": "2026-10-08T09:18:00", "message": "network down"}}}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": fetched}}
+
+
+def test_a_card_tried_at_the_same_time_as_what_was_kept_takes_what_was_kept(run):
+    # A paid lookup saved as spent before it was made, then fetched, its last save failing.
+    KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}})
+    card = {"sources": {"train": {"last_attempt": ENTRY["last_attempt"]}}}
+    KeptSources(run, ("train",)).carry(card)
+    assert card == {"sources": {"train": ENTRY}}
+
+
 def test_nothing_to_keep_keeps_no_file(run):
     KeptSources(run, ("train",)).keep({"sources": {"train": ENTRY}})
     assert KeptSources(run, ("train",)).keep({"sources": {"train": {}}})
