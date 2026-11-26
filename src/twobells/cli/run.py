@@ -105,11 +105,13 @@ def _run(args) -> int:
         return _run_loop(settings, display, store, state, args)
     # A fresh install (nothing fetched yet, though the set-me-up page may have
     # been drawn) fetches everything once, so the panel isn't blank until the
-    # next poll window opens.
+    # next poll window opens. Decided once what was kept in memory while the
+    # card can't be saved is back in the state (_single), or a card that has
+    # never saved would have every source fetched every minute.
     prime = "sources" not in state
     # The bus budget is saved as spent before each lookup, or none is made (board/app.py's _poll).
     return _single(store, state, lambda started: run_once(
-        settings.board, state, display, local_now(settings.timezone), prime=prime,
+        settings.board, state, display, local_now(settings.timezone), prime=prime and not state.get("sources"),
         save=lambda kept: _save(store, kept), started=started,
     ), {config.source.name for config in settings.board.sources})
 

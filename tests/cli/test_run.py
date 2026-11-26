@@ -368,6 +368,19 @@ def test_a_card_that_cant_be_saved_keeps_each_source_to_its_interval(timer):
     assert timer.drawn == drawn
 
 
+@pytest.mark.parametrize("card", [None, "{"])  # a fresh install that never saved; a state.json that won't read
+@pytest.mark.parametrize("start, calls", [(at("07:00"), 11), (datetime(2026, 10, 10, 12, 0), 1)])  # Thu; Sat
+def test_a_card_that_has_never_saved_fetches_everything_once_not_every_minute(timer, card, start, calls):
+    # With nothing on the card, the first run fetches every source whatever
+    # the windows say; after it, what it fetched is kept in memory.
+    if card is not None:
+        timer.state.write_text(card)
+    timer.full = True
+    for minute in range(21):
+        assert timer.run(start + timedelta(minutes=minute)) != 0
+    assert timer.calls == calls  # every 2 minutes in the window; outside it, the first run's only
+
+
 def test_a_fetch_kept_in_memory_counts_as_fetched_since_the_boot(timer):
     timer.run()
     timer.boot()
