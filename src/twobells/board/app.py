@@ -206,11 +206,16 @@ class RunResult:
 
 
 def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
-          save: Callable[[dict], bool] | None = None) -> bool:
+          save: Callable[[dict], bool] | None = None, free: bool = False) -> bool:
     """Fetch if due, saying whether a fetch succeeded. `prime` fetches
     regardless of windows; the budget still applies. With `save`, a fetch
     that costs some of a daily budget has the state saved as spent before
-    it is made, and isn't made if that fails."""
+    it is made, and isn't made if that fails. A fetch charged nothing of a
+    budget is made through the source's fetch_free, which can't spend any
+    (the bus timetable's never falls back to TransportAPI), so a timetable
+    that has gone unusable since `cost` was read fails until the next
+    check, which is charged. `free` (a start's fetch, _start_fetch) may
+    cost nothing at all: one that would is not made."""
     name = config.source.name
     entry = state.setdefault("sources", {}).setdefault(name, {})
     if not prime and not config.current_policy().is_due(now, _saved_time(entry, "last_attempt")):
@@ -224,6 +229,12 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
 
     # A fetch that costs nothing (the bus timetable) has nothing to spend or to save as spent.
     cost = getattr(config.source, "cost", 1) if config.daily_budget is not None else 0
+    fetch = config.source.fetch
+    if config.daily_budget is not None and cost == 0:
+        fetch = getattr(config.source, "fetch_free", None) or (None if free else config.source.fetch)
+    if fetch is None or (free and cost != 0):
+        log.debug("%s: not fetched for the start, as it would cost some of its daily budget", name)
+        return False
     if config.daily_budget is not None and cost != 0:
         budgets = state.setdefault("budgets", {})
         budget = DailyBudget.from_dict(budgets.get(name), config.daily_budget)
@@ -249,7 +260,7 @@ def _poll(config: SourceConfig, state: dict, now: datetime, prime: bool = False,
 
     entry["last_attempt"] = to_iso(now)
     try:
-        departures = config.source.fetch()
+        departures = fetch()
     except Exception as error:  # noqa: BLE001 - keep showing last good data on any failure
         # The settings site shows the last error; neither it nor the log may carry a key.
         message = safe_message(error)
@@ -593,7 +604,7 @@ def _make(board: Board, state: dict, display: Display, now: datetime, prime: boo
         once = _start_fetch(config, state, now, started)
         if once and started is not None:
             started.tried.add(config.source.name)
-        if _poll(config, state, now, prime or once, save):
+        if _poll(config, state, now, prime or once, save, free=once and not prime):
             fetched.add(config.source.name)
         _keep_messages(config, state, before)
     if started is not None:

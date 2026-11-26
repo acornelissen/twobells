@@ -2247,9 +2247,65 @@ def test_a_screen_systemd_restarts_over_and_over_asks_once_an_interval_not_at_ea
 def test_a_start_fetches_a_budgeted_source_outside_its_windows_only_while_it_costs_nothing():
     # The bus timetable costs nothing to read; TransportAPI, standing in for it, does.
     trains, buses, board, state = saved_on_friday_morning(bus_cost=0)
+    buses.fetch_free = buses.fetch  # the timetable alone, as BodsBusSource.fetch_free reads it
     results = loop_results(board, state, FRIDAY_EVENING, 3, False)
     assert buses.calls == 2 and state.get("budgets", {}).get("bus", {}).get("used", 0) == 0
     assert not results[-1].view.section("bus").stale
+
+
+class Timetable(FakeSource):
+    """The bus timetable with TransportAPI to stand in: `cost` gives what
+    each check finds in turn (0 while the timetable is usable), and fetch()
+    falls back, a lookup, while it isn't; fetch_free() never does."""
+
+    def __init__(self, costs, usable=True):
+        super().__init__("bus", [bus("21:40")])
+        self.costs, self.usable, self.lookups = list(costs), usable, 0
+
+    @property
+    def cost(self):
+        return self.costs.pop(0) if len(self.costs) > 1 else self.costs[0]
+
+    def fetch(self):
+        if not self.usable:
+            self.lookups += 1
+        return super().fetch()
+
+    def fetch_free(self):
+        if not self.usable:
+            raise OSError("no timetable")
+        return super().fetch()
+
+
+def timetable_board(buses):
+    trains = FakeSource("train", [train("21:30")])
+    return Board(title="x", sources=[
+        SourceConfig(trains, morning(2), stale_after=timedelta(minutes=6)),
+        SourceConfig(buses, morning(5), stale_after=timedelta(minutes=15), daily_budget=28),
+    ])
+
+
+@pytest.mark.parametrize("costs, usable", [
+    ([0, 2], False),  # the timetable went unusable between the start's check and the charge
+    ([0], False),  # and between the charge and the fetch
+])
+def test_a_start_s_fetch_never_spends_any_of_a_daily_budget(costs, usable):
+    buses = Timetable(costs, usable)
+    state = {}
+    results = loop_results(timetable_board(buses), state, FRIDAY_EVENING, 3, False)
+    assert buses.lookups == 0 and state.get("budgets", {}).get("bus", {}).get("used", 0) == 0
+    assert results[-1].view.section("bus").stale
+
+
+def test_a_check_charged_nothing_never_spends_any_of_a_daily_budget():
+    # In the windows too: a timetable that goes unusable after the charge fails this check, and the next is charged.
+    buses = Timetable([0, 2], usable=False)
+    state = {}
+    board = timetable_board(buses)
+    run_once(board, state, FakeDisplay(), THU_0700)
+    assert buses.lookups == 0
+    run_once(board, state, FakeDisplay(), THU_0700 + timedelta(minutes=5))
+    assert buses.lookups == 1 and state["budgets"]["bus"]["used"] == 2
 
 
 def test_a_start_leaves_a_source_that_never_asks_anything_alone():

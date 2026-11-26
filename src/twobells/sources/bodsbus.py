@@ -229,13 +229,21 @@ class BodsBusSource:
         return BusBoard(found, schedule, note is None, note, placed, list(vehicles), public_note)
 
     def fetch(self) -> list[Departure]:
+        return self._fetch(fall_back=True)
+
+    def fetch_free(self) -> list[Departure]:
+        """fetch, from the timetable alone: never the fallback, which costs
+        some of TransportAPI's daily allowance. NoTimetable if it can't be used."""
+        return self._fetch(fall_back=False)
+
+    def _fetch(self, fall_back: bool) -> list[Departure]:
         now = self._clock()
         schedule = self._schedule()
         reason = unusable(schedule, self._stops, now.replace(tzinfo=None))
         self.note = None
         self.board = None
         if reason is not None:
-            if self._fallback is None:
+            if self._fallback is None or not fall_back:
                 raise NoTimetable(f"{reason}; run twobells timetable")
             log.warning("bus: %s, using TransportAPI", reason)
             self.note = f"From TransportAPI: {reason}"

@@ -164,6 +164,17 @@ def test_without_a_timetable_the_fallback_stands_in(tmp_path):
     assert fallback.calls == 1 and bus.asked == []
 
 
+def test_a_free_fetch_never_uses_the_fallback(tmp_path):
+    # Charged nothing, it may spend nothing of TransportAPI's allowance.
+    fallback = Fallback()
+    bus = source(tmp_path, at(10, 0), fallback=fallback)
+    with pytest.raises(NoTimetable):
+        bus.fetch_free()
+    assert fallback.calls == 0
+    timetable.save(tmp_path, schedule())
+    assert bus.fetch_free() == bus.fetch() and fallback.calls == 0
+
+
 def test_without_a_timetable_or_fallback_the_fetch_fails_saying_what_to_run(tmp_path):
     bus = source(tmp_path, at(10, 0))
     assert not bus.falling_back and bus.cost == 0
