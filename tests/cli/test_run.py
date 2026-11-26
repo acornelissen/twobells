@@ -205,6 +205,31 @@ def test_a_record_that_stops_taking_writes_in_a_window_never_flaps(timer, monkey
     assert timer.calls - calls == 15 and timer.drawn - drawn <= 1  # every 2 minutes, as ever
 
 
+def test_a_record_that_takes_the_first_write_but_not_the_last_says_so(timer, monkeypatch, caplog):
+    # The next run marks what this one fetched: the log says why.
+    import errno
+
+    from twobells.core import files
+
+    timer.run()
+    timer.boot()
+    real, writes = files.write_atomic, []
+
+    def second_fails(path, data, mode):
+        if path.name == "since-boot.json":
+            writes.append(1)
+            if len(writes) == 2:
+                raise OSError(errno.ENOSPC, "No space left on device")
+        real(path, data, mode)
+
+    monkeypatch.setattr(files, "write_atomic", second_fails)
+    with caplog.at_level("WARNING"):
+        timer.run(THU_0700 + timedelta(minutes=2))
+    assert len(writes) == 2
+    warned = [r.getMessage() for r in caplog.records if "since the Pi started" in r.getMessage()]
+    assert len(warned) == 1 and "No space left" in warned[0]
+
+
 @pytest.mark.parametrize("name", ["last-render.json", "unsaved-sources.json"])
 @pytest.mark.parametrize("how", ["folder", "full"])
 def test_a_file_kept_for_a_card_that_cant_be_saved_that_cant_be_written_does_no_harm(timer, monkeypatch, name, how):

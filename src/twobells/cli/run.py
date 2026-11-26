@@ -189,8 +189,10 @@ def _count_since_boot(boot: SinceBoot | None, started: Started | None, state: di
     and those it fetched, each with its last success now. Last, after the
     state is saved or kept in memory, so a fetch that reached neither reads
     next time as not fetched."""
-    if boot is not None and started is not None:
-        boot.keep(started, state)
+    if boot is not None and started is not None and not boot.keep(started, state):
+        # The next run would mark what this one fetched, with nothing to say why.
+        logging.warning("Can't count what was fetched since the Pi started; it shows as not updating until "
+                        "fetched again: %s", boot.problem)
 
 
 def _save(store: StateStore, state: dict) -> bool:
