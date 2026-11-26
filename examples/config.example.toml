@@ -1,5 +1,5 @@
 # Optional. Without a config.toml the app uses its defaults, and the setup
-# wizard and the settings tabs (/settings, port 8090) set it up for you,
+# wizard and the settings tabs (/settings, port 8091) set it up for you,
 # saving in the install's store (settings.toml) over this file, which is never
 # rewritten. Only what the settings manage is saved there: addresses
 # (base_url), state_file, display, panel_colour, [bus] fallback_windows,

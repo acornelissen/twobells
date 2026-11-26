@@ -17,7 +17,7 @@ One install is one app with two views of the same departures:
 - **The board:** a Raspberry Pi with a four-colour Inky pHAT (250x122). It also runs on an 11.3" HDMI bar screen (1920x440), tried on a Pi 4 with Raspberry Pi OS Trixie. The app also draws for a Waveshare 10.85" e-Paper (G) (1360x480) and a Waveshare 7.9" HDMI screen (1280x400, on its side); those are tested in software but not yet on the hardware.
 - **The dashboard:** a web page for a phone or computer at home, with the next 10 trains and 15 buses (and 10 trams), calling points and coaches, bus strips and maps, the weather, disruptions, punctuality history, a Performance page with Delay Repay, and station announcements.
 
-A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8090, with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples, and the pictures from [The dashboard](#the-dashboard) on, use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
+A Pi can run either view or both; Docker and a desktop run the dashboard. Each install has one settings site, at `/settings` on port 8091 (the dashboard has 8090), with one password and a setup wizard that finds your station, bus and tram stops, walk times and bus companies from your postcode. Each view shows the modes of transport you choose. The examples, and the pictures from [The dashboard](#the-dashboard) on, use Glossop, with trains to Manchester and buses from two nearby stops (`examples/glossop.toml`).
 
 ## Busy places, every mode at once
 
@@ -108,7 +108,7 @@ Everything else is on the settings site, in plain words, behind one password:
 - **Docker** (a NAS, say; the dashboard): the signed image `ghcr.io/acornelissen/twobells`, or build it from source with `docker compose up -d --build`. See [Docker](docs/docker.md), with steps for Synology, QNAP, Unraid, TrueNAS SCALE, and Docker or Podman on Linux.
 - **Desktop** (a Mac or Linux laptop; the dashboard): `uv tool install twobells` or `pipx install twobells`, then `twobells serve`. See [Desktop](docs/desktop.md).
 
-Then open the settings at `/settings` on port 8090 and let the [setup wizard](docs/setup-wizard.md) do the rest. No `config.toml` is needed. You'll need free [keys](docs/keys.md) for trains and buses.
+Then open the settings at `/settings` on port 8091 and let the [setup wizard](docs/setup-wizard.md) do the rest. No `config.toml` is needed. You'll need free [keys](docs/keys.md) for trains and buses.
 
 The settings password is claimed with a code shown on the board, or put in the log where there is no board. Or set it from the command line; in Docker:
 

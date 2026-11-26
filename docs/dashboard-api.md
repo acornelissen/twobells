@@ -2,7 +2,7 @@
 
 The contract between the dashboard's server (`twobells serve`, on every install) and its browser front end. Everything is read-only: GET and HEAD only.
 
-Everything under `/settings` is the settings site, not part of this API: it has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). Nothing here changes because of it.
+The settings site is on a port of its own (8091), another origin, and not part of this API. On this port, everything under `/settings` answers GET and HEAD with one fixed page saying where the settings are, with no script, reading no cookie and setting none, and any other method with 405, its body unread. The settings site has its own pages, cookies (`settings_session`, `settings_form`, both `Path=/settings`) and headers (`form-action 'self'`, and `script-src 'self'` only for the setup wizard under `/settings/setup/` and for `/settings/settings.js` on a signed-in visitor's settings pages). Nothing here changes because of it.
 
 The API is there only while the dashboard is on: its view is on (`[app] views`), the app is set up, and its settings load. While it is off, `/` redirects (303) to `/settings`, `/healthz` answers 200 `ok` so a container's health check still hears the server, and everything else here (`/performance`, `/api/…`, `/static/…`, `/manifest.webmanifest`) is 404. Responses then carry the settings site's security headers rather than those below.
 
@@ -498,7 +498,7 @@ While the dashboard is on: 200 `ok` when the pollers are alive and the snapshot 
 Checked in this order, before anything else. Each refusal has a plain-text body and the security headers below.
 
 - **403** unless the client's address is private, loopback or link-local, the request has exactly one `Host` header, and that host is local or in `[dashboard] allowed_hosts`. Local means a private IP address, a name without dots, or a name ending `.local`, `.lan` or `.home.arpa`, in plain ASCII letters, digits and hyphens, with nothing after it but a port. This stops DNS rebinding.
-- Then everything under `/settings` goes to the settings site, which has its own rules (see the top of this page).
+- Then everything under `/settings` is the page saying where the settings are (see the top of this page).
 - **405** with `Allow: GET, HEAD` for any other method.
 - **404** when the request target is over 512 characters, doesn't start with `/`, or holds `..`, a backslash, or an encoded dot, slash, backslash or NUL (`%2e`, `%2f`, `%5c`, `%00`, in any case).
 - While the dashboard is off, the rest is answered as at the top of this page.

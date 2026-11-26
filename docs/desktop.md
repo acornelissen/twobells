@@ -7,16 +7,16 @@ uv tool install twobells      # or: pipx install twobells
 twobells serve
 ```
 
-`twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free port), and the settings on the first run. The first build of the bus timetable takes a minute or so, and of Metrolink's tram timetable, where you have tram stops, about 20 seconds more. Ctrl-C stops it.
+`twobells serve` runs as a desktop install unless told otherwise. It opens in your browser, at `http://localhost:8090/` (or the next free pair of ports), and the settings, at `http://localhost:8091/settings`, on the first run. The first build of the bus timetable takes a minute or so, and of Metrolink's tram timetable, where you have tram stops, about 20 seconds more. Ctrl-C stops it.
 
-- `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host` and `--port` pick others (a port you name is that port or nothing); `--no-browser` leaves the browser alone.
+- `--lan` lets phones on the home Wi-Fi open it, at the address it prints. `--host`, `--port` and `--settings-port` pick others (a port you name is that port or nothing; the settings' is the dashboard's plus one unless named); `--no-browser` leaves the browser alone.
 - `--config config.toml` and `--secrets secrets.env` use files of your own, if you keep them. When either changes, or a setting is saved, it starts again by itself within a few seconds.
 - It keeps its files in its [store](configuration.md#where-things-are-kept): `~/Library/Application Support/twobells` on a Mac, and `~/.local/state/twobells` on Linux (unless `$XDG_STATE_HOME` says otherwise). `--state-dir` names another folder.
 - To see the board without a Pi, `twobells emulate --demo` draws it in your browser on sample data (see [Commands](commands.md)).
 
 ## Start it when you log in
 
-The release tarball and the repo have a file for each in `deploy/desktop`. Both run `twobells serve` from `~/.local/bin` on this computer only, at `http://localhost:8090/`, without opening the browser, and start it again if it fails. Run the commands from the tarball's or the repo's folder.
+The release tarball and the repo have a file for each in `deploy/desktop`. Both run `twobells serve` from `~/.local/bin` on this computer only, at `http://localhost:8090/` with the settings at `http://localhost:8091/settings`, without opening the browser, and start it again if it fails. Run the commands from the tarball's or the repo's folder.
 
 **On a Mac** (a launchd agent). The file names your home folder as `/Users/YOU`; `sed` puts yours in:
 

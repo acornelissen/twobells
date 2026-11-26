@@ -60,7 +60,7 @@ On a Pi that can't run cosign, download the three files on another computer and 
 
 A copy of the repo works the same way: `sudo ./deploy/pi/install.sh` from its folder.
 
-`install.sh` installs the app in `/opt/twobells`, starts the web server behind its network guard and the fetch service, and turns on the timetable timer, which builds nothing until a timetable is due (see [Looking after a Pi](pi.md)). Then open `http://<pi name>.local:8090/settings` on a phone or computer on your home network, and carry on with [First run and the setup wizard](setup-wizard.md).
+`install.sh` installs the app in `/opt/twobells`, starts the web server behind its network guard and the fetch service, and turns on the timetable timer, which builds nothing until a timetable is due (see [Looking after a Pi](pi.md)). Then open `http://<pi name>.local:8091/settings` on a phone or computer on your home network, and carry on with [First run and the setup wizard](setup-wizard.md).
 
 ## Start the board
 

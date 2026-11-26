@@ -2,7 +2,7 @@
 
 The dashboard is the board's big sibling: a web page with the next trains and buses laid out like a station screen and a stop's countdown sign, delays and reasons, cancellations and disruption notices, where each bus and train is, a map for each bus, the weather, and how often each regular departure has run late. It works on a phone too.
 
-It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop (or the next free port, if 8090 is taken). While the dashboard view is off, or before the app is set up, that address opens the settings instead.
+It is at the install's address, port 8090: `http://<pi name>.local:8090/` on a Pi, `http://<NAS name>:8090/` in Docker, `http://localhost:8090/` on a desktop (or the next free pair of ports, if 8090 or 8091 is taken). The settings are on the port after it, 8091; the **Settings** link in the footer goes there. While the dashboard view is off, or before the app is set up, that address says where the settings are instead.
 
 - [What's on it](#whats-on-it)
 - [Performance](#performance)

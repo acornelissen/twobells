@@ -14,7 +14,7 @@ Fixes go into the latest release only. Upgrade to it before reporting, if you ca
 
 ## What's in scope
 
-- The web server: the dashboard, its API and the settings site on port 8090, including sign-in, the password, sessions and the home-network checks.
+- The web server: the dashboard and its API on port 8090 and the settings site on port 8091, including sign-in, the password, sessions and the home-network checks.
 - The setup wizard and the fetch service, and anything that reaches the internet on the app's behalf.
 - How keys and the password are stored, and anything that could leak them (logs, pages, the container image, release files).
 - The Pi's install, update and upgrade scripts, the systemd units and the network guard; the Docker image and compose files.
@@ -22,4 +22,4 @@ Fixes go into the latest release only. Upgrade to it before reporting, if you ca
 
 How the web server is kept safe, and how to check a Pi's network guard, is in [How the web server is kept safe](docs/security.md); how to check a release's signatures is in [Install on a Raspberry Pi](docs/install-pi.md#install-from-a-release) and [Docker](docs/docker.md#pick-a-release-and-check-it).
 
-The settings site is made for a home network only and refuses visitors from elsewhere. Exposing port 8090 to the internet, for example by forwarding it on your router, is outside what it is built for; a way around the home-network check is in scope.
+The settings site is made for a home network only and refuses visitors from elsewhere. Exposing port 8090 or 8091 to the internet, for example by forwarding it on your router, is outside what it is built for; a way around the home-network check is in scope.

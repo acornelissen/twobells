@@ -44,4 +44,4 @@ You can set the password from the command line, even while the server runs. It a
 - **"Busy, try again in a moment":** a few sign-ins were being checked at once; try again.
 - **"Forbidden":** the settings only answer devices on the home network, using a local name or address. They won't work over mobile data or a VPN to elsewhere.
 
-The settings use plain HTTP on your home network. Use a password you don't use anywhere else, and don't forward port 8090 on your router. See [How the web server is kept safe](security.md).
+The settings use plain HTTP on your home network. Use a password you don't use anywhere else, and don't forward port 8090 or 8091 on your router. See [How the web server is kept safe](security.md).

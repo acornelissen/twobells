@@ -4,7 +4,7 @@ Until it is set up, the board shows **Set me up** and the settings address, and 
 
 ## Claim the settings
 
-1. Open the settings: `http://<pi name>.local:8090/settings` on a Pi, `http://<NAS name>:8090/settings` in Docker; a desktop opens it for you.
+1. Open the settings: `http://<pi name>.local:8091/settings` on a Pi, `http://<NAS name>:8091/settings` in Docker; a desktop opens it for you.
 2. Claim them with a 6-digit code and a new password of at least 10 characters, not one of the most common (see [Password and reset codes](password.md)). On a Pi with the board running, the code shows on the board; otherwise it goes to the log.
 3. The setup wizard opens.
 

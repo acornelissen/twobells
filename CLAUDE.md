@@ -103,8 +103,8 @@ install is one app with two views of the same departures: the **board** (e-paper
 - **Store** (`settings/store.py`): one folder per install holding `settings.toml` (only `schema.saved_keys`),
   `secrets.env`, `web.json` (the one password), sign-in sessions, the bus and tram timetables, history and locks. `config.toml` is optional,
   layered under it. `settings/schema.py` is the registry of every saved setting, by group (general, board, dashboard).
-- **`serve`**: the one web server on port 8090 (`web/server.py`): the dashboard at `/` while its view is on, the
-  settings site at `/settings` (`web/settingsite.py`, a `web/groupform.py` tab per group, the wizard at
+- **`serve`**: the one web server, in two listeners (`web/server.py`): the dashboard at `/` on port 8090 while its
+  view is on, and the settings site at `/settings` on port 8091 (`web/settingsite.py`, a `web/groupform.py` tab per group, the wizard at
   `/settings/setup/` with its API in `setup/api.py`).
 - **`fetch`** (Pi only, `fetch/service.py`): outbound-only service doing the web server's internet work (the
   wizard's lookups, the dashboard's pollers), handed over through files in `/run/twobells-fetch`
