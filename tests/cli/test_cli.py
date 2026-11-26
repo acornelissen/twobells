@@ -852,8 +852,25 @@ def root_on_their_store(tmp_path, monkeypatch):
 
     config, state = _web_config(tmp_path)
     state.mkdir()
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        os.chown(state, 65534, -1)  # really root (a container): tmp_path is root's, so hand it to "nobody"
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
     return config, state, pwd.getpwuid(os.stat(state).st_uid).pw_name
+
+
+@pytest.fixture
+def refusal_in_ten_seconds():
+    """A command that isn't refused would run its loop for ever: fail the test instead."""
+    import signal
+
+    def give_up(signum, frame):
+        pytest.fail("the command wasn't refused, and ran on")
+
+    previous = signal.signal(signal.SIGALRM, give_up)
+    signal.alarm(10)
+    yield
+    signal.alarm(0)
+    signal.signal(signal.SIGALRM, previous)
 
 
 @pytest.mark.parametrize("command", [
@@ -868,7 +885,8 @@ def root_on_their_store(tmp_path, monkeypatch):
     ["serve", "--reset-code"],
     ["fetch"],
 ])
-def test_root_is_refused_a_store_that_belongs_to_the_services_user(root_on_their_store, capsys, command):
+def test_root_is_refused_a_store_that_belongs_to_the_services_user(
+        root_on_their_store, refusal_in_ten_seconds, capsys, command):
     import shlex
 
     config, state, owner = root_on_their_store
